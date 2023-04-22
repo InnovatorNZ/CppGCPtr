@@ -15,12 +15,13 @@ public:
 GCPtr<MyObject> obj3;
 
 int main() {
-    GCPtr<MyObject> obj1 = makeGC<MyObject>();
+    GCPtr<MyObject> obj1 = gc::make_gc<MyObject>();
     GCPtr<MyObject> obj2;
     obj2 = obj1;
     obj3 = obj2;
     std::cout << &obj1 << " " << &obj2 << " " << &obj3 << std::endl;
     GCWorker::getWorker()->printMap();
+    GCWorker::getWorker()->beginMark();
     // std::shared_ptr<MyObject> ptr = std::make_shared<MyObject>();
     // ptr->get(); ptr.get()->a;
     return 0;
