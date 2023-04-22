@@ -29,10 +29,9 @@ public:
 
     GCPtr<T>& operator=(const GCPtr<T>& other) {
         if (this != &other) {
-            // 新增this -> &other的引用链
-            // std::cout << this << " -> " << &other << std::endl;
             this->obj = other.obj;
-            GCWorker::getWorker()->insertReference(this, &other, sizeof(*(other.get())));
+            //GCWorker::getWorker()->insertReference(this, &other, sizeof(*(other.get())));
+            GCWorker::getWorker()->addObject(obj, sizeof(*obj));
         }
         return *this;
     }
