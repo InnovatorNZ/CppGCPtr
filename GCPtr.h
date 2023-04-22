@@ -36,6 +36,10 @@ public:
         }
         return *this;
     }
+
+    ~GCPtr() override {
+        std::clog << "~GCPtr(): " << this << std::endl;
+    }
 };
 
 namespace gc {
