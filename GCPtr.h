@@ -44,6 +44,10 @@ public:
             this->obj = other.obj;
             //GCWorker::getWorker()->insertReference(this, &other, sizeof(*(other.get())));
             //GCWorker::getWorker()->addObject(obj, sizeof(*obj));
+            this->is_root = other.is_root;
+            if (is_root) {
+                GCWorker::getWorker()->addRoot(this);
+            }
         }
         return *this;
     }

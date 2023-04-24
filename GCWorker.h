@@ -26,21 +26,25 @@ private:
 
     void mark(void* object_addr) {
         auto it = object_map.find(object_addr);
-        if (it == object_map.end())
+        if (it == object_map.end()) {
+            std::clog << "Object not found at " << object_addr << std::endl;
             return;
-        int identifier = *(reinterpret_cast<int*>(reinterpret_cast<char*>(object_addr) - sizeof(void*)));
-        if (identifier != GCPTR_IDENTIFIER)
-            return;
+        }
         MarkState c_markstate = GCPhase::getCurrentMarkState();
         if (c_markstate == it->second.markState)    // 标记过了
             return;
         it->second.markState = c_markstate;
         size_t object_size = it->second.objectSize;
         char* cptr = reinterpret_cast<char*>(object_addr);
-        for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(void*); n_addr += sizeof(void*)) {
+        for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(void*) * 2; n_addr += sizeof(void*)) {
             // 现已改为使用类似bitmap的方式实现mark
-            void* next_addr = *(reinterpret_cast<void**>(n_addr));
-            mark(next_addr);
+            int identifier = *(reinterpret_cast<int*>(n_addr));
+            if (identifier == GCPTR_IDENTIFIER) {
+                std::clog << "Identifer found at " << (void*) n_addr << std::endl;
+                void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(void*)));
+                if (next_addr != nullptr)
+                    mark(next_addr);
+            }
         }
     }
 
