@@ -3,30 +3,20 @@
 
 #include "GCPhase.h"
 
+#define GCPTR_IDENTIFIER 0x1f1e33fc
+
 class GCPtrBase {
 private:
-    MarkState markState;
+    const int identifier = GCPTR_IDENTIFIER;
 
 public:
-    GCPtrBase() : markState(MarkState::REMAPPED) {
-    }
+    GCPtrBase() = default;
 
     virtual ~GCPtrBase() = default;
 
-    void mark() {
-        switch (GCPhase::getGCPhase()) {
-            case eGCPhase::MARK_M0:
-                markState = MarkState::M0;
-                break;
-            case eGCPhase::MARK_M1:
-                markState = MarkState::M1;
-                break;
-            default:
-                std::cerr << "Warning: marking at non-mark phase" << std::endl;
-                break;
-        }
-    }
+    virtual void* getVoidPtr() const = 0;
 
+    /*
     bool marked() const {
         if (markState == MarkState::REMAPPED) return false;
         else {
@@ -44,6 +34,7 @@ public:
             }
         }
     }
+    */
 };
 
 

@@ -1,4 +1,4 @@
-#ifndef CPPGCPTR_GCWORKER_H
+﻿#ifndef CPPGCPTR_GCWORKER_H
 #define CPPGCPTR_GCWORKER_H
 
 #include <unordered_map>
@@ -7,57 +7,40 @@
 #include "GCPtrBase.h"
 #include "PhaseEnum.h"
 
+class GCStatus {
+public:
+    MarkState markState;
+    size_t objectSize;
+
+    GCStatus(MarkState _markState, size_t _objectSize) : markState(_markState), objectSize(_objectSize) {
+    }
+};
+
 class GCWorker {
 private:
     static GCWorker* instance;
-    // std::unordered_map<GCPtrBase*, GCPtrBase*> ref_map;
-    // std::map<GCPtrBase*, GCPtrBase*> ref_ordered_map;
-    std::unordered_map<void*, size_t> size_map;
+    std::unordered_map<void*, GCStatus> object_map;
     std::unordered_set<GCPtrBase*> root_set;
-    MarkState markState;
 
-    GCWorker() : markState(MarkState::REMAPPED) {}
+    GCWorker() = default;
 
     void mark(void* object_addr) {
-        /*
-        auto it = ref_ordered_map.find(ptr_addr);
-        if (ptr_addr->marked()) return;
-        ptr_addr->mark();
-        if (it != ref_ordered_map.end()) {
-            GCPtrBase* key = it->first;
-            if (key == ptr_addr) {  // 是GCPtr
-                GCPtrBase* next_addr = it->second;
-                mark(next_addr);
-            } else {    //是包含了GCPtr的类
-                std::clog << "Warning: Reference map didn't find GCPtr, traversing the object" << std::endl;
-                auto size_it = size_map.find(ptr_addr);
-                size_t object_size = 0;
-                if (size_it != size_map.end())
-                    object_size = size_it->second;
-                while (it->first < ptr_addr + object_size) {
-                    mark(it->second);
-                    it++;
-                }
-            }
-        }*/
-        auto it = size_map.find(object_addr);
-        if (it == size_map.end()) {
-            std::cerr << "Warning: No object size found but marking" << std::endl;
+        auto it = object_map.find(object_addr);
+        if (it == object_map.end())
             return;
-        }
-        size_t object_size = it->second;
+        int identifier = *(reinterpret_cast<int*>(reinterpret_cast<char*>(object_addr) - sizeof(void*)));
+        if (identifier != GCPTR_IDENTIFIER)
+            return;
+        MarkState c_markstate = GCPhase::getCurrentMarkState();
+        if (c_markstate == it->second.markState)    // 标记过了
+            return;
+        it->second.markState = c_markstate;
+        size_t object_size = it->second.objectSize;
         char* cptr = reinterpret_cast<char*>(object_addr);
         for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(void*); n_addr += sizeof(void*)) {
-            // 这种方式只能是保守式的
-            // 能从size_map中找到，也有可能是存放了正好等于下一个对象地址的long long，尽管概率很低但仍然存在（p=2^-64=5.4e-20)
-            // 非保守式的需要更改指针地址不能更改long long
-            // 但好像也不是不能搞……主要是防止用户复制GCPtr内的地址
-            // 还有一个问题，在不cast到GCPtr的情况下怎么调用mark()？或者怎么cast到GCPtr？
-            // 要么搞个全局hashset存放所有GCPtr，要么T*一定位于GCPtr的第8个字节处因此减去8字节偏移量即GCPtr？
-            auto nextit = size_map.find(*(reinterpret_cast<void**>(n_addr)));
-            if (nextit != size_map.end()) {
-                mark(nextit->first);
-            }
+            // 现已改为使用类似bitmap的方式实现mark
+            void* next_addr = *(reinterpret_cast<void**>(n_addr));
+            mark(next_addr);
         }
     }
 
@@ -74,7 +57,7 @@ public:
     }
 
     void addObject(void* object_addr, size_t object_size) {
-        size_map.insert(std::make_pair(object_addr, object_size));
+        object_map.emplace(object_addr, GCStatus(MarkState::REMAPPED, object_size));
     }
 
     void addRoot(GCPtrBase* from) {
@@ -86,14 +69,15 @@ public:
     }
 
     void beginMark() {
-        for (auto& it: root_set) {
-            mark(/*???*/);
+        for (auto it: root_set) {
+            mark(it->getVoidPtr());
         }
     }
 
     void printMap() {
-        for (auto& it: ref_ordered_map) {
-            std::cout << it.first << " -> " << it.second << std::endl;
+        for (auto& it: object_map) {
+            std::cout << it.first << ": " << MarkStateUtil::toString(it.second.markState) <<
+                      ", size=" << it.second.objectSize << std::endl;
         }
     }
 };

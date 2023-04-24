@@ -36,3 +36,15 @@ void GCPhase::switchToNextState() {
             break;
     }
 }
+
+MarkState GCPhase::getCurrentMarkState() {
+    switch (GCPhase::getGCPhase()) {
+        case eGCPhase::MARK_M0:
+            return MarkState::M0;
+        case eGCPhase::MARK_M1:
+            return MarkState::M1;
+        default:
+            std::clog << "Warning: marking at non-mark phase" << std::endl;
+            return MarkState::REMAPPED;
+    }
+}

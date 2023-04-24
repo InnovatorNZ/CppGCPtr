@@ -27,6 +27,10 @@ public:
         return obj;
     }
 
+    void* getVoidPtr() const override {
+        return reinterpret_cast<void*>(this->obj);
+    }
+
     GCPtr<T>& operator=(const GCPtr<T>& other) {
         if (this != &other) {
             this->obj = other.obj;
