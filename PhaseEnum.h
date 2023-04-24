@@ -9,6 +9,13 @@ enum class MarkState {
     M1
 };
 
+enum class eGCPhase {
+    NONE,
+    MARK_M0,
+    MARK_M1,
+    SWEEP
+};
+
 class MarkStateUtil {
 public:
     static MarkState flipState(MarkState state) {
@@ -34,13 +41,21 @@ public:
                 return "Invalid";
         }
     }
-};
 
-enum class eGCPhase {
-    NONE,
-    MARK_M0,
-    MARK_M1,
-    SWEEP
+    static std::string toString(eGCPhase state) {
+        switch (state) {
+            case eGCPhase::NONE:
+                return "Not GC";
+            case eGCPhase::MARK_M0:
+                return "Marking (M0)";
+            case eGCPhase::MARK_M1:
+                return "Marking (M1)";
+            case eGCPhase::SWEEP:
+                return "Sweeping";
+            default:
+                return "Invalid";
+        }
+    }
 };
 
 #endif //CPPGCPTR_PHASEENUM_H

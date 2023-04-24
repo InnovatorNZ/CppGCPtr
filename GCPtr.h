@@ -22,6 +22,9 @@ public:
 
     GCPtr(T* obj, bool is_root) : is_root(is_root) {
         this->obj = obj;
+        if (is_root) {
+            GCWorker::getWorker()->addRoot(this);
+        }
     }
 
     T* get() const {
@@ -45,9 +48,23 @@ public:
         return *this;
     }
 
-    GCPtr(const GCPtr&) = delete;
+    GCPtr(const GCPtr& other) {
+        std::clog << "Copy constructor: " << this << std::endl;
+        this->obj = other.obj;
+        this->is_root = other.is_root;
+        if (is_root) {
+            GCWorker::getWorker()->addRoot(this);
+        }
+    }
 
-    GCPtr(GCPtr&&) = delete;
+    GCPtr(GCPtr&& other) {
+        std::clog << "Move constructor: " << this << std::endl;
+        this->obj = other.obj;
+        this->is_root = other.is_root;
+        if (is_root) {
+            GCWorker::getWorker()->addRoot(this);
+        }
+    }
 
     ~GCPtr() override {
         std::clog << "~GCPtr(): " << this << std::endl;

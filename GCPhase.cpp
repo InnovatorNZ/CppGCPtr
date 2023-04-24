@@ -35,6 +35,7 @@ void GCPhase::switchToNextState() {
             gcPhase = eGCPhase::NONE;
             break;
     }
+    std::clog << "GCPhase switch to " << MarkStateUtil::toString(gcPhase) << std::endl;
 }
 
 MarkState GCPhase::getCurrentMarkState() {

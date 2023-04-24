@@ -69,9 +69,18 @@ public:
     }
 
     void beginMark() {
-        for (auto it: root_set) {
-            mark(it->getVoidPtr());
+        if (GCPhase::getGCPhase() == eGCPhase::NONE) {
+            GCPhase::switchToNextState();
+            for (auto it: root_set) {
+                mark(it->getVoidPtr());
+            }
+        } else {
+            std::clog << "Already in marking phase or in other invalid phase" << std::endl;
         }
+    }
+
+    void beginSweep() {
+        // TODO: Begin sweeping...
     }
 
     void printMap() {

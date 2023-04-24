@@ -32,8 +32,8 @@ int main() {
     cout << &obj1 << " " << &obj2 << " " << &obj3 << " " << &obj3->d << " " <<
          &obj3->e << " " << &obj3->d->d << endl;
     cout << obj3->e->f << endl;
-    GCWorker::getWorker()->printMap();
     GCWorker::getWorker()->beginMark();
+    GCWorker::getWorker()->printMap();
     // std::shared_ptr<MyObject> ptr = std::make_shared<MyObject>();
     // ptr->get(); ptr.get()->a;
     return 0;
