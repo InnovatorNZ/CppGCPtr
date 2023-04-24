@@ -75,10 +75,16 @@ public:
     }
 
     void printMap() {
+        using namespace std;
         for (auto& it: object_map) {
-            std::cout << it.first << ": " << MarkStateUtil::toString(it.second.markState) <<
-                      ", size=" << it.second.objectSize << std::endl;
+            cout << it.first << ": " << MarkStateUtil::toString(it.second.markState) <<
+                 ", size=" << it.second.objectSize << endl;
         }
+        cout << "Root set: {";
+        for (auto it: root_set) {
+            cout << it->getVoidPtr() << ", ";
+        }
+        cout << "}" << endl;
     }
 };
 
