@@ -52,6 +52,19 @@ public:
         return *this;
     }
 
+    GCPtr& operator=(std::nullptr_t) {
+        this->obj = nullptr;
+        return *this;
+    }
+
+    bool operator==(const GCPtr<T>& other) const {
+        return this->obj == other.obj;
+    }
+
+    bool operator==(std::nullptr_t) const {
+        return this->obj == nullptr;
+    }
+
     GCPtr(const GCPtr& other) {
         std::clog << "Copy constructor: " << this << std::endl;
         this->obj = other.obj;

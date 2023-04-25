@@ -50,9 +50,35 @@ int main() {
     GCWorker::getWorker()->printMap();
     GCWorker::getWorker()->beginSweep();
     GCWorker::getWorker()->printMap();
+    GCWorker::getWorker()->endGC();
     obj3->e->f = 114.514;
     cout << obj3->e->f << endl;
     // std::shared_ptr<MyObject> ptr = std::make_shared<MyObject>();
     // ptr->get(); ptr.get()->a;
+
+    GCPtr<MyObject> obj5 = gc::make_root<MyObject>();
+    {
+        GCPtr<MyObject> obj4 = gc::make_root<MyObject>();
+    }
+    obj3 = nullptr;
+    obj2 = nullptr;
+    cout << (obj3 == nullptr) << " " << (obj2 == nullptr) << endl;
+    GCWorker::getWorker()->printMap();
+    GCWorker::getWorker()->beginMark();
+    GCWorker::getWorker()->printMap();
+    GCWorker::getWorker()->beginSweep();
+    GCWorker::getWorker()->printMap();
+    GCWorker::getWorker()->endGC();
+    GCPtr<MyObject> obj6 = gc::make_root<MyObject>();
+    GCPtr<MyObject> obj7 = gc::make_root<MyObject>();
+    {
+        GCPtr<MyObject> obj8 = gc::make_root<MyObject>();
+    }
+    GCWorker::getWorker()->printMap();
+    GCWorker::getWorker()->beginMark();
+    GCWorker::getWorker()->printMap();
+    GCWorker::getWorker()->beginSweep();
+    GCWorker::getWorker()->printMap();
+    GCWorker::getWorker()->endGC();
     return 0;
 }

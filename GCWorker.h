@@ -2,7 +2,6 @@
 #define CPPGCPTR_GCWORKER_H
 
 #include <unordered_map>
-#include <map>
 #include <unordered_set>
 #include "GCPtrBase.h"
 #include "PhaseEnum.h"
@@ -25,6 +24,7 @@ private:
     GCWorker() = default;
 
     void mark(void* object_addr) {
+        if (object_addr == nullptr) return;
         auto it = object_map.find(object_addr);
         if (it == object_map.end()) {
             std::clog << "Object not found at " << object_addr << std::endl;
@@ -40,7 +40,7 @@ private:
             // 现已改为使用类似bitmap的方式实现mark
             int identifier = *(reinterpret_cast<int*>(n_addr));
             if (identifier == GCPTR_IDENTIFIER) {
-                std::clog << "Identifer found at " << (void*) n_addr << std::endl;
+                // std::clog << "Identifer found at " << (void*) n_addr << std::endl;
                 void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(void*)));
                 if (next_addr != nullptr)
                     mark(next_addr);
@@ -76,7 +76,8 @@ public:
         if (GCPhase::getGCPhase() == eGCPhase::NONE) {
             GCPhase::switchToNextPhase();
             for (auto it: root_set) {
-                mark(it->getVoidPtr());
+                if (it->getVoidPtr() != nullptr)
+                    mark(it->getVoidPtr());
             }
         } else {
             std::clog << "Already in marking phase or in other invalid phase" << std::endl;
@@ -96,6 +97,14 @@ public:
             }
         } else {
             std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
+        }
+    }
+
+    void endGC() {
+        if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
+            GCPhase::switchToNextPhase();
+        } else {
+            std::clog << "Not started GC, or not finished sweeping yet" << std::endl;
         }
     }
 
