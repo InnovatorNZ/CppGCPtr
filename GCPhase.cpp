@@ -11,7 +11,7 @@ MarkState GCPhase::getLastMarkState() {
     return lastMarkState;
 }
 
-void GCPhase::switchToNextState() {
+void GCPhase::switchToNextPhase() {
     switch (gcPhase) {
         case eGCPhase::NONE:
             switch (lastMarkState) {
@@ -29,7 +29,7 @@ void GCPhase::switchToNextState() {
         case eGCPhase::MARK_M0:
         case eGCPhase::MARK_M1:
             gcPhase = eGCPhase::SWEEP;
-            lastMarkState = MarkStateUtil::flipState(lastMarkState);
+            lastMarkState = MarkStateUtil::switchState(lastMarkState);
             break;
         case eGCPhase::SWEEP:
             gcPhase = eGCPhase::NONE;
@@ -48,4 +48,16 @@ MarkState GCPhase::getCurrentMarkState() {
             std::clog << "Warning: marking at non-mark phase" << std::endl;
             return MarkState::REMAPPED;
     }
+}
+
+bool GCPhase::inMarkingPhase() {
+    return gcPhase == eGCPhase::MARK_M0 || gcPhase == eGCPhase::MARK_M1;
+}
+
+bool GCPhase::needSweep(MarkState markState) {
+    if (gcPhase != eGCPhase::SWEEP) {
+        std::cerr << "Sweeping in non-sweeping phase" << std::endl;
+        return false;
+    }
+    return lastMarkState != markState;
 }

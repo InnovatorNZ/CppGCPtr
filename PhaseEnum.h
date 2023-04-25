@@ -18,14 +18,14 @@ enum class eGCPhase {
 
 class MarkStateUtil {
 public:
-    static MarkState flipState(MarkState state) {
+    static MarkState switchState(MarkState state) {
         switch (state) {
             case MarkState::M0:
                 return MarkState::M1;
             case MarkState::M1:
                 return MarkState::M0;
             case MarkState::REMAPPED:
-                return MarkState::REMAPPED;
+                return MarkState::M0;
         }
     }
 

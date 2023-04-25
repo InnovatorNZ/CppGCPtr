@@ -7,11 +7,18 @@ public:
     double b;
     std::string c;
     GCPtr<MyObject> d;
-    float f;
+    double f;
     GCPtr<MyObject> e;
 
     MyObject() : a(0), b(0.0) {
     }
+
+    void setG(GCPtr<MyObject> _g) {
+        this->g = _g;
+    }
+
+private:
+    GCPtr<MyObject> g;
 };
 
 GCPtr<MyObject> obj3;
@@ -30,12 +37,21 @@ int main() {
         obj3->d->e = gc::make_gc<MyObject>();
         obj3->e = gc::make_gc<MyObject>();
         obj3->e->f = 12.43;
+        GCPtr<MyObject> obj4 = gc::make_root<MyObject>();
+        GCPtr<MyObject> obj5 = gc::make_root<MyObject>();
+        //obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
+        obj2->setG(gc::make_gc<MyObject>());
     }
     // cout << &obj1 << " " << &obj2 << " " << &obj3 << " " << &obj3->d << " " <<
     //     &obj3->e << " " << &obj3->d->d << endl;
     cout << obj3->e->f << endl;
+    GCWorker::getWorker()->printMap();
     GCWorker::getWorker()->beginMark();
     GCWorker::getWorker()->printMap();
+    GCWorker::getWorker()->beginSweep();
+    GCWorker::getWorker()->printMap();
+    obj3->e->f = 114.514;
+    cout << obj3->e->f << endl;
     // std::shared_ptr<MyObject> ptr = std::make_shared<MyObject>();
     // ptr->get(); ptr.get()->a;
     return 0;

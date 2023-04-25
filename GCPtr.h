@@ -71,7 +71,7 @@ public:
     }
 
     ~GCPtr() override {
-        std::clog << "~GCPtr(): " << this << std::endl;
+        // std::clog << "~GCPtr(): " << this << std::endl;
         if (is_root) {
             GCWorker::getWorker()->removeRoot(this);
         }

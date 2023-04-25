@@ -15,7 +15,11 @@ public:
 
     static MarkState getCurrentMarkState();
 
-    static void switchToNextState();
+    static void switchToNextPhase();
+
+    static bool inMarkingPhase();
+
+    static bool needSweep(MarkState markState);
 };
 
 

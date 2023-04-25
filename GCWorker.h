@@ -74,7 +74,7 @@ public:
 
     void beginMark() {
         if (GCPhase::getGCPhase() == eGCPhase::NONE) {
-            GCPhase::switchToNextState();
+            GCPhase::switchToNextPhase();
             for (auto it: root_set) {
                 mark(it->getVoidPtr());
             }
@@ -84,18 +84,34 @@ public:
     }
 
     void beginSweep() {
-        // TODO: Begin sweeping...
+        if (GCPhase::inMarkingPhase()) {
+            GCPhase::switchToNextPhase();
+            for (auto it = object_map.begin(); it != object_map.end();) {
+                if (GCPhase::needSweep(it->second.markState)) {
+                    free(it->first);
+                    it = object_map.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        } else {
+            std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
+        }
     }
 
     void printMap() {
         using namespace std;
+        cout << "Object map: {" << endl;
         for (auto& it: object_map) {
+            cout << "\t";
             cout << it.first << ": " << MarkStateUtil::toString(it.second.markState) <<
-                 ", size=" << it.second.objectSize << endl;
+                 ", size=" << it.second.objectSize;
+            cout << ";" << endl;
         }
-        cout << "Root set: {";
+        cout << "}" << endl;
+        cout << "Root set: { ";
         for (auto it: root_set) {
-            cout << it->getVoidPtr() << ", ";
+            cout << it->getVoidPtr() << " ";
         }
         cout << "}" << endl;
     }
