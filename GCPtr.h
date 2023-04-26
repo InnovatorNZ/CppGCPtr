@@ -53,6 +53,9 @@ public:
     }
 
     GCPtr& operator=(std::nullptr_t) {
+        if (GCPhase::getGCPhase() == /*CONCURRENT_MARKING_PHASE*/) {
+            GCWorker::getWorker()->addSATB(this->obj);
+        }
         this->obj = nullptr;
         return *this;
     }
@@ -85,6 +88,9 @@ public:
 
     ~GCPtr() override {
         // std::clog << "~GCPtr(): " << this << std::endl;
+        if (GCPhase::getGCPhase() == /*CONCURRENT_MARKING_PHASE*/) {
+            GCWorker::getWorker()->addSATB(this->obj);
+        }
         if (is_root) {
             GCWorker::getWorker()->removeRoot(this);
         }

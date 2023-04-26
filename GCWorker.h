@@ -3,6 +3,8 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
+#include <mutex>
 #include <shared_mutex>
 #include "GCPtrBase.h"
 #include "PhaseEnum.h"
@@ -23,6 +25,8 @@ private:
     std::shared_mutex object_map_mutex;
     std::unordered_set<GCPtrBase*> root_set;
     std::shared_mutex root_set_mutex;
+    std::vector<void*> satb_queue;
+    std::mutex satb_queue_mutex;
 
     GCWorker() = default;
 
@@ -80,6 +84,11 @@ public:
         root_set.erase(from);
     }
 
+    void addSATB(void* object_addr) {
+        std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
+        satb_queue.push_back(object_addr);
+    }
+
     void beginMark() {
         if (GCPhase::getGCPhase() == eGCPhase::NONE) {
             GCPhase::switchToNextPhase();
@@ -90,6 +99,10 @@ public:
         } else {
             std::clog << "Already in marking phase or in other invalid phase" << std::endl;
         }
+    }
+
+    void triggerSATBMark() {
+        // TODO: SATB Marking
     }
 
     void beginSweep() {
