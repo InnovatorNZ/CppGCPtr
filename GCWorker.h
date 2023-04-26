@@ -3,6 +3,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <shared_mutex>
 #include "GCPtrBase.h"
 #include "PhaseEnum.h"
 
@@ -19,17 +20,21 @@ class GCWorker {
 private:
     static GCWorker* instance;
     std::unordered_map<void*, GCStatus> object_map;
+    std::shared_mutex object_map_mutex;
     std::unordered_set<GCPtrBase*> root_set;
+    std::shared_mutex root_set_mutex;
 
     GCWorker() = default;
 
     void mark(void* object_addr) {
         if (object_addr == nullptr) return;
+        std::shared_lock<std::shared_mutex> read_lock(this->object_map_mutex);
         auto it = object_map.find(object_addr);
         if (it == object_map.end()) {
             std::clog << "Object not found at " << object_addr << std::endl;
             return;
         }
+        read_lock.unlock();
         MarkState c_markstate = GCPhase::getCurrentMarkState();
         if (c_markstate == it->second.markState)    // 标记过了
             return;
@@ -61,14 +66,17 @@ public:
     }
 
     void addObject(void* object_addr, size_t object_size) {
+        std::unique_lock<std::shared_mutex> write_lock(this->object_map_mutex);
         object_map.emplace(object_addr, GCStatus(MarkState::REMAPPED, object_size));
     }
 
     void addRoot(GCPtrBase* from) {
+        std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex);
         root_set.insert(from);
     }
 
     void removeRoot(GCPtrBase* from) {
+        std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex);
         root_set.erase(from);
     }
 
