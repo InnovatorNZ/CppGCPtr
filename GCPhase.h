@@ -2,22 +2,21 @@
 #define CPPGCPTR_GCPHASE_H
 
 #include <iostream>
+#include <string>
 #include "PhaseEnum.h"
 
 class GCPhase {
 private:
     static eGCPhase gcPhase;
-    static MarkState lastMarkState;
+    static MarkState currentMarkState;
 public:
     static eGCPhase getGCPhase();
 
-    static MarkState getLastMarkState();
+    static std::string getGCPhaseString();
 
     static MarkState getCurrentMarkState();
 
     static void switchToNextPhase();
-
-    static bool inMarkingPhase();
 
     static bool needSweep(MarkState markState);
 };

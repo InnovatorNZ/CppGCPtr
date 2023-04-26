@@ -1,57 +1,33 @@
 #include "GCPhase.h"
 
 eGCPhase GCPhase::gcPhase = eGCPhase::NONE;
-MarkState GCPhase::lastMarkState = MarkState::REMAPPED;
+MarkState GCPhase::currentMarkState = MarkState::REMAPPED;
 
 eGCPhase GCPhase::getGCPhase() {
     return gcPhase;
 }
 
-MarkState GCPhase::getLastMarkState() {
-    return lastMarkState;
-}
-
 void GCPhase::switchToNextPhase() {
     switch (gcPhase) {
         case eGCPhase::NONE:
-            switch (lastMarkState) {
-                case MarkState::M0:
-                    gcPhase = eGCPhase::MARK_M1;
-                    break;
-                case MarkState::M1:
-                    gcPhase = eGCPhase::MARK_M0;
-                    break;
-                case MarkState::REMAPPED:
-                    gcPhase = eGCPhase::MARK_M0;
-                    break;
-            }
+            gcPhase = eGCPhase::CONCURRENT_MARK;
+            currentMarkState = MarkStateUtil::switchState(currentMarkState);
             break;
-        case eGCPhase::MARK_M0:
-        case eGCPhase::MARK_M1:
+        case eGCPhase::CONCURRENT_MARK:
+            gcPhase = eGCPhase::REMARK;
+            break;
+        case eGCPhase::REMARK:
             gcPhase = eGCPhase::SWEEP;
-            lastMarkState = MarkStateUtil::switchState(lastMarkState);
             break;
         case eGCPhase::SWEEP:
             gcPhase = eGCPhase::NONE;
             break;
     }
-    std::clog << "GCPhase switch to " << MarkStateUtil::toString(gcPhase) << std::endl;
+    std::clog << "GCPhase switch to " << getGCPhaseString() << std::endl;
 }
 
 MarkState GCPhase::getCurrentMarkState() {
-    switch (GCPhase::getGCPhase()) {
-        case eGCPhase::MARK_M0:
-            return MarkState::M0;
-        case eGCPhase::MARK_M1:
-            return MarkState::M1;
-        default:
-            std::clog << "Warning: marking at non-mark phase" << std::endl;
-            return MarkState::REMAPPED;
-    }
-}
-
-bool GCPhase::inMarkingPhase() {
-    return gcPhase == eGCPhase::MARK_M0 || gcPhase == eGCPhase::MARK_M1;
+    return currentMarkState;
 }
 
 bool GCPhase::needSweep(MarkState markState) {
@@ -59,5 +35,20 @@ bool GCPhase::needSweep(MarkState markState) {
         std::cerr << "Sweeping in non-sweeping phase" << std::endl;
         return false;
     }
-    return lastMarkState != markState;
+    return currentMarkState == markState;
+}
+
+std::string GCPhase::getGCPhaseString() {
+    switch (gcPhase) {
+        case eGCPhase::NONE:
+            return "Not GC";
+        case eGCPhase::CONCURRENT_MARK:
+            return "Concurrent Marking (" + MarkStateUtil::toString(currentMarkState) + ")";
+        case eGCPhase::REMARK:
+            return "Remarking (" + MarkStateUtil::toString(currentMarkState) + ")";
+        case eGCPhase::SWEEP:
+            return "Sweeping";
+        default:
+            return "Invalid";
+    }
 }

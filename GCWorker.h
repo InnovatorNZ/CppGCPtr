@@ -46,7 +46,6 @@ private:
         size_t object_size = it->second.objectSize;
         char* cptr = reinterpret_cast<char*>(object_addr);
         for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(void*) * 2; n_addr += sizeof(void*)) {
-            // 现已改为使用类似bitmap的方式实现mark
             int identifier = *(reinterpret_cast<int*>(n_addr));
             if (identifier == GCPTR_IDENTIFIER) {
                 // std::clog << "Identifer found at " << (void*) n_addr << std::endl;
@@ -85,28 +84,38 @@ public:
     }
 
     void addSATB(void* object_addr) {
+        std::clog << "Adding SATB: " << object_addr << std::endl;
         std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
         satb_queue.push_back(object_addr);
     }
 
     void beginMark() {
         if (GCPhase::getGCPhase() == eGCPhase::NONE) {
-            GCPhase::switchToNextPhase();
+            GCPhase::switchToNextPhase();   // concurrent mark
             for (auto it: root_set) {
                 if (it->getVoidPtr() != nullptr)
                     mark(it->getVoidPtr());
             }
+            triggerSATBMark();
         } else {
-            std::clog << "Already in marking phase or in other invalid phase" << std::endl;
+            std::clog << "Already in concurrent marking phase or in other invalid phase" << std::endl;
         }
     }
 
     void triggerSATBMark() {
-        // TODO: SATB Marking
+        if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
+            GCPhase::switchToNextPhase();   // remark
+            for (auto object_addr: satb_queue) {
+                mark(object_addr);
+            }
+            satb_queue.clear();
+        } else {
+            std::clog << "Already in remark phase or in other invalid phase" << std::endl;
+        }
     }
 
     void beginSweep() {
-        if (GCPhase::inMarkingPhase()) {
+        if (GCPhase::getGCPhase() == eGCPhase::REMARK) {
             GCPhase::switchToNextPhase();
             for (auto it = object_map.begin(); it != object_map.end();) {
                 if (GCPhase::needSweep(it->second.markState)) {

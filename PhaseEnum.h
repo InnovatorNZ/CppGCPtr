@@ -11,8 +11,8 @@ enum class MarkState {
 
 enum class eGCPhase {
     NONE,
-    MARK_M0,
-    MARK_M1,
+    CONCURRENT_MARK,
+    REMARK,
     SWEEP
 };
 
@@ -37,21 +37,6 @@ public:
                 return "M0";
             case MarkState::M1:
                 return "M1";
-            default:
-                return "Invalid";
-        }
-    }
-
-    static std::string toString(eGCPhase state) {
-        switch (state) {
-            case eGCPhase::NONE:
-                return "Not GC";
-            case eGCPhase::MARK_M0:
-                return "Marking (M0)";
-            case eGCPhase::MARK_M1:
-                return "Marking (M1)";
-            case eGCPhase::SWEEP:
-                return "Sweeping";
             default:
                 return "Invalid";
         }

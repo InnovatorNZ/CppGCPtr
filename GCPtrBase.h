@@ -15,26 +15,6 @@ public:
     virtual ~GCPtrBase() = default;
 
     virtual void* getVoidPtr() const = 0;
-
-    /*
-    bool marked() const {
-        if (markState == MarkState::REMAPPED) return false;
-        else {
-            switch (GCPhase::getGCPhase()) {
-                case eGCPhase::SWEEP:
-                case eGCPhase::NONE:
-                    if (markState == GCPhase::getLastMarkState()) return true;
-                    else return false;
-                case eGCPhase::MARK_M0:
-                    if (markState == MarkState::M0) return true;
-                    else return false;
-                case eGCPhase::MARK_M1:
-                    if (markState == MarkState::M1) return true;
-                    else return false;
-            }
-        }
-    }
-    */
 };
 
 
