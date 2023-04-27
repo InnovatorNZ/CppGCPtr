@@ -35,7 +35,7 @@ bool GCPhase::needSweep(MarkState markState) {
         std::cerr << "Sweeping in non-sweeping phase" << std::endl;
         return false;
     }
-    return currentMarkState == markState;
+    return currentMarkState != markState;
 }
 
 std::string GCPhase::getGCPhaseString() {
