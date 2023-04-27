@@ -41,6 +41,9 @@ public:
 
     GCPtr<T>& operator=(const GCPtr<T>& other) {
         if (this != &other) {
+            if (this->obj != nullptr && this->obj != other.obj && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
+                GCWorker::getWorker()->addSATB(this->obj);
+            }
             this->obj = other.obj;
             //GCWorker::getWorker()->insertReference(this, &other, sizeof(*(other.get())));
             //GCWorker::getWorker()->addObject(obj, sizeof(*obj));
