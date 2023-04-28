@@ -4,8 +4,11 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <thread>
 #include <mutex>
 #include <shared_mutex>
+#include <functional>
+#include <condition_variable>
 #include "GCPtrBase.h"
 #include "PhaseEnum.h"
 
@@ -27,8 +30,18 @@ private:
     std::shared_mutex root_set_mutex;
     std::vector<void*> satb_queue;
     std::mutex satb_queue_mutex;
+    std::mutex thread_mutex;
+    std::condition_variable condition;
+    std::thread* gc_thread;
+    bool stop_;
 
-    GCWorker() = default;
+    GCWorker() : stop_(false), gc_thread(nullptr) {
+    }
+
+    explicit GCWorker(bool concurrent) : stop_(false) {
+        if (concurrent)
+            this->gc_thread = new std::thread(&GCWorker::threadLoop, this);
+    }
 
     void mark(void* object_addr) {
         if (object_addr == nullptr) return;
@@ -56,21 +69,61 @@ private:
         }
     }
 
+    void threadLoop() {
+        while (true) {
+            std::unique_lock<std::mutex> lock(this->thread_mutex);
+            condition.wait(lock);
+            if (stop_) break;
+            GCWorker::getWorker()->printMap();
+            GCWorker::getWorker()->beginMark();
+            // TODO: Start of STW
+            GCWorker::getWorker()->triggerSATBMark();
+            GCWorker::getWorker()->printMap();
+            GCWorker::getWorker()->beginSweep();
+            GCWorker::getWorker()->printMap();
+            GCWorker::getWorker()->endGC();
+            // TODO: End of STW
+        }
+    }
+
 public:
     GCWorker(const GCWorker&) = delete;
 
+    GCWorker(GCWorker&&) = delete;
+
     GCWorker& operator=(const GCWorker&) = delete;
+
+    ~GCWorker() {
+        {
+            std::unique_lock<std::mutex> lock(this->thread_mutex);
+            stop_ = true;
+        }
+        condition.notify_all();
+        gc_thread->join();
+        delete gc_thread;
+    }
 
     static GCWorker* getWorker() {
         if (instance == nullptr) {
+#ifdef ENABLE_CONCURRENT_MARK
+            instance = new GCWorker(true);
+#else
             instance = new GCWorker();
+#endif
         }
         return instance;
     }
 
+    void wakeUpGCThread() {
+        condition.notify_all();
+    }
+
     void addObject(void* object_addr, size_t object_size) {
         std::unique_lock<std::shared_mutex> write_lock(this->object_map_mutex);
-        object_map.emplace(object_addr, GCStatus(MarkState::REMAPPED, object_size));
+        if (GCPhase::duringGC())
+            object_map.emplace(object_addr, GCStatus(GCPhase::getCurrentMarkState(), object_size));
+        else
+            object_map.emplace(object_addr, GCStatus(MarkState::REMAPPED, object_size));
     }
 
     void addRoot(GCPtrBase* from) {
@@ -96,7 +149,6 @@ public:
                 if (it->getVoidPtr() != nullptr)
                     mark(it->getVoidPtr());
             }
-            triggerSATBMark();
         } else {
             std::clog << "Already in concurrent marking phase or in other invalid phase" << std::endl;
         }
@@ -158,5 +210,27 @@ public:
 
 GCWorker* GCWorker::instance = nullptr;
 
+namespace gc {
+    void triggerGC() {
+        using namespace std;
+        cout << "Triggered GC" << endl;
+        GCWorker::getWorker()->printMap();
+        GCWorker::getWorker()->beginMark();
+        GCWorker::getWorker()->triggerSATBMark();
+        GCWorker::getWorker()->printMap();
+        GCWorker::getWorker()->beginSweep();
+        GCWorker::getWorker()->printMap();
+        GCWorker::getWorker()->endGC();
+        cout << "End of GC" << endl;
+    }
 
+    void triggerGC(bool concurrent) {
+        if (concurrent) {
+            // TODO: Concurrent GC
+            GCWorker::getWorker()->wakeUpGCThread();
+        } else {
+            triggerGC();
+        }
+    }
+}
 #endif //CPPGCPTR_GCWORKER_H

@@ -2,6 +2,7 @@
 
 eGCPhase GCPhase::gcPhase = eGCPhase::NONE;
 MarkState GCPhase::currentMarkState = MarkState::REMAPPED;
+std::atomic<int> GCPhase::allocating_count = 0;
 
 eGCPhase GCPhase::getGCPhase() {
     return gcPhase;
@@ -51,4 +52,20 @@ std::string GCPhase::getGCPhaseString() {
         default:
             return "Invalid";
     }
+}
+
+bool GCPhase::duringGC() {
+    return gcPhase != eGCPhase::NONE;
+}
+
+void GCPhase::enterAllocating() {
+    allocating_count++;
+}
+
+void GCPhase::leaveAllocating() {
+    allocating_count--;
+}
+
+bool GCPhase::notAllocating() {
+    return allocating_count == 0;
 }

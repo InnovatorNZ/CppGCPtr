@@ -1,3 +1,5 @@
+#define ENABLE_CONCURRENT_MARK
+
 #include <iostream>
 #include "GCPtr.h"
 
@@ -45,12 +47,7 @@ int main() {
     // cout << &obj1 << " " << &obj2 << " " << &obj3 << " " << &obj3->d << " " <<
     //     &obj3->e << " " << &obj3->d->d << endl;
     cout << obj3->e->f << endl;
-    GCWorker::getWorker()->printMap();
-    GCWorker::getWorker()->beginMark();
-    GCWorker::getWorker()->printMap();
-    GCWorker::getWorker()->beginSweep();
-    GCWorker::getWorker()->printMap();
-    GCWorker::getWorker()->endGC();
+    gc::triggerGC();
     obj3->e->f = 114.514;
     cout << obj3->e->f << endl;
     // std::shared_ptr<MyObject> ptr = std::make_shared<MyObject>();
@@ -63,22 +60,12 @@ int main() {
     obj3 = nullptr;
     obj2 = nullptr;
     cout << (obj3 == nullptr) << " " << (obj2 == nullptr) << endl;
-    GCWorker::getWorker()->printMap();
-    GCWorker::getWorker()->beginMark();
-    GCWorker::getWorker()->printMap();
-    GCWorker::getWorker()->beginSweep();
-    GCWorker::getWorker()->printMap();
-    GCWorker::getWorker()->endGC();
+    gc::triggerGC();
     GCPtr<MyObject> obj6 = gc::make_root<MyObject>();
     GCPtr<MyObject> obj7 = gc::make_root<MyObject>();
     {
         GCPtr<MyObject> obj8 = gc::make_root<MyObject>();
     }
-    GCWorker::getWorker()->printMap();
-    GCWorker::getWorker()->beginMark();
-    GCWorker::getWorker()->printMap();
-    GCWorker::getWorker()->beginSweep();
-    GCWorker::getWorker()->printMap();
-    GCWorker::getWorker()->endGC();
+    gc::triggerGC();
     return 0;
 }

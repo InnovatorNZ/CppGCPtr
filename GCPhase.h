@@ -3,12 +3,14 @@
 
 #include <iostream>
 #include <string>
+#include <atomic>
 #include "PhaseEnum.h"
 
 class GCPhase {
 private:
     static eGCPhase gcPhase;
     static MarkState currentMarkState;
+    static std::atomic<int> allocating_count;
 public:
     static eGCPhase getGCPhase();
 
@@ -19,6 +21,14 @@ public:
     static void switchToNextPhase();
 
     static bool needSweep(MarkState markState);
+
+    static bool duringGC();
+
+    static void enterAllocating();
+
+    static void leaveAllocating();
+
+    static bool notAllocating();
 };
 
 

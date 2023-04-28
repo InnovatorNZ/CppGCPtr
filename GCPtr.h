@@ -18,10 +18,12 @@ public:
 
     explicit GCPtr(T* obj) : is_root(false) {
         this->obj = obj;
+        GCWorker::getWorker()->addObject(obj, sizeof(*obj));
     }
 
     GCPtr(T* obj, bool is_root) : is_root(is_root) {
         this->obj = obj;
+        GCWorker::getWorker()->addObject(obj, sizeof(*obj));
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
@@ -102,29 +104,37 @@ public:
 
 namespace gc {
     template<typename T>
-    GCPtr<T> make_gc(T* obj) {
-        GCWorker::getWorker()->addObject(obj, sizeof(*obj));
-        return GCPtr<T>(obj);
-    }
-
-    template<typename T>
-    GCPtr<T> make_root(T* obj) {
-        GCPtr<T> ret(obj, true);
-        GCWorker::getWorker()->addObject(obj, sizeof(*obj));
-        GCWorker::getWorker()->addRoot(&ret);
+    GCPtr <T> make_gc(T* obj) {
+        GCPhase::enterAllocating();
+        GCPtr<T> ret(obj);
+        GCPhase::leaveAllocating();
         return ret;
     }
 
     template<typename T>
-    GCPtr<T> make_gc() {
-        T* obj = new T();
-        return make_gc(obj);
+    GCPtr <T> make_root(T* obj) {
+        GCPhase::enterAllocating();
+        GCPtr<T> ret(obj, true);
+        GCPhase::leaveAllocating();
+        return ret;
     }
 
     template<typename T>
-    GCPtr<T> make_root() {
+    GCPtr <T> make_gc() {
+        GCPhase::enterAllocating();
         T* obj = new T();
-        return make_root(obj);
+        GCPtr<T> ret(obj);
+        GCPhase::leaveAllocating();
+        return ret;
+    }
+
+    template<typename T>
+    GCPtr <T> make_root() {
+        GCPhase::enterAllocating();
+        T* obj = new T();
+        GCPtr<T> ret(obj, true);
+        GCPhase::leaveAllocating();
+        return ret;
     }
 
 #ifdef MORE_USERFRIENDLY
