@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include "GCPtrBase.h"
 #include "PhaseEnum.h"
+#include "GCUtil.h"
 
 class GCStatus {
 public:
@@ -76,13 +77,13 @@ private:
             if (stop_) break;
             GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->beginMark();
-            // TODO: Start of STW
+            GCUtil::stop_the_world();
             GCWorker::getWorker()->triggerSATBMark();
             GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->beginSweep();
             GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->endGC();
-            // TODO: End of STW
+            GCUtil::resume_the_world();
         }
     }
 
