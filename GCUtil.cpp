@@ -1,5 +1,7 @@
 #include "GCUtil.h"
 
+std::vector<DWORD> GCUtil::_suspendedThreadIDs;
+
 bool GCUtil::is_stack_pointer(void* ptr) {
 #if _WIN32 && _MSC_VER
     ULONG_PTR low, high;
@@ -9,19 +11,6 @@ bool GCUtil::is_stack_pointer(void* ptr) {
     // TODO: POSIX is_stack_pointer()
     return false;
 #endif
-}
-
-void GCUtil::stop_the_world() {
-    while (!GCPhase::notAllocating()) {
-        std::clog << "Allocating object, waiting..." << std::endl;
-        Sleep(1);
-    }
-    suspend_user_threads(GCUtil::_suspendedThreadIDs);
-}
-
-void GCUtil::resume_the_world() {
-    resume_user_threads(GCUtil::_suspendedThreadIDs);
-    GCUtil::_suspendedThreadIDs.clear();
 }
 
 void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
@@ -78,4 +67,17 @@ void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
             }
         }
     }
+}
+
+void GCUtil::stop_the_world() {
+    while (!GCPhase::notAllocating()) {
+        std::clog << "Allocating object, waiting..." << std::endl;
+        Sleep(1);
+    }
+    GCUtil::suspend_user_threads(GCUtil::_suspendedThreadIDs);
+}
+
+void GCUtil::resume_the_world() {
+    GCUtil::resume_user_threads(GCUtil::_suspendedThreadIDs);
+    GCUtil::_suspendedThreadIDs.clear();
 }

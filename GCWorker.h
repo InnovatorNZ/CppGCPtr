@@ -9,9 +9,10 @@
 #include <shared_mutex>
 #include <functional>
 #include <condition_variable>
+
 #include "GCPtrBase.h"
-#include "PhaseEnum.h"
 #include "GCUtil.h"
+#include "PhaseEnum.h"
 
 class GCStatus {
 public:
