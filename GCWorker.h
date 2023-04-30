@@ -34,14 +34,22 @@ private:
     std::mutex thread_mutex;
     std::condition_variable condition;
     std::thread* gc_thread;
-    bool stop_;
+    bool stop_, ready_;
 
-    GCWorker() : stop_(false), gc_thread(nullptr) {
+    GCWorker() : stop_(false), ready_(false), gc_thread(nullptr) {
     }
 
-    explicit GCWorker(bool concurrent) : stop_(false) {
-        if (concurrent)
+    explicit GCWorker(bool concurrent) : stop_(false), ready_(false) {
+        if (concurrent) {
             this->gc_thread = new std::thread(&GCWorker::threadLoop, this);
+            {
+                std::unique_lock<std::mutex> lock(this->thread_mutex);
+                ready_ = true;
+            }
+        }
+        else {
+            gc_thread = nullptr;
+        }
     }
 
     void mark(void* object_addr) {
@@ -72,9 +80,14 @@ private:
 
     void threadLoop() {
         while (true) {
-            std::unique_lock<std::mutex> lock(this->thread_mutex);
-            condition.wait(lock);
-            if (stop_) break;
+            {
+                std::unique_lock<std::mutex> lock(this->thread_mutex);
+                condition.wait(lock, [this] { return ready_; });
+            }
+            if (stop_)
+                break;
+            //ready_ = false;
+            std::cout << "Triggered GC" << std::endl;
             GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->beginMark();
             GCUtil::stop_the_world();
@@ -84,6 +97,7 @@ private:
             GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->endGC();
             GCUtil::resume_the_world();
+            std::cout << "End of GC" << std::endl;
         }
     }
 
@@ -117,6 +131,7 @@ public:
 
     void wakeUpGCThread() {
         condition.notify_all();
+        std::clog << "notified" << std::endl;
     }
 
     void addObject(void* object_addr, size_t object_size) {

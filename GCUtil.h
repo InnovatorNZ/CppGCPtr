@@ -143,3 +143,5 @@ public:
         suspendedThreadIDs.clear();
     }
 };
+
+std::vector<DWORD> GCUtil::suspendedThreadIDs;
