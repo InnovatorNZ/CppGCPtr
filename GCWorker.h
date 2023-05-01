@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <memory>
 #include <thread>
 #include <mutex>
 #include <shared_mutex>
@@ -25,7 +26,7 @@ public:
 
 class GCWorker {
 private:
-    static GCWorker* instance;
+    static std::unique_ptr<GCWorker> instance;
     std::unordered_map<void*, GCStatus> object_map;
     std::shared_mutex object_map_mutex;
     std::unordered_set<GCPtrBase*> root_set;
@@ -34,7 +35,7 @@ private:
     std::mutex satb_queue_mutex;
     std::mutex thread_mutex;
     std::condition_variable condition;
-    std::thread* gc_thread;
+    std::unique_ptr<std::thread> gc_thread;
     bool stop_, ready_;
 
     GCWorker() : stop_(false), ready_(false), gc_thread(nullptr) {
@@ -42,7 +43,7 @@ private:
 
     explicit GCWorker(bool concurrent) : stop_(false), ready_(false) {
         if (concurrent) {
-            this->gc_thread = new std::thread(&GCWorker::threadLoop, this);
+            this->gc_thread = std::make_unique<std::thread>(&GCWorker::threadLoop, this);
         } else {
             this->gc_thread = nullptr;
         }
@@ -104,6 +105,7 @@ public:
     GCWorker& operator=(const GCWorker&) = delete;
 
     ~GCWorker() {
+        std::clog << "~GCWorker()" << std::endl;
         {
             std::unique_lock<std::mutex> lock(this->thread_mutex);
             stop_ = true;
@@ -111,18 +113,18 @@ public:
         }
         condition.notify_all();
         gc_thread->join();
-        delete gc_thread;
     }
 
     static GCWorker* getWorker() {
         if (instance == nullptr) {
 #ifdef ENABLE_CONCURRENT_MARK
-            instance = new GCWorker(true);
+            GCWorker* pGCWorker = new GCWorker(true);
 #else
-            instance = new GCWorker();
+            GCWorker* pGCWorker = new GCWorker();
 #endif
+            instance = std::unique_ptr<GCWorker>(pGCWorker);
         }
-        return instance;
+        return instance.get();
     }
 
     void wakeUpGCThread() {
@@ -223,7 +225,7 @@ public:
     }
 };
 
-GCWorker* GCWorker::instance = nullptr;
+std::unique_ptr<GCWorker> GCWorker::instance = nullptr;
 
 namespace gc {
     void triggerGC() {
