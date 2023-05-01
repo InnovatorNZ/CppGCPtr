@@ -28,7 +28,7 @@ void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
                             if (GetExitCodeThread(hThread, &dwExitCode) && dwExitCode == STILL_ACTIVE) {
                                 DWORD status = SuspendThread(hThread);
                                 if (status != -1) {
-                                    std::clog << "Thread ID: 0x" << std::hex << threadEntry.th32ThreadID << "suspended" << std::endl;
+                                    std::clog << "Thread 0x" << std::hex << threadEntry.th32ThreadID << " suspended" << std::endl;
                                     suspendedThreadIDs.push_back(threadEntry.th32ThreadID);
                                 } else {
                                     LPVOID lpMsgBuf;
@@ -57,7 +57,7 @@ void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
         if (hThread) {
             DWORD status = ResumeThread(hThread);
             if (status != -1) {
-                std::clog << "Thread ID: 0x" << std::hex << threadID << " resumed" << std::endl;
+                std::clog << "Thread 0x" << std::hex << threadID << " resumed" << std::endl;
             } else {
                 LPVOID lpMsgBuf;
                 DWORD dw = GetLastError();

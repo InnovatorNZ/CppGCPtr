@@ -47,7 +47,7 @@ int main() {
     // cout << &obj1 << " " << &obj2 << " " << &obj3 << " " << &obj3->d << " " <<
     //     &obj3->e << " " << &obj3->d->d << endl;
     cout << obj3->e->f << endl;
-    gc::triggerGC();
+    gc::triggerGC(true);
     obj3->e->f = 114.514;
     cout << obj3->e->f << endl;
     // std::shared_ptr<MyObject> ptr = std::make_shared<MyObject>();
@@ -57,15 +57,21 @@ int main() {
     {
         GCPtr<MyObject> obj4 = gc::make_root<MyObject>();
     }
+
+    Sleep(200);
     obj3 = nullptr;
     obj2 = nullptr;
     cout << (obj3 == nullptr) << " " << (obj2 == nullptr) << endl;
-    gc::triggerGC();
+    //gc::triggerGC();
     GCPtr<MyObject> obj6 = gc::make_root<MyObject>();
     GCPtr<MyObject> obj7 = gc::make_root<MyObject>();
     {
         GCPtr<MyObject> obj8 = gc::make_root<MyObject>();
     }
-    gc::triggerGC();
+    //Sleep(100);
+    cout << "Another gc triggering" << endl;
+    gc::triggerGC(true);
+    cout << "Main thread sleeping" << endl;
+    Sleep(2000);
     return 0;
 }

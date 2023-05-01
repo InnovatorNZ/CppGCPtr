@@ -35,14 +35,17 @@ private:
     std::mutex thread_mutex;
     std::condition_variable condition;
     std::thread* gc_thread;
-    bool stop_;
+    bool stop_, ready_;
 
-    GCWorker() : stop_(false), gc_thread(nullptr) {
+    GCWorker() : stop_(false), ready_(false), gc_thread(nullptr) {
     }
 
-    explicit GCWorker(bool concurrent) : stop_(false) {
-        if (concurrent)
+    explicit GCWorker(bool concurrent) : stop_(false), ready_(false) {
+        if (concurrent) {
             this->gc_thread = new std::thread(&GCWorker::threadLoop, this);
+        } else {
+            this->gc_thread = nullptr;
+        }
     }
 
     void mark(void* object_addr) {
@@ -73,18 +76,23 @@ private:
 
     void threadLoop() {
         while (true) {
-            std::unique_lock<std::mutex> lock(this->thread_mutex);
-            condition.wait(lock);
+            {
+                std::unique_lock<std::mutex> lock(this->thread_mutex);
+                condition.wait(lock, [this] { return ready_; });
+                ready_ = false;
+            }
             if (stop_) break;
+            std::clog << "Triggered concurrent GC" << std::endl;
             GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->beginMark();
+            GCWorker::getWorker()->printMap();
             GCUtil::stop_the_world();
             GCWorker::getWorker()->triggerSATBMark();
-            GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->beginSweep();
             GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->endGC();
             GCUtil::resume_the_world();
+            std::clog << "End of concurrent GC" << std::endl;
         }
     }
 
@@ -99,6 +107,7 @@ public:
         {
             std::unique_lock<std::mutex> lock(this->thread_mutex);
             stop_ = true;
+            ready_ = true;
         }
         condition.notify_all();
         gc_thread->join();
@@ -117,6 +126,10 @@ public:
     }
 
     void wakeUpGCThread() {
+        {
+            std::unique_lock<std::mutex> lock(this->thread_mutex);
+            ready_ = true;
+        }
         condition.notify_all();
     }
 
@@ -228,7 +241,6 @@ namespace gc {
 
     void triggerGC(bool concurrent) {
         if (concurrent) {
-            // TODO: Concurrent GC
             GCWorker::getWorker()->wakeUpGCThread();
         } else {
             triggerGC();
