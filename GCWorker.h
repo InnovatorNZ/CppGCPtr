@@ -31,6 +31,7 @@ private:
     std::shared_mutex object_map_mutex;
     std::unordered_set<GCPtrBase*> root_set;
     std::shared_mutex root_set_mutex;
+    std::vector<void*> root_ptr_snapshot;
     std::vector<void*> satb_queue;
     std::mutex satb_queue_mutex;
     std::mutex thread_mutex;
@@ -163,20 +164,20 @@ public:
         if (GCPhase::getGCPhase() == eGCPhase::NONE) {
             GCPhase::switchToNextPhase();   // concurrent mark
             auto start_time = std::chrono::high_resolution_clock::now();
-            std::vector<void*> _root_ptr_set;
+            this->root_ptr_snapshot.clear();
             {
                 std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex);
-                for (auto it : root_set) {
+                for (auto& it : root_set) {
                     void* ptr = it->getVoidPtr();
                     if (ptr != nullptr)
-                        _root_ptr_set.push_back(ptr);
+                        this->root_ptr_snapshot.push_back(ptr);
                 }
             }
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
             std::clog << "copy root_set duration: " << duration.count() << " us" << std::endl;
 
-            for (void* ptr : _root_ptr_set) {
+            for (void* ptr : this->root_ptr_snapshot) {
                 mark(ptr);
             }
         } else {
@@ -187,7 +188,7 @@ public:
     void triggerSATBMark() {
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
             GCPhase::switchToNextPhase();   // remark
-            for (auto object_addr: satb_queue) {
+            for (auto object_addr : satb_queue) {
                 mark(object_addr);
             }
             satb_queue.clear();
@@ -223,16 +224,16 @@ public:
     void printMap() {
         using namespace std;
         cout << "Object map: {" << endl;
-        for (auto& it: object_map) {
+        for (auto& it : object_map) {
             cout << "\t";
             cout << it.first << ": " << MarkStateUtil::toString(it.second.markState) <<
-                 ", size=" << it.second.objectSize;
+                ", size=" << it.second.objectSize;
             cout << ";" << endl;
         }
         cout << "}" << endl;
-        cout << "Root set: { ";
-        for (auto it: root_set) {
-            cout << it->getVoidPtr() << " ";
+        cout << "Rootset (snapshot): { ";
+        for (auto ptr : root_ptr_snapshot) {
+            cout << ptr << " ";
         }
         cout << "}" << endl;
     }
