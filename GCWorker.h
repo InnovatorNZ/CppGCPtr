@@ -162,6 +162,7 @@ public:
     void beginMark() {
         if (GCPhase::getGCPhase() == eGCPhase::NONE) {
             GCPhase::switchToNextPhase();   // concurrent mark
+            auto start_time = std::chrono::high_resolution_clock::now();
             std::vector<void*> _root_ptr_set;
             {
                 std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex);
@@ -171,6 +172,10 @@ public:
                         _root_ptr_set.push_back(ptr);
                 }
             }
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+            std::clog << "copy root_set duration: " << duration.count() << " us" << std::endl;
+
             for (void* ptr : _root_ptr_set) {
                 mark(ptr);
             }
