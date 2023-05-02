@@ -50,7 +50,6 @@ void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
     }
 }
 
-
 void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
     for (const DWORD& threadID: suspendedThreadIDs) {
         HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, threadID);

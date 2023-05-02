@@ -8,7 +8,7 @@ eGCPhase GCPhase::getGCPhase() {
     return gcPhase;
 }
 
-void GCPhase::switchToNextPhase() {
+void GCPhase::SwitchToNextPhase() {
     switch (gcPhase) {
         case eGCPhase::NONE:
             gcPhase = eGCPhase::CONCURRENT_MARK;
@@ -58,11 +58,11 @@ bool GCPhase::duringGC() {
     return gcPhase != eGCPhase::NONE;
 }
 
-void GCPhase::enterAllocating() {
+void GCPhase::EnterAllocating() {
     allocating_count++;
 }
 
-void GCPhase::leaveAllocating() {
+void GCPhase::LeaveAllocating() {
     allocating_count--;
 }
 

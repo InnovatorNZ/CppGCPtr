@@ -18,15 +18,15 @@ public:
 
     static MarkState getCurrentMarkState();
 
-    static void switchToNextPhase();
+    static void SwitchToNextPhase();
 
     static bool needSweep(MarkState markState);
 
     static bool duringGC();
 
-    static void enterAllocating();
+    static void EnterAllocating();
 
-    static void leaveAllocating();
+    static void LeaveAllocating();
 
     static bool notAllocating();
 };

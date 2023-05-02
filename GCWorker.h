@@ -162,7 +162,7 @@ public:
 
     void beginMark() {
         if (GCPhase::getGCPhase() == eGCPhase::NONE) {
-            GCPhase::switchToNextPhase();   // concurrent mark
+            GCPhase::SwitchToNextPhase();   // concurrent mark
             auto start_time = std::chrono::high_resolution_clock::now();
             this->root_ptr_snapshot.clear();
             {
@@ -187,7 +187,7 @@ public:
 
     void triggerSATBMark() {
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
-            GCPhase::switchToNextPhase();   // remark
+            GCPhase::SwitchToNextPhase();   // remark
             for (auto object_addr : satb_queue) {
                 mark(object_addr);
             }
@@ -199,7 +199,7 @@ public:
 
     void beginSweep() {
         if (GCPhase::getGCPhase() == eGCPhase::REMARK) {
-            GCPhase::switchToNextPhase();
+            GCPhase::SwitchToNextPhase();
             for (auto it = object_map.begin(); it != object_map.end();) {
                 if (GCPhase::needSweep(it->second.markState)) {
                     free(it->first);
@@ -215,7 +215,7 @@ public:
 
     void endGC() {
         if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
-            GCPhase::switchToNextPhase();
+            GCPhase::SwitchToNextPhase();
         } else {
             std::clog << "Not started GC, or not finished sweeping yet" << std::endl;
         }
