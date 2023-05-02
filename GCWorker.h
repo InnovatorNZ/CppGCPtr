@@ -79,7 +79,7 @@ private:
         while (true) {
             {
                 std::unique_lock<std::mutex> lock(this->thread_mutex);
-                condition.wait(lock, [this] { return ready_; });
+                //condition.wait(lock, [this] { return ready_; });
                 ready_ = false;
             }
             if (stop_) break;
@@ -162,9 +162,17 @@ public:
     void beginMark() {
         if (GCPhase::getGCPhase() == eGCPhase::NONE) {
             GCPhase::switchToNextPhase();   // concurrent mark
-            for (auto it: root_set) {
-                if (it->getVoidPtr() != nullptr)
-                    mark(it->getVoidPtr());
+            std::vector<void*> _root_ptr_set;
+            {
+                std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex);
+                for (auto it : root_set) {
+                    void* ptr = it->getVoidPtr();
+                    if (ptr != nullptr)
+                        _root_ptr_set.push_back(ptr);
+                }
+            }
+            for (void* ptr : _root_ptr_set) {
+                mark(ptr);
             }
         } else {
             std::clog << "Already in concurrent marking phase or in other invalid phase" << std::endl;
