@@ -13,7 +13,7 @@ bool GCUtil::is_stack_pointer(void* ptr) {
 #endif
 }
 
-void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
+bool GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (hSnapshot) {
         THREADENTRY32 threadEntry;
@@ -26,6 +26,7 @@ void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
                         if (hThread) {
                             DWORD dwExitCode = 0;
                             if (GetExitCodeThread(hThread, &dwExitCode) && dwExitCode == STILL_ACTIVE) {
+                                if (!GCPhase::notAllocating()) return false;
                                 DWORD status = SuspendThread(hThread);
                                 if (status != -1) {
                                     std::clog << "Thread 0x" << std::hex << threadEntry.th32ThreadID << " suspended" << std::endl;
@@ -34,9 +35,9 @@ void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
                                     LPVOID lpMsgBuf;
                                     DWORD dw = GetLastError();
                                     FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-                                                  dw, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPTSTR) &lpMsgBuf, 0, NULL);
+                                        dw, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPTSTR)&lpMsgBuf, 0, NULL);
                                     printf("Error: Thread ID: 0x%x suspend failure, error message: %ws", threadEntry.th32ThreadID,
-                                           (LPCTSTR) lpMsgBuf);
+                                        (LPCTSTR)lpMsgBuf);
                                 }
                             }
                             CloseHandle(hThread);
@@ -47,7 +48,8 @@ void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
             } while (Thread32Next(hSnapshot, &threadEntry));
         }
         CloseHandle(hSnapshot);
-    }
+        return true;
+    } else return false;
 }
 
 void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
@@ -69,11 +71,10 @@ void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
 }
 
 void GCUtil::stop_the_world() {
-    while (!GCPhase::notAllocating()) {
+    while (!(GCPhase::notAllocating() && GCUtil::suspend_user_threads(GCUtil::_suspendedThreadIDs))) {
         std::clog << "Allocating object, waiting..." << std::endl;
         Sleep(1);
     }
-    GCUtil::suspend_user_threads(GCUtil::_suspendedThreadIDs);
 }
 
 void GCUtil::resume_the_world() {

@@ -57,15 +57,3 @@ std::string GCPhase::getGCPhaseString() {
 bool GCPhase::duringGC() {
     return gcPhase != eGCPhase::NONE;
 }
-
-void GCPhase::EnterAllocating() {
-    allocating_count++;
-}
-
-void GCPhase::LeaveAllocating() {
-    allocating_count--;
-}
-
-bool GCPhase::notAllocating() {
-    return allocating_count == 0;
-}

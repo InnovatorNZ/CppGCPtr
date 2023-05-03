@@ -80,19 +80,24 @@ private:
         while (true) {
             {
                 std::unique_lock<std::mutex> lock(this->thread_mutex);
-                //condition.wait(lock, [this] { return ready_; });
+                //condition.wait(lock, [this] { return ready_; });  //TODO: 仅限调试期间注释本行
                 ready_ = false;
             }
             if (stop_) break;
             std::clog << "Triggered concurrent GC" << std::endl;
-            GCWorker::getWorker()->printMap();
+            //GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->beginMark();
-            GCWorker::getWorker()->printMap();
+            //GCWorker::getWorker()->printMap();
             GCUtil::stop_the_world();
+            auto start_time = std::chrono::high_resolution_clock::now();
             GCWorker::getWorker()->triggerSATBMark();
+            //GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->beginSweep();
-            GCWorker::getWorker()->printMap();
+            //GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->endGC();
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+            std::clog << "Stop-the-world duration: " << std::dec << duration.count() << " us" << std::endl;
             GCUtil::resume_the_world();
             std::clog << "End of concurrent GC" << std::endl;
         }
@@ -155,7 +160,7 @@ public:
     }
 
     void addSATB(void* object_addr) {
-        std::clog << "Adding SATB: " << object_addr << std::endl;
+        //std::clog << "Adding SATB: " << object_addr << std::endl;
         std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
         satb_queue.push_back(object_addr);
     }

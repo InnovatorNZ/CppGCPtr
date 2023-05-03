@@ -59,7 +59,7 @@ class GCUtil {
 private:
     static std::vector<DWORD> _suspendedThreadIDs;
 
-    static void suspend_user_threads(std::vector<DWORD>&);
+    static bool suspend_user_threads(std::vector<DWORD>&);
 
     static void resume_user_threads(const std::vector<DWORD>&);
 

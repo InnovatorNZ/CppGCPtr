@@ -24,11 +24,17 @@ public:
 
     static bool duringGC();
 
-    static void EnterAllocating();
+    static inline void EnterAllocating() {
+        ++allocating_count;
+    }
 
-    static void LeaveAllocating();
+    static inline void LeaveAllocating() {
+        --allocating_count;
+    }
 
-    static bool notAllocating();
+    static inline bool notAllocating() {
+        return allocating_count == 0;
+    }
 };
 
 
