@@ -4,7 +4,7 @@
 #include <vector>
 #include <Windows.h>
 #include <TlHelp32.h>
-#include "SpinReadWriteLock.h"
+#include "IReadWriteLock.h"
 
 #if 0
 
@@ -64,9 +64,9 @@ private:
     static void resume_user_threads(const std::vector<DWORD>&);
 
 public:
-    static void stop_the_world(SpinReadWriteLock&);
+    static void stop_the_world(IReadWriteLock*);
 
-    static void resume_the_world(SpinReadWriteLock&);
+    static void resume_the_world(IReadWriteLock*);
 
     static bool is_stack_pointer(void* ptr);
 };

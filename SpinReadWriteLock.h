@@ -2,20 +2,15 @@
 
 #include <atomic>
 #include <thread>
+#include "IReadWriteLock.h"
 
-class SpinReadWriteLock {
+class SpinReadWriteLock : public IReadWriteLock {
 private:
     std::atomic<int> lock_state;        // =0 unlocked, >0 reader locked, -1 writer locked
 public:
     SpinReadWriteLock() : lock_state(0) {}
 
-    SpinReadWriteLock(const SpinReadWriteLock&) = delete;
-
-    SpinReadWriteLock(SpinReadWriteLock&&) = delete;
-
-    SpinReadWriteLock& operator=(const SpinReadWriteLock&) = delete;
-
-    void lockRead() {
+    void lockRead() override {
         while (true) {
             int c_read_cnt = lock_state;
             if (c_read_cnt < 0)         // Spin until there are no active writers
@@ -27,7 +22,7 @@ public:
         }
     }
 
-    void unlockRead() {
+    void unlockRead() override {
         while (true) {
             int c_read_cnt = lock_state;
             if (c_read_cnt <= 0) return;
@@ -36,7 +31,7 @@ public:
         }
     }
 
-    void lockWrite(bool yield) {
+    void lockWrite(bool yield) override {
         while (true) {
             int c_lock_state = lock_state;
             if (c_lock_state != 0) {        // Spin until there are no active readers and writers
@@ -50,7 +45,11 @@ public:
         }
     }
 
-    void unlockWrite() {
+    void lockWrite() override {
+        lockWrite(false);
+    }
+
+    void unlockWrite() override {
         while (true) {
             int c_lock_state = lock_state;
             if (c_lock_state >= 0) return;

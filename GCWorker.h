@@ -81,15 +81,15 @@ private:
         while (true) {
             {
                 std::unique_lock<std::mutex> lock(this->thread_mutex);
-                //condition.wait(lock, [this] { return ready_; });  //TODO: 仅限调试期间注释本行
+                condition.wait(lock, [this] { return ready_; });  //TODO: 仅限调试期间注释本行
                 ready_ = false;
             }
             if (stop_) break;
-            std::clog << "Triggered concurrent GC" << std::endl;
+            //std::clog << "Triggered concurrent GC" << std::endl;
             //GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->beginMark();
             //GCWorker::getWorker()->printMap();
-            GCUtil::stop_the_world(GCPhase::stwLock);
+            GCUtil::stop_the_world(GCPhase::stwLock.get());
             auto start_time = std::chrono::high_resolution_clock::now();
             GCWorker::getWorker()->triggerSATBMark();
             //GCWorker::getWorker()->printMap();
@@ -99,8 +99,8 @@ private:
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
             std::clog << "Stop-the-world duration: " << std::dec << duration.count() << " us" << std::endl;
-            GCUtil::resume_the_world(GCPhase::stwLock);
-            std::clog << "End of concurrent GC" << std::endl;
+            GCUtil::resume_the_world(GCPhase::stwLock.get());
+            //std::clog << "End of concurrent GC" << std::endl;
         }
     }
 
@@ -181,7 +181,7 @@ public:
             }
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-            std::clog << "copy root_set duration: " << duration.count() << " us" << std::endl;
+            std::clog << "copy root_set duration: " << std::dec << duration.count() << " us" << std::endl;
 
             for (void* ptr : this->root_ptr_snapshot) {
                 mark(ptr);
@@ -233,7 +233,7 @@ public:
         for (auto& it : object_map) {
             cout << "\t";
             cout << it.first << ": " << MarkStateUtil::toString(it.second.markState) <<
-                ", size=" << it.second.objectSize;
+                 ", size=" << it.second.objectSize;
             cout << ";" << endl;
         }
         cout << "}" << endl;

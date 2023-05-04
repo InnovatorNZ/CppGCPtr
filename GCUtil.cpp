@@ -28,15 +28,15 @@ void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
                             if (GetExitCodeThread(hThread, &dwExitCode) && dwExitCode == STILL_ACTIVE) {
                                 DWORD status = SuspendThread(hThread);
                                 if (status != -1) {
-                                    std::clog << "Thread 0x" << std::hex << threadEntry.th32ThreadID << " suspended" << std::endl;
+                                    //std::clog << "Thread 0x" << std::hex << threadEntry.th32ThreadID << " suspended" << std::endl;
                                     suspendedThreadIDs.push_back(threadEntry.th32ThreadID);
                                 } else {
                                     LPVOID lpMsgBuf;
                                     DWORD dw = GetLastError();
                                     FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-                                        dw, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPTSTR)&lpMsgBuf, 0, NULL);
+                                                  dw, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPTSTR) &lpMsgBuf, 0, NULL);
                                     printf("Error: Thread ID: 0x%x suspend failure, error message: %ws", threadEntry.th32ThreadID,
-                                        (LPCTSTR)lpMsgBuf);
+                                           (LPCTSTR) lpMsgBuf);
                                 }
                             }
                             CloseHandle(hThread);
@@ -56,7 +56,7 @@ void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
         if (hThread) {
             DWORD status = ResumeThread(hThread);
             if (status != -1) {
-                std::clog << "Thread 0x" << std::hex << threadID << " resumed" << std::endl;
+                //std::clog << "Thread 0x" << std::hex << threadID << " resumed" << std::endl;
             } else {
                 LPVOID lpMsgBuf;
                 DWORD dw = GetLastError();
@@ -69,13 +69,13 @@ void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
     }
 }
 
-void GCUtil::stop_the_world(SpinReadWriteLock& stwLock) {
-    stwLock.lockWrite(true);
+void GCUtil::stop_the_world(IReadWriteLock* stwLock) {
+    stwLock->lockWrite(true);
     GCUtil::suspend_user_threads(_suspendedThreadIDs);
 }
 
-void GCUtil::resume_the_world(SpinReadWriteLock& stwLock) {
-    stwLock.unlockWrite();
+void GCUtil::resume_the_world(IReadWriteLock* stwLock) {
+    stwLock->unlockWrite();
     GCUtil::resume_user_threads(_suspendedThreadIDs);
     _suspendedThreadIDs.clear();
 }

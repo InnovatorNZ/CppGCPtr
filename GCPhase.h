@@ -4,15 +4,19 @@
 #include <iostream>
 #include <string>
 #include <atomic>
+#include <memory>
 #include "PhaseEnum.h"
 #include "SpinReadWriteLock.h"
+#include "MutexReadWriteLock.h"
+
+//#define USE_SPINLOCK
 
 class GCPhase {
 private:
     static eGCPhase gcPhase;
     static MarkState currentMarkState;
 public:
-    static SpinReadWriteLock stwLock;
+    static std::shared_ptr<IReadWriteLock> stwLock;
 
     static eGCPhase getGCPhase();
 
@@ -27,11 +31,11 @@ public:
     static bool duringGC();
 
     static inline void EnterAllocating() {
-        stwLock.lockRead();
+        stwLock->lockRead();
     }
 
     static inline void LeaveAllocating() {
-        stwLock.unlockRead();
+        stwLock->unlockRead();
     }
 };
 
