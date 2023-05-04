@@ -2,7 +2,7 @@
 
 eGCPhase GCPhase::gcPhase = eGCPhase::NONE;
 MarkState GCPhase::currentMarkState = MarkState::REMAPPED;
-SpinReadWriteLock<true, true> GCPhase::stwLock;
+SpinReadWriteLock GCPhase::stwLock;
 
 eGCPhase GCPhase::getGCPhase() {
     return gcPhase;

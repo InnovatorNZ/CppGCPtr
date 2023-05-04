@@ -64,9 +64,9 @@ private:
     static void resume_user_threads(const std::vector<DWORD>&);
 
 public:
-    static void stop_the_world(SpinReadWriteLock<true, true>&);
+    static void stop_the_world(SpinReadWriteLock&);
 
-    static void resume_the_world(SpinReadWriteLock<true, true>&);
+    static void resume_the_world(SpinReadWriteLock&);
 
     static bool is_stack_pointer(void* ptr);
 };

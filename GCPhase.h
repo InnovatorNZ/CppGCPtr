@@ -12,7 +12,7 @@ private:
     static eGCPhase gcPhase;
     static MarkState currentMarkState;
 public:
-    static SpinReadWriteLock<true, true> stwLock;
+    static SpinReadWriteLock stwLock;
 
     static eGCPhase getGCPhase();
 

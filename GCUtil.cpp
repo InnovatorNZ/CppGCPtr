@@ -69,12 +69,12 @@ void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
     }
 }
 
-void GCUtil::stop_the_world(SpinReadWriteLock<true, true>& stwLock) {
-    stwLock.lockWrite();
+void GCUtil::stop_the_world(SpinReadWriteLock& stwLock) {
+    stwLock.lockWrite(true);
     GCUtil::suspend_user_threads(_suspendedThreadIDs);
 }
 
-void GCUtil::resume_the_world(SpinReadWriteLock<true, true>& stwLock) {
+void GCUtil::resume_the_world(SpinReadWriteLock& stwLock) {
     stwLock.unlockWrite();
     GCUtil::resume_user_threads(_suspendedThreadIDs);
     _suspendedThreadIDs.clear();
