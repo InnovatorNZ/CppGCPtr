@@ -11,8 +11,9 @@ class GCPhase {
 private:
     static eGCPhase gcPhase;
     static MarkState currentMarkState;
-    static std::atomic<int> allocating_count;
 public:
+    static SpinReadWriteLock<true, true> stwLock;
+
     static eGCPhase getGCPhase();
 
     static std::string getGCPhaseString();
@@ -26,15 +27,11 @@ public:
     static bool duringGC();
 
     static inline void EnterAllocating() {
-        ++allocating_count;
+        stwLock.lockRead();
     }
 
     static inline void LeaveAllocating() {
-        --allocating_count;
-    }
-
-    static inline bool notAllocating() {
-        return allocating_count == 0;
+        stwLock.unlockRead();
     }
 };
 

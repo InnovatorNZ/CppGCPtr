@@ -4,7 +4,7 @@
 #include <vector>
 #include <Windows.h>
 #include <TlHelp32.h>
-#include "GCPhase.h"
+#include "SpinReadWriteLock.h"
 
 #if 0
 
@@ -59,14 +59,14 @@ class GCUtil {
 private:
     static std::vector<DWORD> _suspendedThreadIDs;
 
-    static bool suspend_user_threads(std::vector<DWORD>&);
+    static void suspend_user_threads(std::vector<DWORD>&);
 
     static void resume_user_threads(const std::vector<DWORD>&);
 
 public:
-    static void stop_the_world();
+    static void stop_the_world(SpinReadWriteLock<true, true>&);
 
-    static void resume_the_world();
+    static void resume_the_world(SpinReadWriteLock<true, true>&);
 
     static bool is_stack_pointer(void* ptr);
 };

@@ -2,7 +2,7 @@
 
 eGCPhase GCPhase::gcPhase = eGCPhase::NONE;
 MarkState GCPhase::currentMarkState = MarkState::REMAPPED;
-std::atomic<int> GCPhase::allocating_count = 0;
+SpinReadWriteLock<true, true> GCPhase::stwLock;
 
 eGCPhase GCPhase::getGCPhase() {
     return gcPhase;

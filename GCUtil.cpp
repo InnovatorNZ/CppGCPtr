@@ -13,7 +13,7 @@ bool GCUtil::is_stack_pointer(void* ptr) {
 #endif
 }
 
-bool GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
+void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (hSnapshot) {
         THREADENTRY32 threadEntry;
@@ -26,16 +26,8 @@ bool GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
                         if (hThread) {
                             DWORD dwExitCode = 0;
                             if (GetExitCodeThread(hThread, &dwExitCode) && dwExitCode == STILL_ACTIVE) {
-                                if (!GCPhase::notAllocating()) {
-                                    CloseHandle(hThread);
-                                    CloseHandle(hSnapshot);
-                                    return false;
-                                }
                                 DWORD status = SuspendThread(hThread);
                                 if (status != -1) {
-                                    if (!GCPhase::notAllocating()) {
-                                        std::clog<<"?????"
-                                    }
                                     std::clog << "Thread 0x" << std::hex << threadEntry.th32ThreadID << " suspended" << std::endl;
                                     suspendedThreadIDs.push_back(threadEntry.th32ThreadID);
                                 } else {
@@ -55,8 +47,7 @@ bool GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
             } while (Thread32Next(hSnapshot, &threadEntry));
         }
         CloseHandle(hSnapshot);
-        return true;
-    } else return false;
+    }
 }
 
 void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
@@ -78,14 +69,13 @@ void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
     }
 }
 
-void GCUtil::stop_the_world() {
-    while (!(GCPhase::notAllocating() && GCUtil::suspend_user_threads(GCUtil::_suspendedThreadIDs))) {
-        std::clog << "Allocating object, waiting..." << std::endl;
-        Sleep(1);
-    }
+void GCUtil::stop_the_world(SpinReadWriteLock<true, true>& stwLock) {
+    stwLock.lockWrite();
+    GCUtil::suspend_user_threads(_suspendedThreadIDs);
 }
 
-void GCUtil::resume_the_world() {
-    GCUtil::resume_user_threads(GCUtil::_suspendedThreadIDs);
-    GCUtil::_suspendedThreadIDs.clear();
+void GCUtil::resume_the_world(SpinReadWriteLock<true, true>& stwLock) {
+    stwLock.unlockWrite();
+    GCUtil::resume_user_threads(_suspendedThreadIDs);
+    _suspendedThreadIDs.clear();
 }
