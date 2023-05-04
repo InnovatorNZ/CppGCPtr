@@ -26,9 +26,16 @@ bool GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
                         if (hThread) {
                             DWORD dwExitCode = 0;
                             if (GetExitCodeThread(hThread, &dwExitCode) && dwExitCode == STILL_ACTIVE) {
-                                if (!GCPhase::notAllocating()) return false;
+                                if (!GCPhase::notAllocating()) {
+                                    CloseHandle(hThread);
+                                    CloseHandle(hSnapshot);
+                                    return false;
+                                }
                                 DWORD status = SuspendThread(hThread);
                                 if (status != -1) {
+                                    if (!GCPhase::notAllocating()) {
+                                        std::clog<<"?????"
+                                    }
                                     std::clog << "Thread 0x" << std::hex << threadEntry.th32ThreadID << " suspended" << std::endl;
                                     suspendedThreadIDs.push_back(threadEntry.th32ThreadID);
                                 } else {
@@ -66,6 +73,7 @@ void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
                               dw, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPTSTR) &lpMsgBuf, 0, NULL);
                 printf("Error: Thread ID: 0x%x resume failure, error message: %ws", threadID, (LPCTSTR) lpMsgBuf);
             }
+            CloseHandle(hThread);
         }
     }
 }

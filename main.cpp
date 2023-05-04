@@ -93,7 +93,7 @@ int main() {
         // cout << "Another gc triggering" << endl;
         // gc::triggerGC(true);
         // cout << "Main thread sleeping" << endl;
-        Sleep(500);
+        Sleep(100);
     }
     return 0;
 }

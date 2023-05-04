@@ -77,6 +77,7 @@ private:
     }
 
     void threadLoop() {
+        Sleep(100);
         while (true) {
             {
                 std::unique_lock<std::mutex> lock(this->thread_mutex);

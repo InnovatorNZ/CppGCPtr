@@ -5,6 +5,7 @@
 #include <string>
 #include <atomic>
 #include "PhaseEnum.h"
+#include "SpinReadWriteLock.h"
 
 class GCPhase {
 private:
