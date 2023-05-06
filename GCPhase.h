@@ -30,11 +30,11 @@ public:
 
     static bool duringGC();
 
-    static inline void EnterAllocating() {
+    static inline void EnterCriticalSection() {
         stwLock->lockRead();
     }
 
-    static inline void LeaveAllocating() {
+    static inline void LeaveCriticalSection() {
         stwLock->unlockRead();
     }
 };

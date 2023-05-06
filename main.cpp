@@ -7,11 +7,11 @@ class MyObject {
 public:
     int a;
     double b;
-    std::string c;
     GCPtr<MyObject> d;
     double f;
     GCPtr<MyObject> e;
     int h;
+    double l[512];
 
     MyObject() : a(0), b(0), h(0), f(0) {
     }
@@ -32,15 +32,19 @@ private:
 GCPtr<MyObject> obj3;
 
 int main() {
-    #define TRIGGER_GC
+    #define TRIGGER_GC 1
     using namespace std;
     cout << "Size of MyObject: " << sizeof(MyObject) << endl;
     cout << "Ready to start..." << endl;
     const int n = 25;
     long long time_ = 0;
-    Sleep(1000);
+    Sleep(500);
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::high_resolution_clock::now();
+#if TRIGGER_GC
+        gc::triggerGC(true);
+        //Sleep(1000);
+#endif
         GCPtr<MyObject> obj2;
         {
             GCPtr<MyObject> obj1 = gc::make_root<MyObject>();
@@ -58,19 +62,16 @@ int main() {
             //obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
             obj2->setG(gc::make_gc<MyObject>());
         }
-        // cout << &obj1 << " " << &obj2 << " " << &obj3 << " " << &obj3->d << " " <<
-        //     &obj3->e << " " << &obj3->d->d << endl;
-        // cout << obj3->e->f << endl;
-#ifdef TRIGGER_GC
+#if 0
+        cout << &obj1 << " " << &obj2 << " " << &obj3 << " " << &obj3->d << " " <<
+            &obj3->e << " " << &obj3->d->d << endl;
+        cout << obj3->e->f << endl;
+#endif
+
+        obj3->e->f = 114.514;
+#if TRIGGER_GC
         gc::triggerGC(true);
 #endif
-        obj3->e->f = 114.514;
-        // GCPhase::EnterAllocating();     // 这纯粹是为了防止cout死锁。。
-        // cout << obj3->e->f << endl;
-        // GCPhase::LeaveAllocating();
-        // std::shared_ptr<MyObject> ptr = std::make_shared<MyObject>();
-        // ptr->get(); ptr.get()->a;
-
         GCPtr<MyObject> obj5 = gc::make_root<MyObject>();
         {
             GCPtr<MyObject> obj4 = gc::make_root<MyObject>();
@@ -80,8 +81,10 @@ int main() {
         double _f = obj3->e->f;
         obj3 = nullptr;
         obj2 = nullptr;
-        // cout << (obj3 == nullptr) << " " << (obj2 == nullptr) << endl;
-        // gc::triggerGC();
+#if TRIGGER_GC && TEST_RWLOCK
+        cout << (obj3 == nullptr) << " " << (obj2 == nullptr) << endl;
+        gc::triggerGC(true);        //测试读写锁用
+#endif
         GCPtr<MyObject> obj6 = gc::make_root<MyObject>();
         GCPtr<MyObject> obj7 = gc::make_root<MyObject>();
         {
@@ -102,14 +105,14 @@ int main() {
             temp_obj->f = 711.53;
             temp_obj->addH();
         }
-        // Sleep(100);
-        // cout << "Another gc triggering" << endl;
-        // cout << "Main thread sleeping" << endl;
+
         auto end_time = chrono::high_resolution_clock::now();
         long long duration = chrono::duration_cast<chrono::microseconds>(end_time - start_time).count();
         cout << "User thread duration: " << duration << " us" << endl;
         time_ += duration;
-#ifdef TRIGGER_GC
+#if 0
+        cout << "Another gc triggering" << endl;
+        cout << "Main thread sleeping" << endl;
         gc::triggerGC(true);
 #endif
         Sleep(100);

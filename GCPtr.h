@@ -17,20 +17,20 @@ public:
     }
 
     explicit GCPtr(T* obj) : is_root(false) {
-        GCPhase::EnterAllocating();
+        GCPhase::EnterCriticalSection();
         this->obj = obj;
         GCWorker::getWorker()->addObject(obj, sizeof(*obj));
-        GCPhase::LeaveAllocating();
+        GCPhase::LeaveCriticalSection();
     }
 
     GCPtr(T* obj, bool is_root) : is_root(is_root) {
-        GCPhase::EnterAllocating();
+        GCPhase::EnterCriticalSection();
         this->obj = obj;
         GCWorker::getWorker()->addObject(obj, sizeof(*obj));
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
-        GCPhase::LeaveAllocating();
+        GCPhase::LeaveCriticalSection();
     }
 
     T* get() const {
@@ -47,7 +47,7 @@ public:
 
     GCPtr<T>& operator=(const GCPtr<T>& other) {
         if (this != &other) {
-            GCPhase::EnterAllocating();
+            GCPhase::EnterCriticalSection();
             if (this->obj != nullptr && this->obj != other.obj && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
                 GCWorker::getWorker()->addSATB(this->obj);
             }
@@ -58,18 +58,18 @@ public:
             if (is_root) {
                 GCWorker::getWorker()->addRoot(this);
             }
-            GCPhase::LeaveAllocating();
+            GCPhase::LeaveCriticalSection();
         }
         return *this;
     }
 
     GCPtr& operator=(std::nullptr_t) {
-        GCPhase::EnterAllocating();
+        GCPhase::EnterCriticalSection();
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK && this->obj != nullptr) {
             GCWorker::getWorker()->addSATB(this->obj);
         }
         this->obj = nullptr;
-        GCPhase::LeaveAllocating();
+        GCPhase::LeaveCriticalSection();
         return *this;
     }
 
@@ -82,71 +82,63 @@ public:
     }
 
     GCPtr(const GCPtr& other) {
-        GCPhase::EnterAllocating();
+        GCPhase::EnterCriticalSection();
         std::clog << "Copy constructor: " << this << std::endl;
         this->obj = other.obj;
         this->is_root = other.is_root;
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
-        GCPhase::LeaveAllocating();
+        GCPhase::LeaveCriticalSection();
     }
 
     GCPtr(GCPtr&& other) {
-        GCPhase::EnterAllocating();
+        GCPhase::EnterCriticalSection();
         std::clog << "Move constructor: " << this << std::endl;
         this->obj = other.obj;
         this->is_root = other.is_root;
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
-        GCPhase::LeaveAllocating();
+        GCPhase::LeaveCriticalSection();
     }
 
     ~GCPtr() override {
-        GCPhase::EnterAllocating();
+        GCPhase::EnterCriticalSection();
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK && this->obj != nullptr) {
             GCWorker::getWorker()->addSATB(this->obj);
         }
         if (is_root) {
             GCWorker::getWorker()->removeRoot(this);
         }
-        GCPhase::LeaveAllocating();
+        GCPhase::LeaveCriticalSection();
     }
 };
 
 namespace gc {
     template<typename T>
     GCPtr <T> make_gc(T* obj) {
-        GCPhase::EnterAllocating();
         GCPtr<T> ret(obj);
-        GCPhase::LeaveAllocating();
         return ret;
     }
 
     template<typename T>
     GCPtr <T> make_root(T* obj) {
-        GCPhase::EnterAllocating();
         GCPtr<T> ret(obj, true);
-        GCPhase::LeaveAllocating();
         return ret;
     }
 
     template<typename T>
     GCPtr <T> make_gc() {
-        GCPhase::EnterAllocating();
         T* obj = new T();
         GCPtr<T> ret(obj);
-        GCPhase::LeaveAllocating();
         return ret;
     }
 
     template<typename T>
     GCPtr <T> make_root() {
-        GCPhase::EnterAllocating();
         T* obj = new T();
         GCPtr<T> ret(obj, true);
-        GCPhase::LeaveAllocating();
         return ret;
     }
 
