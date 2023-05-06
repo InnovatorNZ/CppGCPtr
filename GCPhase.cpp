@@ -3,9 +3,9 @@
 eGCPhase GCPhase::gcPhase = eGCPhase::NONE;
 MarkState GCPhase::currentMarkState = MarkState::REMAPPED;
 #ifdef USE_SPINLOCK
-std::shared_ptr<IReadWriteLock> GCPhase::stwLock = std::make_shared<SpinReadWriteLock>();
+IReadWriteLock* GCPhase::stwLock = new SpinReadWriteLock();
 #else
-std::shared_ptr<IReadWriteLock> GCPhase::stwLock = std::make_shared<MutexReadWriteLock>();
+IReadWriteLock* GCPhase::stwLock = new MutexReadWriteLock();
 #endif
 
 eGCPhase GCPhase::getGCPhase() {

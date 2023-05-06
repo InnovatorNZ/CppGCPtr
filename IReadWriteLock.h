@@ -10,8 +10,6 @@ public:
 
     IReadWriteLock& operator=(const IReadWriteLock&) = delete;
 
-    virtual ~IReadWriteLock() = default;
-
     virtual void lockRead() = 0;
 
     virtual void unlockRead() = 0;

@@ -89,7 +89,7 @@ private:
             //GCWorker::getWorker()->printMap();
             GCWorker::getWorker()->beginMark();
             //GCWorker::getWorker()->printMap();
-            GCUtil::stop_the_world(GCPhase::stwLock.get());
+            GCUtil::stop_the_world(GCPhase::getSTWLock());
             auto start_time = std::chrono::high_resolution_clock::now();
             GCWorker::getWorker()->triggerSATBMark();
             //GCWorker::getWorker()->printMap();
@@ -99,7 +99,7 @@ private:
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
             std::clog << "Stop-the-world duration: " << std::dec << duration.count() << " us" << std::endl;
-            GCUtil::resume_the_world(GCPhase::stwLock.get());
+            GCUtil::resume_the_world(GCPhase::getSTWLock());
             //std::clog << "End of concurrent GC" << std::endl;
         }
     }

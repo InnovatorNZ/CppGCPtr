@@ -15,9 +15,8 @@ class GCPhase {
 private:
     static eGCPhase gcPhase;
     static MarkState currentMarkState;
+    static IReadWriteLock* stwLock;
 public:
-    static std::shared_ptr<IReadWriteLock> stwLock;
-
     static eGCPhase getGCPhase();
 
     static std::string getGCPhaseString();
@@ -30,12 +29,16 @@ public:
 
     static bool duringGC();
 
-    static inline void EnterCriticalSection() {
+    static void EnterCriticalSection() {
         stwLock->lockRead();
     }
 
-    static inline void LeaveCriticalSection() {
+    static void LeaveCriticalSection() {
         stwLock->unlockRead();
+    }
+
+    static IReadWriteLock* getSTWLock() {
+        return stwLock;
     }
 };
 
