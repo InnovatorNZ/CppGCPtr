@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include "GCPtr.h"
+#include "GCMemoryManager.h"
 
 class MyObject {
 public:
