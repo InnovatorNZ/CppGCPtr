@@ -3,7 +3,7 @@
 GCRegion::GCRegion() : frag_size(0), c_offset(0) {
 }
 
-GCRegion::GCRegion(int id, short kind, void* startAddress, size_t total_size) :
+GCRegion::GCRegion(int id, RegionEnum kind, void* startAddress, size_t total_size) :
         id(id), kind(kind), startAddress(startAddress), total_size(total_size), frag_size(0), c_offset(0) {
 }
 

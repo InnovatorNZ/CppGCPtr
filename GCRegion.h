@@ -18,7 +18,7 @@ public:
 class GCRegion {
 private:
     int id;
-    short kind;
+    RegionEnum kind;
     void* startAddress;
     size_t total_size;
     size_t c_offset;
@@ -31,7 +31,11 @@ public:
 
     GCRegion();
 
-    GCRegion(int id, short kind, void* startAddress, size_t total_size);
+    GCRegion(int id, RegionEnum kind, void* startAddress, size_t total_size);
+
+    GCRegion(const GCRegion&) = default;
+
+    GCRegion(GCRegion&&) = default;
 
     bool operator==(const GCRegion&);
 
