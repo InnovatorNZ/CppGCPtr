@@ -1,5 +1,3 @@
-#define ENABLE_CONCURRENT_MARK
-
 #include <iostream>
 #include "GCPtr.h"
 
