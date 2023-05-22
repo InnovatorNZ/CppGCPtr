@@ -3,6 +3,8 @@
 
 #include <iostream>
 #include <cstdlib>
+#include <atomic>
+#include <mutex>
 
 enum class RegionEnum {
     SMALL, MEDIUM, LARGE
@@ -18,11 +20,12 @@ public:
 class GCRegion {
 private:
     int id;
-    RegionEnum kind;
+    RegionEnum regionType;
     void* startAddress;
     size_t total_size;
-    size_t c_offset;
-    size_t frag_size;
+    std::atomic<size_t> c_offset;
+    std::atomic<size_t> frag_size;
+    std::mutex region_mtx;
 
 public:
     struct GCRegionHash {
@@ -31,23 +34,23 @@ public:
 
     GCRegion();
 
-    GCRegion(int id, RegionEnum kind, void* startAddress, size_t total_size);
+    GCRegion(int id, RegionEnum regionType, void* startAddress, size_t total_size);
 
-    GCRegion(const GCRegion&) = default;
+    GCRegion(const GCRegion&) = delete;
 
-    GCRegion(GCRegion&&) = default;
+    GCRegion(GCRegion&&);
 
-    bool operator==(const GCRegion&);
+    bool operator==(const GCRegion&) const;
 
-    size_t getTotalSize() { return total_size; }
+    size_t getTotalSize() const { return total_size; }
 
     void* allocate(size_t size);
 
     void free(void* addr, size_t size);
 
-    float getFragmentRatio();
+    float getFragmentRatio() const;
 
-    float getFreeRatio();
+    float getFreeRatio() const;
 };
 
 

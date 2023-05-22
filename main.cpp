@@ -2,7 +2,7 @@
 
 #include <iostream>
 #include "GCPtr.h"
-#include "GCMemoryManager.h"
+#include "GCMemoryAllocator.h"
 
 class MyObject {
 public:

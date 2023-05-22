@@ -3,15 +3,18 @@
 GCRegion::GCRegion() : frag_size(0), c_offset(0) {
 }
 
-GCRegion::GCRegion(int id, RegionEnum kind, void* startAddress, size_t total_size) :
-        id(id), kind(kind), startAddress(startAddress), total_size(total_size), frag_size(0), c_offset(0) {
+GCRegion::GCRegion(int id, RegionEnum regionType, void* startAddress, size_t total_size) :
+        id(id), regionType(regionType), startAddress(startAddress), total_size(total_size), frag_size(0), c_offset(0) {
 }
 
 void* GCRegion::allocate(size_t size) {
-    if (c_offset + size > total_size) return nullptr;
-    size_t p_offset = c_offset;
-    c_offset += size;
-    return reinterpret_cast<void*>(reinterpret_cast<char*>(startAddress) + p_offset);
+    if (startAddress == nullptr) return nullptr;
+    while (true) {
+        size_t p_offset = c_offset;
+        if (p_offset + size > total_size) return nullptr;
+        if (c_offset.compare_exchange_weak(p_offset, p_offset + size))
+            return reinterpret_cast<void*>(reinterpret_cast<char*>(startAddress) + p_offset);
+    }
 }
 
 void GCRegion::free(void* addr, size_t size) {
@@ -20,18 +23,31 @@ void GCRegion::free(void* addr, size_t size) {
     }
 }
 
-float GCRegion::getFragmentRatio() {
+float GCRegion::getFragmentRatio() const {
     if (c_offset == 0) return 0;
     return (float) ((double) frag_size / (double) c_offset);
 }
 
-float GCRegion::getFreeRatio() {
+float GCRegion::getFreeRatio() const {
     if (total_size == 0) return 0;
     return (float) (1.0 - (double) c_offset / (double) total_size);
 }
 
-bool GCRegion::operator==(const GCRegion& other) {
-    return this->startAddress == other.startAddress && this->kind == other.kind && this->total_size == other.total_size;
+GCRegion::GCRegion(GCRegion&& other) {
+    std::unique_lock lock(other.region_mtx);
+    this->id = other.id;
+    this->regionType = other.regionType;
+    this->startAddress = other.startAddress;
+    this->total_size = other.total_size;
+    this->c_offset.store(other.c_offset.load());
+    this->frag_size.store(other.frag_size.load());
+    other.startAddress = nullptr;
+    other.c_offset = other.total_size;
+}
+
+bool GCRegion::operator==(const GCRegion& other) const {
+    return this->startAddress == other.startAddress && this->regionType == other.regionType
+           && this->total_size == other.total_size;
 }
 
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {
