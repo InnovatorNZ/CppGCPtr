@@ -17,12 +17,13 @@ private:
     const size_t MEDIUM_REGION_OBJECT_THRESHOLD = 1 * 1024 * 1024;
     const size_t MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
     const size_t INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
-    //GCMemoryManager memoryManager;
-    int poolCount;
+    // GCMemoryManager memoryManager;
+    bool enableInternalMemoryManager;
+    unsigned int poolCount;
     std::vector<GCMemoryManager> memoryPools;
-    //    std::unordered_set<GCRegion, GCRegion::GCRegionHash> smallRegionSet;
-    //    std::unordered_set<GCRegion, GCRegion::GCRegionHash> mediumRegionSet;
-    //    std::unordered_set<GCRegion, GCRegion::GCRegionHash> largeRegionSet;
+    // std::unordered_set<GCRegion, GCRegion::GCRegionHash> smallRegionSet;
+    // std::unordered_set<GCRegion, GCRegion::GCRegionHash> mediumRegionSet;
+    // std::unordered_set<GCRegion, GCRegion::GCRegionHash> largeRegionSet;
     std::deque<GCRegion> smallRegionQue;
     std::deque<GCRegion> mediumRegionQue;
     std::deque<GCRegion> largeRegionQue;
@@ -30,12 +31,16 @@ private:
     std::shared_mutex mediumRegionQueMtx;
     std::shared_mutex largeRegionQueMtx;
 
-    void* allocate_from_freelist(int pool_idx, size_t size);
-
     void* allocate_from_region(size_t size, RegionEnum regionType);
+
+    void* allocate_new_memory(size_t size);
+
+    void* allocate_from_freelist(size_t size);
 
 public:
     GCMemoryAllocator();
+
+    explicit GCMemoryAllocator(bool useInternalMemoryManager);
 
     void* allocate(size_t size);
 

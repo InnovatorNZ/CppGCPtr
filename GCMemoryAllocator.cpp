@@ -1,29 +1,31 @@
 #include "GCMemoryAllocator.h"
 
-GCMemoryAllocator::GCMemoryAllocator() {
-    this->poolCount = std::thread::hardware_concurrency();
-    size_t initialSize = INITIAL_SINGLE_SIZE * poolCount;
-    void* initialMemory = malloc(initialSize);
-    for (int i = 0; i < poolCount; i++) {
-        void* c_address = reinterpret_cast<void*>(reinterpret_cast<char*>(initialMemory) + i * INITIAL_SINGLE_SIZE);
-        this->memoryPools.emplace_back(c_address, INITIAL_SINGLE_SIZE);
+GCMemoryAllocator::GCMemoryAllocator() : GCMemoryAllocator(false) {
+}
+
+GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager) {
+    this->enableInternalMemoryManager = useInternalMemoryManager;
+    if (useInternalMemoryManager) {
+        this->poolCount = std::thread::hardware_concurrency();
+        size_t initialSize = INITIAL_SINGLE_SIZE * poolCount;
+        void* initialMemory = malloc(initialSize);
+        for (int i = 0; i < poolCount; i++) {
+            void* c_address = reinterpret_cast<void*>(reinterpret_cast<char*>(initialMemory) + i * INITIAL_SINGLE_SIZE);
+            this->memoryPools.emplace_back(c_address, INITIAL_SINGLE_SIZE);
+        }
+    } else {
+        this->poolCount = 0;
     }
 }
 
 void* GCMemoryAllocator::allocate(size_t size) {
-    std::thread::id tid = std::this_thread::get_id();
-    int pool_idx = std::hash<std::thread::id>()(tid) % poolCount;
-    if (size < SMALL_REGION_OBJECT_THRESHOLD) {     // small region
-        // TODO: 是否要将小中大分为三个memoryPool？答：还是算了
-        void* start_address = this->allocate_memory(pool_idx, size);
-        GCRegion region(42, RegionEnum::SMALL, start_address, size);
-        return region;
-    } else if (size < MEDIUM_REGION_OBJECT_THRESHOLD) {     // medium region
-
-    } else {       // large region
-
+    if (size < SMALL_REGION_OBJECT_THRESHOLD) {
+        return this->allocate_from_region(size, RegionEnum::SMALL);
+    } else if (size < MEDIUM_REGION_OBJECT_THRESHOLD) {
+        return this->allocate_from_region(size, RegionEnum::MEDIUM);
+    } else {
+        return this->allocate_from_region(size, RegionEnum::LARGE);
     }
-
 }
 
 void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType) {
@@ -41,7 +43,7 @@ void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType
             // 所有region都不够，分配新region
             // TODO: 我为啥不能直接调用操作系统的malloc获取region的内存？？为啥还要搞个全局freelist？？
             // TODO: 调查bitmap究竟怎么和region/freelist配合工作
-            void* new_region_memory = malloc(SMALL_REGION_SIZE);
+            void* new_region_memory = this->allocate_new_memory(SMALL_REGION_SIZE);
             {
                 std::unique_lock<std::shared_mutex> lock(smallRegionQueMtx);
                 smallRegionQue.emplace_back(42, RegionEnum::SMALL, new_region_memory, SMALL_REGION_SIZE);
@@ -56,7 +58,16 @@ void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType
     }
 }
 
-void* GCMemoryAllocator::allocate_from_freelist(int pool_idx, size_t size) {
+void* GCMemoryAllocator::allocate_new_memory(size_t size) {
+    if (enableInternalMemoryManager)
+        return this->allocate_from_freelist(size);
+    else
+        return malloc(size);
+}
+
+void* GCMemoryAllocator::allocate_from_freelist(size_t size) {
+    std::thread::id tid = std::this_thread::get_id();
+    int pool_idx = std::hash<std::thread::id>()(tid) % poolCount;
     // 优先从threadLocal的memoryPool分配，若空间不足从别的steal过来，还不够则触发malloc并分配到memoryPool里
     void* address = memoryPools[pool_idx].allocate(size);
     if (address != nullptr) return address;
