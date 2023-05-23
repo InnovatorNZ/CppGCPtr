@@ -127,6 +127,11 @@ void GCWorker::addSATB(void* object_addr) {
     satb_queue.push_back(object_addr);
 }
 
+void GCWorker::registerDestructor(void* object_addr, const std::function<void()>& destructor) {
+    std::unique_lock<std::mutex> lock(this->destructor_map_mutex);
+    this->destructor_map.emplace(object_addr, destructor);
+}
+
 void GCWorker::beginMark() {
     if (GCPhase::getGCPhase() == eGCPhase::NONE) {
         GCPhase::SwitchToNextPhase();   // concurrent mark
@@ -169,6 +174,12 @@ void GCWorker::beginSweep() {
         GCPhase::SwitchToNextPhase();
         for (auto it = object_map.begin(); it != object_map.end();) {
             if (GCPhase::needSweep(it->second.markState)) {
+                auto destructor_it = destructor_map.find(it->first);
+                if (destructor_it != destructor_map.end()) {
+                    std::function<void()>& destructor = destructor_it->second;
+                    destructor();
+                    destructor_map.erase(destructor_it);
+                }
                 free(it->first);
                 it = object_map.erase(it);
             } else {
