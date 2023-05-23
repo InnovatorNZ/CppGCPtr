@@ -51,7 +51,7 @@ void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
 }
 
 void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
-    for (const DWORD& threadID: suspendedThreadIDs) {
+    for (const DWORD& threadID : suspendedThreadIDs) {
         HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, threadID);
         if (hThread) {
             DWORD status = ResumeThread(hThread);
@@ -72,10 +72,10 @@ void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
 void GCUtil::stop_the_world(IReadWriteLock* stwLock) {
     stwLock->lockWrite(true);
     GCUtil::suspend_user_threads(_suspendedThreadIDs);
+    stwLock->unlockWrite();
 }
 
 void GCUtil::resume_the_world(IReadWriteLock* stwLock) {
-    stwLock->unlockWrite();
     GCUtil::resume_user_threads(_suspendedThreadIDs);
     _suspendedThreadIDs.clear();
 }

@@ -16,17 +16,14 @@ public:
     GCPtr() : obj(nullptr), is_root(false) {
     }
 
-    explicit GCPtr(T* obj) : is_root(false) {
-        GCPhase::EnterCriticalSection();
-        this->obj = obj;
-        GCWorker::getWorker()->addObject(obj, sizeof(*obj));
-        GCPhase::LeaveCriticalSection();
+    explicit GCPtr(T* obj) : GCPtr(obj, false) {
     }
 
     GCPtr(T* obj, bool is_root) : is_root(is_root) {
         GCPhase::EnterCriticalSection();
         this->obj = obj;
         GCWorker::getWorker()->addObject(obj, sizeof(*obj));
+        GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
@@ -130,14 +127,18 @@ namespace gc {
 
     template<typename T>
     GCPtr <T> make_gc() {
+        GCPhase::EnterCriticalSection();
         T* obj = new T();
+        GCPhase::LeaveCriticalSection();
         GCPtr<T> ret(obj);
         return ret;
     }
 
     template<typename T>
     GCPtr <T> make_root() {
+        GCPhase::EnterCriticalSection();
         T* obj = new T();
+        GCPhase::LeaveCriticalSection();
         GCPtr<T> ret(obj, true);
         return ret;
     }

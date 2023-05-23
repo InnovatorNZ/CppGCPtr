@@ -6,6 +6,7 @@ class MyObject {
 public:
     int a;
     double b;
+    std::string c;
     GCPtr<MyObject> d;
     double f;
     GCPtr<MyObject> e;
@@ -31,7 +32,7 @@ private:
 GCPtr<MyObject> obj3;
 
 int main() {
-    #define TRIGGER_GC 1
+#define TRIGGER_GC 1
     using namespace std;
     cout << "Size of MyObject: " << sizeof(MyObject) << endl;
     cout << "Ready to start..." << endl;
@@ -116,6 +117,6 @@ int main() {
 #endif
         Sleep(100);
     }
-    cout << "Average user thread duration: " << (double)time_ / (double)n << " us" << endl;
+    cout << "Average user thread duration: " << (double) time_ / (double) n << " us" << endl;
     return 0;
 }

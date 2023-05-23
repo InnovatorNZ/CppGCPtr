@@ -33,6 +33,8 @@ private:
     std::vector<void*> root_ptr_snapshot;
     std::vector<void*> satb_queue;
     std::mutex satb_queue_mutex;
+    std::unordered_map<void*, std::function<void()>> destructor_map;
+    std::mutex destructor_map_mutex;
     std::mutex thread_mutex;
     std::condition_variable condition;
     std::unique_ptr<std::thread> gc_thread;
@@ -66,6 +68,8 @@ public:
     void removeRoot(GCPtrBase*);
 
     void addSATB(void* object_addr);
+
+    void registerDestructor(void* object_addr, const std::function<void()>&);
 
     void beginMark();
 
