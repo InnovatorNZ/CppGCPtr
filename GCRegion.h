@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <atomic>
 #include <mutex>
+#include "GCBitMap.h"
 
 enum class RegionEnum {
     SMALL, MEDIUM, LARGE
@@ -25,14 +26,13 @@ private:
     size_t total_size;
     std::atomic<size_t> c_offset;
     std::atomic<size_t> frag_size;
+    GCBitMap bitmap;
     std::mutex region_mtx;
 
 public:
     struct GCRegionHash {
         size_t operator()(const GCRegion& p) const;
     };
-
-    GCRegion();
 
     GCRegion(int id, RegionEnum regionType, void* startAddress, size_t total_size);
 

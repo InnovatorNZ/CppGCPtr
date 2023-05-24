@@ -1,10 +1,8 @@
 #include "GCRegion.h"
 
-GCRegion::GCRegion() : frag_size(0), c_offset(0) {
-}
-
 GCRegion::GCRegion(int id, RegionEnum regionType, void* startAddress, size_t total_size) :
-        id(id), regionType(regionType), startAddress(startAddress), total_size(total_size), frag_size(0), c_offset(0) {
+        id(id), regionType(regionType), startAddress(startAddress), bitmap(startAddress, total_size),
+        total_size(total_size), frag_size(0), c_offset(0) {
 }
 
 void* GCRegion::allocate(size_t size) {
@@ -33,12 +31,10 @@ float GCRegion::getFreeRatio() const {
     return (float) (1.0 - (double) c_offset / (double) total_size);
 }
 
-GCRegion::GCRegion(GCRegion&& other) {
+GCRegion::GCRegion(GCRegion&& other) : regionType(other.regionType), startAddress(other.startAddress),
+                                       total_size(other.total_size), bitmap(std::move(other.bitmap)) {
     std::unique_lock lock(other.region_mtx);
     this->id = other.id;
-    this->regionType = other.regionType;
-    this->startAddress = other.startAddress;
-    this->total_size = other.total_size;
     this->c_offset.store(other.c_offset.load());
     this->frag_size.store(other.frag_size.load());
     other.startAddress = nullptr;
