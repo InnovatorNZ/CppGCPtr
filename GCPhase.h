@@ -23,6 +23,8 @@ public:
 
     static MarkState getCurrentMarkState();
 
+    static MarkStateBit getCurrentMarkStateBit();
+
     static void SwitchToNextPhase();
 
     static bool needSweep(MarkState markState);

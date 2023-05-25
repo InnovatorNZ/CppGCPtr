@@ -6,6 +6,7 @@
 #include <atomic>
 #include <mutex>
 #include "GCBitMap.h"
+#include "GCPhase.h"
 
 enum class RegionEnum {
     SMALL, MEDIUM, LARGE

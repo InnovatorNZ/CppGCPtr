@@ -35,6 +35,17 @@ MarkState GCPhase::getCurrentMarkState() {
     return currentMarkState;
 }
 
+MarkStateBit GCPhase::getCurrentMarkStateBit() {
+    switch (currentMarkState) {
+        case MarkState::M0:
+            return MarkStateBit::M0;
+        case MarkState::M1:
+            return MarkStateBit::M1;
+        case MarkState::REMAPPED:
+            return MarkStateBit::REMAPPED;
+    }
+}
+
 bool GCPhase::needSweep(MarkState markState) {
     if (gcPhase != eGCPhase::SWEEP) {
         std::cerr << "Sweeping in non-sweeping phase" << std::endl;

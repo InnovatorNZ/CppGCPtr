@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <cmath>
+#include <atomic>
 #include "PhaseEnum.h"
 #include "Iterator.h"
 
@@ -14,7 +15,7 @@ private:
     int region_to_bitmap_ratio;     // bitmap的每两个bit对应于region的多少字节，默认为1，即2bit->1byte
     int bitmap_size;
     void* region_start_addr;
-    unsigned char* bitmap_arr;
+    std::atomic<unsigned char>* bitmap_arr;
 
     class BitMapIterator : public Iterator<MarkStateBit> {
     private:

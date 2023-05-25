@@ -7,17 +7,27 @@ GCRegion::GCRegion(int id, RegionEnum regionType, void* startAddress, size_t tot
 
 void* GCRegion::allocate(size_t size) {
     if (startAddress == nullptr) return nullptr;
+    void* object_addr = nullptr;
     while (true) {
         size_t p_offset = c_offset;
         if (p_offset + size > total_size) return nullptr;
-        if (c_offset.compare_exchange_weak(p_offset, p_offset + size))
-            return reinterpret_cast<void*>(reinterpret_cast<char*>(startAddress) + p_offset);
+        if (c_offset.compare_exchange_weak(p_offset, p_offset + size)) {
+            object_addr = reinterpret_cast<void*>(reinterpret_cast<char*>(startAddress) + p_offset);
+            break;
+        }
     }
+    if (GCPhase::duringGC())
+        bitmap.mark(object_addr, size, GCPhase::getCurrentMarkStateBit());
+    else
+        bitmap.mark(object_addr, size, MarkStateBit::REMAPPED);
+    return object_addr;
 }
 
 void GCRegion::free(void* addr, size_t size) {
     if (reinterpret_cast<char*>(addr) < reinterpret_cast<char*>(startAddress) + c_offset) {
         frag_size += size;
+        // TODO: free()要不要调用mark(addr, size, MarkStateBit::NOT_ALLOCATED)？答：好像还是要的
+        bitmap.mark(addr, size, MarkStateBit::NOT_ALLOCATED);
     }
 }
 
