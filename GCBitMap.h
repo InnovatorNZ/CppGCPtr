@@ -4,6 +4,8 @@
 #include <iostream>
 #include <cmath>
 #include <atomic>
+#include <mutex>
+#include <unordered_set>
 #include "PhaseEnum.h"
 #include "Iterator.h"
 
@@ -16,6 +18,8 @@ private:
     int bitmap_size;
     void* region_start_addr;
     std::atomic<unsigned char>* bitmap_arr;
+    std::unordered_set<void*> single_size_set;      // 存放size<=1byte的对象，由于其无法在bitmap占用头尾标识
+    std::mutex single_size_set_mtx;
 
     class BitMapIterator : public Iterator<MarkStateBit> {
     private:
@@ -41,7 +45,9 @@ public:
 
     void mark(void* object_addr, size_t object_size, MarkStateBit state);
 
-    BitMapIterator getIterator();
+    int getRegionToBitmapRatio() const;
+
+    BitMapIterator getIterator() const;
 };
 
 

@@ -52,6 +52,8 @@ public:
     float getFragmentRatio() const;
 
     float getFreeRatio() const;
+
+    size_t alignUpForBitmap(size_t) const;
 };
 
 

@@ -8,6 +8,7 @@ GCRegion::GCRegion(int id, RegionEnum regionType, void* startAddress, size_t tot
 void* GCRegion::allocate(size_t size) {
     if (startAddress == nullptr) return nullptr;
     void* object_addr = nullptr;
+    size = alignUpForBitmap(size);
     while (true) {
         size_t p_offset = c_offset;
         if (p_offset + size > total_size) return nullptr;
@@ -48,12 +49,20 @@ GCRegion::GCRegion(GCRegion&& other) : regionType(other.regionType), startAddres
     this->c_offset.store(other.c_offset.load());
     this->frag_size.store(other.frag_size.load());
     other.startAddress = nullptr;
-    other.c_offset = other.total_size;
+    other.total_size = 0;
+    other.c_offset = 0;
 }
 
 bool GCRegion::operator==(const GCRegion& other) const {
     return this->startAddress == other.startAddress && this->regionType == other.regionType
            && this->total_size == other.total_size;
+}
+
+size_t GCRegion::alignUpForBitmap(size_t size) const {
+    if (size % bitmap.getRegionToBitmapRatio() != 0) {
+        size = (size / bitmap.getRegionToBitmapRatio() + 1) * bitmap.getRegionToBitmapRatio();
+    }
+    return size;
 }
 
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {
