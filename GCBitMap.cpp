@@ -84,14 +84,21 @@ int GCBitMap::getRegionToBitmapRatio() const {
 GCBitMap::BitMapIterator::BitMapIterator(const GCBitMap& bitmap) : bit_offset(0), byte_offset(0), bitmap(bitmap) {
 }
 
-MarkStateBit GCBitMap::BitMapIterator::next() {
+GCBitMap::BitStatus GCBitMap::BitMapIterator::next() {
     unsigned char value = bitmap.bitmap_arr[byte_offset] >> bit_offset & 3;
+    MarkStateBit markState = MarkStateUtil::toMarkState(value);
+    BitStatus bitStatus{markState, false};
+    if (!bitmap.single_size_set.empty()) {
+        void* addr = reinterpret_cast<void*>(reinterpret_cast<char*>(bitmap.region_start_addr) +
+                                             (byte_offset * 8 + bit_offset) * bitmap.region_to_bitmap_ratio / SINGLE_OBJECT_MARKBIT);
+        if (bitmap.single_size_set.contains(addr)) bitStatus.isSingleObject = true;
+    }
     bit_offset += SINGLE_OBJECT_MARKBIT;
     if (bit_offset >= 8) {
         byte_offset++;
         bit_offset = 0;
     }
-    return MarkStateUtil::toMarkState(value);
+    return bitStatus;
 }
 
 bool GCBitMap::BitMapIterator::hasNext() {

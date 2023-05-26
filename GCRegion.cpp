@@ -65,6 +65,14 @@ size_t GCRegion::alignUpForBitmap(size_t size) const {
     return size;
 }
 
+void GCRegion::clearUnmarked() {
+    auto bitMapIterator = bitmap.getIterator();
+    while (bitMapIterator.hasNext()) {
+        GCBitMap::BitStatus dd = bitMapIterator.next();
+        // TODO: 有必要搞single_size_set吗？？不能把single_size的放到单独的region里去？
+    }
+}
+
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {
     return std::hash<void*>()(p.startAddress) ^ std::hash<size_t>()(p.total_size);
 }

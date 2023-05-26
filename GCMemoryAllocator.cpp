@@ -36,7 +36,7 @@ void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType
             {
                 std::shared_lock<std::shared_mutex> lock(smallRegionQueMtx);
                 for (int i = smallRegionQue.size() - 1; i >= 0; i--) {
-                    void* addr = smallRegionQue[i].allocate(size);
+                    void* addr = smallRegionQue[i]->allocate(size);
                     if (addr != nullptr) return addr;
                 }
             }
@@ -44,9 +44,16 @@ void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType
             // TODO: 我为啥不能直接调用操作系统的malloc获取region的内存？？为啥还要搞个全局freelist？？
             // TODO: 调查bitmap究竟怎么和region/freelist配合工作
             void* new_region_memory = this->allocate_new_memory(SMALL_REGION_SIZE);
+            std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
+                    (42, RegionEnum::SMALL, new_region_memory, SMALL_REGION_SIZE);
             {
                 std::unique_lock<std::shared_mutex> lock(smallRegionQueMtx);
-                smallRegionQue.emplace_back(42, RegionEnum::SMALL, new_region_memory, SMALL_REGION_SIZE);
+                smallRegionQue.emplace_back(region_ptr);
+                //smallRegionQue.emplace_back(42, RegionEnum::SMALL, new_region_memory, SMALL_REGION_SIZE);
+            }
+            {
+                std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+                regionMap.emplace(new_region_memory, region_ptr);
             }
         }
     } else if (regionType == RegionEnum::MEDIUM) {
@@ -83,4 +90,25 @@ void* GCMemoryAllocator::allocate_from_freelist(size_t size) {
         std::clog << "Allocating more memory from OS" << std::endl;
     } while (address == nullptr);
     return address;
+}
+
+void GCMemoryAllocator::triggerClear() {
+    {
+        std::shared_lock<std::shared_mutex> lock(this->smallRegionQueMtx);
+        for (int i = 0; i < smallRegionQue.size(); i++) {
+            smallRegionQue[i]->clearUnmarked();
+        }
+    }
+    {
+        std::shared_lock<std::shared_mutex> lock(this->mediumRegionQueMtx);
+        for (int i = 0; i < mediumRegionQue.size(); i++) {
+            mediumRegionQue[i]->clearUnmarked();
+        }
+    }
+    {
+        std::shared_lock<std::shared_mutex> lock(this->largeRegionQueMtx);
+        for (int i = 0; i < largeRegionQue.size(); i++) {
+            largeRegionQue[i]->clearUnmarked();
+        }
+    }
 }

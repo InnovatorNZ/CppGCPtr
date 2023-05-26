@@ -21,7 +21,13 @@ private:
     std::unordered_set<void*> single_size_set;      // 存放size<=1byte的对象，由于其无法在bitmap占用头尾标识
     std::mutex single_size_set_mtx;
 
-    class BitMapIterator : public Iterator<MarkStateBit> {
+public:
+    struct BitStatus {
+        MarkStateBit markState;
+        bool isSingleObject;
+    };
+
+    class BitMapIterator : public Iterator<BitStatus> {
     private:
         int byte_offset;
         int bit_offset;
@@ -29,12 +35,11 @@ private:
     public:
         explicit BitMapIterator(const GCBitMap&);
 
-        MarkStateBit next() override;
+        BitStatus next() override;
 
         bool hasNext() override;
     };
 
-public:
     GCBitMap(void* region_start_addr, size_t region_size, int region_to_bitmap_ratio = 1);
 
     ~GCBitMap();

@@ -2,8 +2,11 @@
 #define CPPGCPTR_GCREGIONALLOCATOR_H
 
 #include <vector>
+#include <deque>
 #include <unordered_set>
+#include <map>
 #include <thread>
+#include <memory>
 #include <mutex>
 #include <shared_mutex>
 #include "GCRegion.h"
@@ -24,12 +27,14 @@ private:
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> smallRegionSet;
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> mediumRegionSet;
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> largeRegionSet;
-    std::deque<GCRegion> smallRegionQue;
-    std::deque<GCRegion> mediumRegionQue;
-    std::deque<GCRegion> largeRegionQue;
+    std::deque<std::shared_ptr<GCRegion>> smallRegionQue;
+    std::deque<std::shared_ptr<GCRegion>> mediumRegionQue;
+    std::deque<std::shared_ptr<GCRegion>> largeRegionQue;
     std::shared_mutex smallRegionQueMtx;
     std::shared_mutex mediumRegionQueMtx;
     std::shared_mutex largeRegionQueMtx;
+    std::map<void*, std::shared_ptr<GCRegion>> regionMap;
+    std::shared_mutex regionMapMtx;
 
     void* allocate_from_region(size_t size, RegionEnum regionType);
 
@@ -44,7 +49,9 @@ public:
 
     void* allocate(size_t size);
 
-    void free(GCRegion region);
+    void free(GCRegion region) = delete;
+
+    void triggerClear();
 };
 
 
