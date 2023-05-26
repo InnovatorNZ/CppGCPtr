@@ -10,6 +10,7 @@
 #include "Iterator.h"
 
 #define SINGLE_OBJECT_MARKBIT 2     // 表示每两个bit标记一个对象
+#define USE_SINGLE_OBJECT_MAP false
 
 class GCBitMap {
 private:
@@ -18,16 +19,20 @@ private:
     int bitmap_size;
     void* region_start_addr;
     std::atomic<unsigned char>* bitmap_arr;
+#if USE_SINGLE_OBJECT_MAP
     std::unordered_set<void*> single_size_set;      // 存放size<=1byte的对象，由于其无法在bitmap占用头尾标识
     std::mutex single_size_set_mtx;
+#endif
 
 public:
+#if USE_SINGLE_OBJECT_MAP
     struct BitStatus {
         MarkStateBit markState;
         bool isSingleObject;
     };
+#endif
 
-    class BitMapIterator : public Iterator<BitStatus> {
+    class BitMapIterator : public Iterator<MarkStateBit> {
     private:
         int byte_offset;
         int bit_offset;
@@ -35,9 +40,11 @@ public:
     public:
         explicit BitMapIterator(const GCBitMap&);
 
-        BitStatus next() override;
+        MarkStateBit next() override;
 
         bool hasNext() override;
+
+        int getCurrentOffset() const;
     };
 
     GCBitMap(void* region_start_addr, size_t region_size, int region_to_bitmap_ratio = 1);

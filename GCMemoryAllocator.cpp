@@ -19,9 +19,11 @@ GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager) {
 }
 
 void* GCMemoryAllocator::allocate(size_t size) {
-    if (size < SMALL_REGION_OBJECT_THRESHOLD) {
+    if (size < TINY_OBJECT_THRESHOLD) {
+        return this->allocate_from_region(size, RegionEnum::TINY);
+    } else if (size < SMALL_OBJECT_THRESHOLD) {
         return this->allocate_from_region(size, RegionEnum::SMALL);
-    } else if (size < MEDIUM_REGION_OBJECT_THRESHOLD) {
+    } else if (size < MEDIUM_OBJECT_THRESHOLD) {
         return this->allocate_from_region(size, RegionEnum::MEDIUM);
     } else {
         return this->allocate_from_region(size, RegionEnum::LARGE);
@@ -45,11 +47,10 @@ void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType
             // TODO: 调查bitmap究竟怎么和region/freelist配合工作
             void* new_region_memory = this->allocate_new_memory(SMALL_REGION_SIZE);
             std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
-                    (42, RegionEnum::SMALL, new_region_memory, SMALL_REGION_SIZE);
+                    (RegionEnum::SMALL, new_region_memory, SMALL_REGION_SIZE);
             {
                 std::unique_lock<std::shared_mutex> lock(smallRegionQueMtx);
                 smallRegionQue.emplace_back(region_ptr);
-                //smallRegionQue.emplace_back(42, RegionEnum::SMALL, new_region_memory, SMALL_REGION_SIZE);
             }
             {
                 std::unique_lock<std::shared_mutex> lock(regionMapMtx);
@@ -57,11 +58,60 @@ void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType
             }
         }
     } else if (regionType == RegionEnum::MEDIUM) {
-        // TODO: MEDIUM
-
-    } else {
-        // TODO: LARGE
-
+        while (true) {
+            {
+                std::shared_lock<std::shared_mutex> lock(mediumRegionQueMtx);
+                for (int i = mediumRegionQue.size() - 1; i >= 0; i--) {
+                    void* addr = mediumRegionQue[i]->allocate(size);
+                    if (addr != nullptr) return addr;
+                }
+            }
+            void* new_region_memory = this->allocate_new_memory(MEDIUM_REGION_SIZE);
+            std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
+                    (RegionEnum::MEDIUM, new_region_memory, MEDIUM_REGION_SIZE);
+            {
+                std::unique_lock<std::shared_mutex> lock(mediumRegionQueMtx);
+                mediumRegionQue.emplace_back(region_ptr);
+            }
+            {
+                std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+                regionMap.emplace(new_region_memory, region_ptr);
+            }
+        }
+    } else if (regionType == RegionEnum::LARGE) {
+        // 分配Large的时候不会从已有region里找，直接分配新的一块region
+        void* new_region_memory = this->allocate_new_memory(size);
+        std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
+                (RegionEnum::LARGE, new_region_memory, size);
+        {
+            std::unique_lock<std::shared_mutex> lock(largeRegionQueMtx);
+            largeRegionQue.emplace_back(region_ptr);
+        }
+        {
+            std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+            regionMap.emplace(new_region_memory, region_ptr);
+        }
+    } else if (regionType == RegionEnum::TINY) {
+        while (true) {
+            {
+                std::shared_lock<std::shared_mutex> lock(tinyRegionQueMtx);
+                for (int i = tinyRegionQue.size() - 1; i >= 0; i--) {
+                    void* addr = tinyRegionQue[i]->allocate(size);
+                    if (addr != nullptr) return addr;
+                }
+            }
+            void* new_region_memory = this->allocate_new_memory(TINY_REGION_SIZE);
+            std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
+                    (RegionEnum::TINY, new_region_memory, TINY_REGION_SIZE);
+            {
+                std::unique_lock<std::shared_mutex> lock(tinyRegionQueMtx);
+                tinyRegionQue.emplace_back(region_ptr);
+            }
+            {
+                std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+                regionMap.emplace(new_region_memory, region_ptr);
+            }
+        }
     }
 }
 
@@ -109,6 +159,12 @@ void GCMemoryAllocator::triggerClear() {
         std::shared_lock<std::shared_mutex> lock(this->largeRegionQueMtx);
         for (int i = 0; i < largeRegionQue.size(); i++) {
             largeRegionQue[i]->clearUnmarked();
+        }
+    }
+    {
+        std::shared_lock<std::shared_mutex> lock(this->tinyRegionQueMtx);
+        for (int i = 0; i < tinyRegionQue.size(); i++) {
+            tinyRegionQue[i]->clearUnmarked();
         }
     }
 }

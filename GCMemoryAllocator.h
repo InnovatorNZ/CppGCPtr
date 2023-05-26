@@ -14,12 +14,15 @@
 
 
 class GCMemoryAllocator {
+public:
+    static const size_t TINY_OBJECT_THRESHOLD = 4;
+    static const size_t TINY_REGION_SIZE = 256 * 1024;
+    static const size_t SMALL_OBJECT_THRESHOLD = 16 * 1024;
+    static const size_t SMALL_REGION_SIZE = 1 * 1024 * 1024;
+    static const size_t MEDIUM_OBJECT_THRESHOLD = 1 * 1024 * 1024;
+    static const size_t MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
+    static const size_t INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
 private:
-    const size_t SMALL_REGION_OBJECT_THRESHOLD = 32 * 1024;
-    const size_t SMALL_REGION_SIZE = 512 * 1024;
-    const size_t MEDIUM_REGION_OBJECT_THRESHOLD = 1 * 1024 * 1024;
-    const size_t MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
-    const size_t INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
     // GCMemoryManager memoryManager;
     bool enableInternalMemoryManager;
     unsigned int poolCount;
@@ -30,9 +33,11 @@ private:
     std::deque<std::shared_ptr<GCRegion>> smallRegionQue;
     std::deque<std::shared_ptr<GCRegion>> mediumRegionQue;
     std::deque<std::shared_ptr<GCRegion>> largeRegionQue;
+    std::deque<std::shared_ptr<GCRegion>> tinyRegionQue;
     std::shared_mutex smallRegionQueMtx;
     std::shared_mutex mediumRegionQueMtx;
     std::shared_mutex largeRegionQueMtx;
+    std::shared_mutex tinyRegionQueMtx;
     std::map<void*, std::shared_ptr<GCRegion>> regionMap;
     std::shared_mutex regionMapMtx;
 

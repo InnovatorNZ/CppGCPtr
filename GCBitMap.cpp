@@ -67,10 +67,13 @@ void GCBitMap::mark(void* object_addr, size_t object_size, MarkStateBit state) {
             if (bitmap_arr[offset_end_byte].compare_exchange_weak(c_value, final_result))
                 break;
         }
-    } else {
+    }
+#if USE_SINGLE_OBJECT_MAP
+    else {
         std::unique_lock<std::mutex> lock(this->single_size_set_mtx);
         single_size_set.emplace(object_addr);
     }
+#endif
 }
 
 GCBitMap::BitMapIterator GCBitMap::getIterator() const {
@@ -84,24 +87,30 @@ int GCBitMap::getRegionToBitmapRatio() const {
 GCBitMap::BitMapIterator::BitMapIterator(const GCBitMap& bitmap) : bit_offset(0), byte_offset(0), bitmap(bitmap) {
 }
 
-GCBitMap::BitStatus GCBitMap::BitMapIterator::next() {
+MarkStateBit GCBitMap::BitMapIterator::next() {
     unsigned char value = bitmap.bitmap_arr[byte_offset] >> bit_offset & 3;
     MarkStateBit markState = MarkStateUtil::toMarkState(value);
+#if USE_SINGLE_OBJECT_MAP
     BitStatus bitStatus{markState, false};
     if (!bitmap.single_size_set.empty()) {
         void* addr = reinterpret_cast<void*>(reinterpret_cast<char*>(bitmap.region_start_addr) +
                                              (byte_offset * 8 + bit_offset) * bitmap.region_to_bitmap_ratio / SINGLE_OBJECT_MARKBIT);
         if (bitmap.single_size_set.contains(addr)) bitStatus.isSingleObject = true;
     }
+#endif
     bit_offset += SINGLE_OBJECT_MARKBIT;
     if (bit_offset >= 8) {
         byte_offset++;
         bit_offset = 0;
     }
-    return bitStatus;
+    return markState;
 }
 
 bool GCBitMap::BitMapIterator::hasNext() {
     if (byte_offset >= bitmap.bitmap_size) return false;
     else return true;
+}
+
+int GCBitMap::BitMapIterator::getCurrentOffset() const {
+    return (byte_offset * 8 + bit_offset) * bitmap.region_to_bitmap_ratio / SINGLE_OBJECT_MARKBIT;
 }
