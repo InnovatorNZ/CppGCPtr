@@ -54,6 +54,15 @@ bool GCPhase::needSweep(MarkState markState) {
     return currentMarkState != markState;
 }
 
+bool GCPhase::needSweep(MarkStateBit markState) {
+    if (gcPhase != eGCPhase::SWEEP) {
+        std::cerr << "Sweeping in non-sweeping phase" << std::endl;
+        return false;
+    }
+    if (markState == MarkStateBit::NOT_ALLOCATED) return false;
+    return markState != getCurrentMarkStateBit();
+}
+
 std::string GCPhase::getGCPhaseString() {
     switch (gcPhase) {
         case eGCPhase::NONE:

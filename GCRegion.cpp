@@ -84,8 +84,7 @@ void GCRegion::clearUnmarked() {
         throw std::exception();
     }
     if (regionType == RegionEnum::LARGE) {
-        // TODO: Large region的free的处理
-        std::clog << "Maybe large region doesn't need to trigger this function?" << std::endl;
+        std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
     auto bitMapIterator = bitmap->getIterator();
@@ -93,26 +92,42 @@ void GCRegion::clearUnmarked() {
     int last_offset = 0;
     while (bitMapIterator.hasNext()) {
         MarkStateBit markState = bitMapIterator.next();
-        // TODO: 有必要搞single_size_set吗？？不能把single_size的放到单独的region里去？答：有道理（
-        // TODO: 通过iterator统计出size，然后free
-        if (markState != MarkStateBit::NOT_ALLOCATED && markState != GCPhase::getCurrentMarkStateBit()) {
-            if (lastMarkState == MarkStateBit::NOT_ALLOCATED) {     // 迭代中首次
-                lastMarkState = markState;
-                last_offset = bitMapIterator.getCurrentOffset();
-            } else if (lastMarkState == markState) {    // 迭代中第二次
-                int it_offset = bitMapIterator.getCurrentOffset();
-                int object_size = it_offset - last_offset + 1;
-                void* object_addr = reinterpret_cast<char*>(startAddress) + it_offset;
-                this->free(object_addr, object_size);
-                lastMarkState = MarkStateBit::NOT_ALLOCATED;
-                last_offset = it_offset;
+        // 有必要搞single_size_set吗？？不能把single_size的放到单独的region里去？答：有道理（
+        // 通过iterator统计出size，然后free
+        if (GCPhase::needSweep(markState)) {
+            if (regionType == RegionEnum::TINY) {
+                void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
+                this->free(addr, GCMemoryAllocator::TINY_OBJECT_THRESHOLD);
             } else {
-                // TODO: 处理tiny对象的迭代
-                std::cerr << "Uncorrect mark found in bitmap" << std::endl;
-                throw std::exception();
+                if (lastMarkState == MarkStateBit::NOT_ALLOCATED) {     // 迭代中首次
+                    lastMarkState = markState;
+                    last_offset = bitMapIterator.getCurrentOffset();
+                } else if (lastMarkState == markState) {    // 迭代中第二次
+                    int it_offset = bitMapIterator.getCurrentOffset();
+                    int object_size = it_offset - last_offset + 1;
+                    void* object_addr = reinterpret_cast<char*>(startAddress) + it_offset;
+                    this->free(object_addr, object_size);
+                    lastMarkState = MarkStateBit::NOT_ALLOCATED;
+                    last_offset = it_offset;
+                } else {
+                    std::cerr << "Uncorrect mark found in bitmap" << std::endl;
+                    throw std::exception();
+                }
             }
         }
     }
+}
+
+bool GCRegion::canFree() const {
+    // TODO: 删除region的操作……
+    if (regionType == RegionEnum::LARGE && GCPhase::needSweep(largeRegionMarkState)) return true;
+    else return false;
+}
+
+bool GCRegion::needEvacuate() const {
+    // TODO: 被释放的region只保留转发表？
+    if (getFragmentRatio() >= 0.25 && getFreeRatio() < 0.25) return true;
+    else return false;
 }
 
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {

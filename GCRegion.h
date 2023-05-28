@@ -47,6 +47,8 @@ public:
 
     size_t getTotalSize() const { return total_size; }
 
+    void* getStartAddr() const { return startAddress; }
+
     void* allocate(size_t size);
 
     void free(void* addr, size_t size);
@@ -60,6 +62,10 @@ public:
     size_t alignUpForBitmap(size_t) const;
 
     void clearUnmarked();
+
+    bool canFree() const;
+
+    bool needEvacuate() const;
 };
 
 

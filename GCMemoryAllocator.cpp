@@ -19,11 +19,11 @@ GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager) {
 }
 
 void* GCMemoryAllocator::allocate(size_t size) {
-    if (size < TINY_OBJECT_THRESHOLD) {
+    if (size <= TINY_OBJECT_THRESHOLD) {
         return this->allocate_from_region(size, RegionEnum::TINY);
-    } else if (size < SMALL_OBJECT_THRESHOLD) {
+    } else if (size <= SMALL_OBJECT_THRESHOLD) {
         return this->allocate_from_region(size, RegionEnum::SMALL);
-    } else if (size < MEDIUM_OBJECT_THRESHOLD) {
+    } else if (size <= MEDIUM_OBJECT_THRESHOLD) {
         return this->allocate_from_region(size, RegionEnum::MEDIUM);
     } else {
         return this->allocate_from_region(size, RegionEnum::LARGE);
@@ -156,9 +156,22 @@ void GCMemoryAllocator::triggerClear() {
         }
     }
     {
-        std::shared_lock<std::shared_mutex> lock(this->largeRegionQueMtx);
-        for (int i = 0; i < largeRegionQue.size(); i++) {
-            largeRegionQue[i]->clearUnmarked();
+        {
+            std::shared_lock<std::shared_mutex> lock(this->largeRegionQueMtx);
+            for (int i = 0; i < largeRegionQue.size(); i++) {
+                if (largeRegionQue[i]->canFree()) {
+                    std::unique_lock<std::shared_mutex> lock2(this->regionMapMtx);
+                    regionMap.erase(largeRegionQue[i]->getStartAddr());
+                }
+            }
+        }
+        {
+            std::unique_lock<std::shared_mutex> lock(this->largeRegionQueMtx);
+            for (auto it = largeRegionQue.begin(); it != largeRegionQue.end(); it++) {
+                if (it->get()->canFree()) {
+                    it = largeRegionQue.erase(it);
+                }
+            }
         }
     }
     {

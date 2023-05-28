@@ -29,6 +29,8 @@ public:
 
     static bool needSweep(MarkState markState);
 
+    static bool needSweep(MarkStateBit markState);
+
     static bool duringGC();
 
     static void EnterCriticalSection() {
