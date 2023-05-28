@@ -181,3 +181,14 @@ void GCMemoryAllocator::triggerClear() {
         }
     }
 }
+
+std::shared_ptr<GCRegion> GCMemoryAllocator::getRegion(void* object_addr) {
+    std::shared_lock<std::shared_mutex> lock(this->regionMapMtx);
+    auto it = regionMap.upper_bound(object_addr);
+    if (it == regionMap.begin()) {
+        return nullptr;
+    } else {
+        --it;
+        return it->second;
+    }
+}

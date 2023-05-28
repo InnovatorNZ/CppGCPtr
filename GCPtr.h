@@ -11,15 +11,16 @@ template<typename T>
 class GCPtr : public GCPtrBase {
 private:
     T* obj;
+    unsigned int obj_size;
     bool is_root;
 public:
-    GCPtr() : obj(nullptr), is_root(false) {
+    GCPtr() : obj(nullptr), obj_size(0), is_root(false) {
     }
 
     explicit GCPtr(T* obj) : GCPtr(obj, false) {
     }
 
-    GCPtr(T* obj, bool is_root) : is_root(is_root) {
+    GCPtr(T* obj, bool is_root) : is_root(is_root), obj_size(sizeof(*obj)) {
         GCPhase::EnterCriticalSection();
         this->obj = obj;
         GCWorker::getWorker()->addObject(obj, sizeof(*obj));
@@ -42,6 +43,10 @@ public:
         return reinterpret_cast<void*>(this->obj);
     }
 
+    unsigned int getObjectSize() const override {
+        return obj_size;
+    }
+
     GCPtr<T>& operator=(const GCPtr<T>& other) {
         if (this != &other) {
             GCPhase::EnterCriticalSection();
@@ -49,6 +54,8 @@ public:
                 GCWorker::getWorker()->addSATB(this->obj);
             }
             this->obj = other.obj;
+            this->obj_size = other.obj_size;
+            this->setInlineMarkState(other.getInlineMarkState());
             //GCWorker::getWorker()->insertReference(this, &other, sizeof(*(other.get())));
             //GCWorker::getWorker()->addObject(obj, sizeof(*obj));
             this->is_root = other.is_root;
@@ -61,12 +68,15 @@ public:
     }
 
     GCPtr& operator=(std::nullptr_t) {
-        GCPhase::EnterCriticalSection();
-        if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK && this->obj != nullptr) {
-            GCWorker::getWorker()->addSATB(this->obj);
+        if (this->obj != nullptr) {
+            GCPhase::EnterCriticalSection();
+            if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
+                GCWorker::getWorker()->addSATB(this->obj);
+            }
+            this->obj = nullptr;
+            this->obj_size = 0;
+            GCPhase::LeaveCriticalSection();
         }
-        this->obj = nullptr;
-        GCPhase::LeaveCriticalSection();
         return *this;
     }
 
@@ -82,7 +92,9 @@ public:
         GCPhase::EnterCriticalSection();
         std::clog << "Copy constructor: " << this << std::endl;
         this->obj = other.obj;
+        this->obj_size = other.obj_size;
         this->is_root = other.is_root;
+        this->setInlineMarkState(other.getInlineMarkState());
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
@@ -93,7 +105,11 @@ public:
         GCPhase::EnterCriticalSection();
         std::clog << "Move constructor: " << this << std::endl;
         this->obj = other.obj;
+        this->obj_size = other.obj_size;
         this->is_root = other.is_root;
+        this->setInlineMarkState(other.getInlineMarkState());
+        other.obj = nullptr;
+        other.obj_size = 0;
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }

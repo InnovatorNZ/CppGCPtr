@@ -14,6 +14,7 @@
 #include "GCPtrBase.h"
 #include "GCUtil.h"
 #include "PhaseEnum.h"
+#include "GCMemoryAllocator.h"
 
 class GCStatus {
 public:
@@ -38,13 +39,17 @@ private:
     std::mutex thread_mutex;
     std::condition_variable condition;
     std::unique_ptr<std::thread> gc_thread;
+    std::unique_ptr<GCMemoryAllocator> memoryAllocator;
+    const bool enableConcurrentMark, useBitmap, useInlineMarkstate;
     bool stop_, ready_;
 
     GCWorker();
 
-    explicit GCWorker(bool concurrent);
+    GCWorker(bool concurrent, bool useBitmap, bool useInlineMarkstate, bool useInternalMemoryManager = false);
 
-    void mark(void* object_addr);
+    void mark(void*);
+
+    void mark_v2(GCPtrBase*);
 
     void threadLoop();
 
@@ -59,7 +64,11 @@ public:
 
     static GCWorker* getWorker();
 
+    static void init(bool enableConcurrentMark, bool useBitmap, bool useInlineMarkstate);
+
     void wakeUpGCThread();
+
+    void triggerGC();
 
     void addObject(void* object_addr, size_t object_size);
 
@@ -86,7 +95,7 @@ public:
 namespace gc {
     void triggerGC();
 
-    void triggerGC(bool concurrent);
+    void init(bool enableConcurrentMark, bool useBitmap, bool useInlineMarkstate);
 }
 
 #endif //CPPGCPTR_GCWORKER_H

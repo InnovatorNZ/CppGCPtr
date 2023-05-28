@@ -7,10 +7,16 @@ std::unique_ptr<GCWorker> GCWorker::instance = nullptr;
 GCStatus::GCStatus(MarkState _markState, size_t _objectSize) : markState(_markState), objectSize(_objectSize) {
 }
 
-GCWorker::GCWorker() : stop_(false), ready_(false), gc_thread(nullptr) {
+GCWorker::GCWorker() : stop_(false), ready_(false), gc_thread(nullptr),
+                       enableConcurrentMark(false), useBitmap(false), useInlineMarkstate(false) {
+    this->memoryAllocator = std::make_unique<GCMemoryAllocator>();
 }
 
-GCWorker::GCWorker(bool concurrent) : stop_(false), ready_(false) {
+GCWorker::GCWorker(bool concurrent, bool useBitmap, bool useInlineMarkstate, bool useInternalMemoryManager) : stop_(false), ready_(false),
+                                                                                                              enableConcurrentMark(concurrent),
+                                                                                                              useBitmap(useBitmap),
+                                                                                                              useInlineMarkstate(useInlineMarkstate) {
+    this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
     if (concurrent) {
         this->gc_thread = std::make_unique<std::thread>(&GCWorker::threadLoop, this);
     } else {
@@ -31,14 +37,16 @@ GCWorker::~GCWorker() {
 
 GCWorker* GCWorker::getWorker() {
     if (instance == nullptr) {
-#ifdef ENABLE_CONCURRENT_MARK
-        GCWorker* pGCWorker = new GCWorker(true);
-#else
+        std::clog << "Not init! Initializing GCWorker with default argument (concurrent disabled, bitmap disabled)" << std::endl;
         GCWorker* pGCWorker = new GCWorker();
-#endif
         instance = std::unique_ptr<GCWorker>(pGCWorker);
     }
     return instance.get();
+}
+
+void GCWorker::init(bool enableConcurrentMark, bool useBitmap, bool useInlineMarkstate) {
+    GCWorker* pGCWorker = new GCWorker(enableConcurrentMark, useBitmap, useInlineMarkstate);
+    GCWorker::instance = std::unique_ptr<GCWorker>(pGCWorker);
 }
 
 void GCWorker::mark(void* object_addr) {
@@ -60,9 +68,56 @@ void GCWorker::mark(void* object_addr) {
         int identifier = *(reinterpret_cast<int*>(n_addr));
         if (identifier == GCPTR_IDENTIFIER) {
             // std::clog << "Identifer found at " << (void*) n_addr << std::endl;
-            void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(void*)));
+            void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState)));
             if (next_addr != nullptr)
                 mark(next_addr);
+        }
+    }
+}
+
+void GCWorker::mark_v2(GCPtrBase* gcptr) {
+    if (gcptr == nullptr) return;
+    void* object_addr = gcptr->getVoidPtr();
+    if (object_addr == nullptr) return;
+    size_t object_size = gcptr->getObjectSize();
+    MarkState c_markstate = GCPhase::getCurrentMarkState();
+    if (useInlineMarkstate)
+        if (gcptr->getInlineMarkState() == c_markstate)     // 标记过了
+            return;
+    if (!useBitmap) {
+        std::shared_lock<std::shared_mutex> read_lock(this->object_map_mutex);
+        auto it = object_map.find(object_addr);
+        if (it == object_map.end()) {
+            std::clog << "Object not found at " << object_addr << std::endl;
+            return;
+        }
+        read_lock.unlock();
+
+        if (c_markstate == it->second.markState)    // 标记过了
+            return;
+        it->second.markState = c_markstate;
+        if (object_size != it->second.objectSize) {
+            std::clog << "Why object size doesn't equal??" << std::endl;
+            object_size = it->second.objectSize;
+        }
+    } else {
+        // TODO: use bitmap...
+        std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(object_addr);
+        
+    }
+    char* cptr = reinterpret_cast<char*>(object_addr);
+    for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(void*) * 2; n_addr += sizeof(void*)) {
+        int identifier = *(reinterpret_cast<int*>(n_addr));
+        if (identifier == GCPTR_IDENTIFIER) {
+            // TODO: To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
+            GCPtrBase* next_ptr = static_cast<GCPtrBase*>(reinterpret_cast<void*>(n_addr));
+            // std::clog << "Identifer found at " << (void*) n_addr << std::endl;
+            void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(void*)));
+            if (next_addr != nullptr) {
+                auto markstate = static_cast<MarkState>(*(n_addr + sizeof(void*) * 2));
+                if (markstate != GCPhase::getCurrentMarkState())
+                    mark(next_addr);
+            }
         }
     }
 }
@@ -101,6 +156,23 @@ void GCWorker::wakeUpGCThread() {
         ready_ = true;
     }
     condition.notify_all();
+}
+
+void GCWorker::triggerGC() {
+    if (enableConcurrentMark) {
+        GCWorker::getWorker()->wakeUpGCThread();
+    } else {
+        using namespace std;
+        cout << "Triggered GC" << endl;
+        GCWorker::getWorker()->printMap();
+        GCWorker::getWorker()->beginMark();
+        GCPhase::SwitchToNextPhase();       // skip satb remark
+        GCWorker::getWorker()->printMap();
+        GCWorker::getWorker()->beginSweep();
+        GCWorker::getWorker()->printMap();
+        GCWorker::getWorker()->endGC();
+        cout << "End of GC" << endl;
+    }
 }
 
 void GCWorker::addObject(void* object_addr, size_t object_size) {
@@ -216,25 +288,13 @@ void GCWorker::printMap() {
     cout << "}" << endl;
 }
 
+
 namespace gc {
     void triggerGC() {
-        using namespace std;
-        cout << "Triggered GC" << endl;
-        GCWorker::getWorker()->printMap();
-        GCWorker::getWorker()->beginMark();
-        GCWorker::getWorker()->triggerSATBMark();
-        GCWorker::getWorker()->printMap();
-        GCWorker::getWorker()->beginSweep();
-        GCWorker::getWorker()->printMap();
-        GCWorker::getWorker()->endGC();
-        cout << "End of GC" << endl;
+        GCWorker::getWorker()->triggerGC();
     }
 
-    void triggerGC(bool concurrent) {
-        if (concurrent) {
-            GCWorker::getWorker()->wakeUpGCThread();
-        } else {
-            triggerGC();
-        }
+    void init(bool enableConcurrentMark, bool useBitmap, bool useInlineMarkstate) {
+        GCWorker::init(enableConcurrentMark, useBitmap, useInlineMarkstate);
     }
 }

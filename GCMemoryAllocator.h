@@ -57,6 +57,8 @@ public:
     void free(GCRegion region) = delete;
 
     void triggerClear();
+
+    std::shared_ptr<GCRegion> getRegion(void* object_addr);
 };
 
 
