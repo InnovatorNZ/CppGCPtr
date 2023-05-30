@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <atomic>
 #include <mutex>
+#include <memory>
+#include <unordered_map>
 #include "GCMemoryAllocator.h"
 #include "GCBitMap.h"
 #include "GCPhase.h"
@@ -31,6 +33,9 @@ private:
     MarkStateBit largeRegionMarkState;      // only used in large region
     std::unique_ptr<GCBitMap> bitmap;
     std::mutex region_mtx;
+    std::unordered_map<void*, void*> forwarding_table;
+    int allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
+    bool evacuated;
 
 public:
     struct GCRegionHash {
@@ -49,11 +54,15 @@ public:
 
     void* getStartAddr() const { return startAddress; }
 
+    size_t getAllocatedSize() const { return c_offset; }
+
     void* allocate(size_t size);
 
     void free(void* addr, size_t size);
 
     void mark(void* object_addr, size_t object_size);
+
+    bool marked(void* object_addr) const;
 
     float getFragmentRatio() const;
 
@@ -65,7 +74,13 @@ public:
 
     bool canFree() const;
 
+    void free();
+
     bool needEvacuate() const;
+
+    bool isEvacuated() const { return evacuated; }
+
+    // TODO: triggerEvacuate()
 };
 
 

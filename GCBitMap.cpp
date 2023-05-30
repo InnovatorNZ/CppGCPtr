@@ -4,18 +4,15 @@ GCBitMap::GCBitMap(void* region_start_addr, size_t region_size, int region_to_bi
         region_start_addr(region_start_addr), region_to_bitmap_ratio(region_to_bitmap_ratio) {
     int bitmap_size_ = ceil((double) region_size / (double) (region_to_bitmap_ratio * 8));
     this->bitmap_size = bitmap_size_;
-    this->bitmap_arr = new std::atomic<unsigned char>[bitmap_size_];
+    this->bitmap_arr = std::make_unique<std::atomic<unsigned char>[]>(bitmap_size_);
 }
 
-GCBitMap::~GCBitMap() {
-    delete[] bitmap_arr;
-    bitmap_arr = nullptr;
-}
+GCBitMap::~GCBitMap() = default;
 
 GCBitMap::GCBitMap(const GCBitMap& other) : region_to_bitmap_ratio(other.region_to_bitmap_ratio) {
     this->bitmap_size = other.bitmap_size;
     this->region_start_addr = other.region_start_addr;
-    this->bitmap_arr = new std::atomic<unsigned char>[bitmap_size];
+    this->bitmap_arr = std::make_unique<std::atomic<unsigned char>[]>(bitmap_size);
     for (int i = 0; i < bitmap_size; i++)
         this->bitmap_arr[i].store(other.bitmap_arr[i].load());
 }
@@ -23,7 +20,7 @@ GCBitMap::GCBitMap(const GCBitMap& other) : region_to_bitmap_ratio(other.region_
 GCBitMap::GCBitMap(GCBitMap&& other) noexcept: region_to_bitmap_ratio(other.region_to_bitmap_ratio) {
     this->bitmap_size = other.bitmap_size;
     this->region_start_addr = other.region_start_addr;
-    this->bitmap_arr = other.bitmap_arr;
+    this->bitmap_arr = std::move(other.bitmap_arr);
     other.bitmap_size = 0;
     other.bitmap_arr = nullptr;
     other.region_start_addr = nullptr;
@@ -31,6 +28,7 @@ GCBitMap::GCBitMap(GCBitMap&& other) noexcept: region_to_bitmap_ratio(other.regi
 
 void GCBitMap::mark(void* object_addr, size_t object_size, MarkStateBit state) {
     // todo: object_size要align up
+    if (bitmap_arr == nullptr) return;
     int offset = static_cast<int>(reinterpret_cast<char*>(object_addr) - reinterpret_cast<char*>(region_start_addr));
     int offset_end = static_cast<int>(reinterpret_cast<char*>(object_addr) + object_size - reinterpret_cast<char*>(region_start_addr)) - 1;
     if (offset < 0 || offset_end >= bitmap_size * region_to_bitmap_ratio || offset % region_to_bitmap_ratio != 0) {
@@ -76,12 +74,29 @@ void GCBitMap::mark(void* object_addr, size_t object_size, MarkStateBit state) {
 #endif
 }
 
+MarkStateBit GCBitMap::getMarkState(void* object_addr) const {
+    if (bitmap_arr == nullptr) return MarkStateBit::NOT_ALLOCATED;
+    int offset_byte, offset_bit;
+    addr_to_bit(object_addr, offset_byte, offset_bit);
+    unsigned char value = bitmap_arr[offset_byte].load() >> offset_bit & 3;
+    return MarkStateUtil::toMarkState(value);
+}
+
 GCBitMap::BitMapIterator GCBitMap::getIterator() const {
     return GCBitMap::BitMapIterator(*this);
 }
 
-int GCBitMap::getRegionToBitmapRatio() const {
-    return region_to_bitmap_ratio;
+void GCBitMap::addr_to_bit(void* addr, int& offset_byte, int& offset_bit) const {
+    int offset = static_cast<int>(reinterpret_cast<char*>(addr) - reinterpret_cast<char*>(region_start_addr));
+    offset = offset / region_to_bitmap_ratio * SINGLE_OBJECT_MARKBIT;
+    offset_byte = offset / 8;
+    offset_bit = offset % 8;
+}
+
+void* GCBitMap::bit_to_addr(int offset_byte, int offset_bit) const {
+    void* addr = reinterpret_cast<void*>(reinterpret_cast<char*>(region_start_addr) +
+                                         (offset_byte * 8 + offset_bit) * region_to_bitmap_ratio / SINGLE_OBJECT_MARKBIT);
+    return addr;
 }
 
 GCBitMap::BitMapIterator::BitMapIterator(const GCBitMap& bitmap) : bit_offset(0), byte_offset(0), bitmap(bitmap) {

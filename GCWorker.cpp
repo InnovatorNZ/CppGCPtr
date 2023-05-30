@@ -1,5 +1,3 @@
-#define ENABLE_CONCURRENT_MARK
-
 #include "GCWorker.h"
 
 std::unique_ptr<GCWorker> GCWorker::instance = nullptr;
@@ -8,15 +6,20 @@ GCStatus::GCStatus(MarkState _markState, size_t _objectSize) : markState(_markSt
 }
 
 GCWorker::GCWorker() : stop_(false), ready_(false), gc_thread(nullptr),
-                       enableConcurrentMark(false), useBitmap(false), useInlineMarkstate(false) {
+                       enableConcurrentMark(false), useBitmap(false), useInlineMarkstate(false), enableEvacuation(false) {
     this->memoryAllocator = std::make_unique<GCMemoryAllocator>();
 }
 
-GCWorker::GCWorker(bool concurrent, bool useBitmap, bool useInlineMarkstate, bool useInternalMemoryManager) : stop_(false), ready_(false),
-                                                                                                              enableConcurrentMark(concurrent),
-                                                                                                              useBitmap(useBitmap),
-                                                                                                              useInlineMarkstate(useInlineMarkstate) {
+GCWorker::GCWorker(bool concurrent, bool useBitmap, bool useInlineMarkState, bool useInternalMemoryManager, bool enableEvacuation) :
+        stop_(false), ready_(false), enableConcurrentMark(concurrent), enableEvacuation(enableEvacuation) {
     this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
+    if (enableEvacuation) {
+        this->useBitmap = true;
+        this->useInlineMarkstate = true;
+    } else {
+        this->useBitmap = useBitmap;
+        this->useInlineMarkstate = useInlineMarkState;
+    }
     if (concurrent) {
         this->gc_thread = std::make_unique<std::thread>(&GCWorker::threadLoop, this);
     } else {
@@ -32,7 +35,8 @@ GCWorker::~GCWorker() {
         ready_ = true;
     }
     condition.notify_all();
-    gc_thread->join();
+    if (gc_thread != nullptr)
+        gc_thread->join();
 }
 
 GCWorker* GCWorker::getWorker() {
@@ -44,8 +48,8 @@ GCWorker* GCWorker::getWorker() {
     return instance.get();
 }
 
-void GCWorker::init(bool enableConcurrentMark, bool useBitmap, bool useInlineMarkstate) {
-    GCWorker* pGCWorker = new GCWorker(enableConcurrentMark, useBitmap, useInlineMarkstate);
+void GCWorker::init(bool enableConcurrentMark, bool useBitmap) {
+    GCWorker* pGCWorker = new GCWorker(enableConcurrentMark, useBitmap);
     GCWorker::instance = std::unique_ptr<GCWorker>(pGCWorker);
 }
 
@@ -66,7 +70,7 @@ void GCWorker::mark(void* object_addr) {
     char* cptr = reinterpret_cast<char*>(object_addr);
     for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(void*) * 2; n_addr += sizeof(void*)) {
         int identifier = *(reinterpret_cast<int*>(n_addr));
-        if (identifier == GCPTR_IDENTIFIER) {
+        if (identifier == GCPTR_IDENTIFIER_HEAD) {
             // std::clog << "Identifer found at " << (void*) n_addr << std::endl;
             void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState)));
             if (next_addr != nullptr)
@@ -81,9 +85,14 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (object_addr == nullptr) return;
     size_t object_size = gcptr->getObjectSize();
     MarkState c_markstate = GCPhase::getCurrentMarkState();
-    if (useInlineMarkstate)
+    if (useInlineMarkstate) {
         if (gcptr->getInlineMarkState() == c_markstate)     // 标记过了
             return;
+        // TODO: 读取转发表的条件：即当前标记阶段为上一次被标记阶段
+        // 客观地说，指针自愈确实应该在标记对象前面（？）
+        gcptr->setInlineMarkState(c_markstate);
+    }
+
     if (!useBitmap) {
         std::shared_lock<std::shared_mutex> read_lock(this->object_map_mutex);
         auto it = object_map.find(object_addr);
@@ -98,26 +107,44 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
         it->second.markState = c_markstate;
         if (object_size != it->second.objectSize) {
             std::clog << "Why object size doesn't equal??" << std::endl;
+            throw std::exception();
             object_size = it->second.objectSize;
         }
     } else {
-        // TODO: use bitmap...
         std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(object_addr);
-        
+        if (region == nullptr || region->isEvacuated() ||
+            reinterpret_cast<char*>(region->getStartAddr()) + region->getAllocatedSize()
+            < reinterpret_cast<char*>(object_addr) + object_size) {
+            std::clog << "Object range out of region or region is evacuated or free!" << std::endl;
+            return;
+        }
+        if (region->marked(object_addr)) return;
+        region->mark(object_addr, object_size);
     }
+
     char* cptr = reinterpret_cast<char*>(object_addr);
-    for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(void*) * 2; n_addr += sizeof(void*)) {
-        int identifier = *(reinterpret_cast<int*>(n_addr));
-        if (identifier == GCPTR_IDENTIFIER) {
-            // TODO: To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
-            GCPtrBase* next_ptr = static_cast<GCPtrBase*>(reinterpret_cast<void*>(n_addr));
-            // std::clog << "Identifer found at " << (void*) n_addr << std::endl;
-            void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(void*)));
-            if (next_addr != nullptr) {
-                auto markstate = static_cast<MarkState>(*(n_addr + sizeof(void*) * 2));
-                if (markstate != GCPhase::getCurrentMarkState())
-                    mark(next_addr);
-            }
+    for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(GCPtr < void > ); n_addr += sizeof(void*)) {
+        int identifier_head = *(reinterpret_cast<int*>(n_addr));
+        if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
+            // To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
+            auto _max = [](int x, int y)constexpr { return x > y ? x : y; };
+            constexpr int tail_offset = sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4);
+            char* tail_addr = n_addr + tail_offset;
+            int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
+            if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {
+                GCPtrBase* next_ptr = reinterpret_cast<GCPtrBase*>(n_addr - sizeof(void*));
+#if 0
+                if (next_ptr->getVoidPtr() == nullptr) return;
+                // std::clog << "Identifer found at " << (void*) n_addr << std::endl;
+                void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState)));
+                if (next_addr != nullptr) {
+                    auto markstate = static_cast<MarkState>(*(n_addr + sizeof(void*) * 2));
+                    if (markstate != GCPhase::getCurrentMarkState())
+                        mark(next_addr);
+                }
+#endif
+                mark_v2(next_ptr);
+            } else std::clog << "Identifier head found at " << n_addr << " but not found tail" << std::endl;
         }
     }
 }
@@ -294,7 +321,7 @@ namespace gc {
         GCWorker::getWorker()->triggerGC();
     }
 
-    void init(bool enableConcurrentMark, bool useBitmap, bool useInlineMarkstate) {
-        GCWorker::init(enableConcurrentMark, useBitmap, useInlineMarkstate);
+    void init(bool enableConcurrentMark, bool useBitmap) {
+        GCWorker::init(enableConcurrentMark, useBitmap);
     }
 }

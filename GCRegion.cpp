@@ -2,7 +2,7 @@
 
 GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size) :
         regionType(regionType), startAddress(startAddress), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
-        total_size(total_size), frag_size(0), c_offset(0) {
+        total_size(total_size), frag_size(0), c_offset(0), allFreeFlag(0), evacuated(false) {
     if (regionType != RegionEnum::LARGE) {
         bitmap = std::make_unique<GCBitMap>(startAddress, total_size);
     }
@@ -50,7 +50,8 @@ float GCRegion::getFreeRatio() const {
 
 GCRegion::GCRegion(GCRegion&& other) : regionType(other.regionType), startAddress(other.startAddress),
                                        total_size(other.total_size), bitmap(std::move(other.bitmap)),
-                                       largeRegionMarkState(other.largeRegionMarkState) {
+                                       largeRegionMarkState(other.largeRegionMarkState),
+                                       allFreeFlag(other.allFreeFlag), evacuated(other.evacuated) {
     std::unique_lock lock(other.region_mtx);
     this->c_offset.store(other.c_offset.load());
     this->frag_size.store(other.frag_size.load());
@@ -78,6 +79,13 @@ void GCRegion::mark(void* object_addr, size_t object_size) {
         bitmap->mark(object_addr, object_size, GCPhase::getCurrentMarkStateBit());
 }
 
+bool GCRegion::marked(void* object_addr) const {
+    if (regionType == RegionEnum::LARGE)
+        return largeRegionMarkState == GCPhase::getCurrentMarkStateBit();
+    else
+        return bitmap->getMarkState(object_addr) == GCPhase::getCurrentMarkStateBit();
+}
+
 void GCRegion::clearUnmarked() {
     if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
         std::cerr << "Wrong phase, should in sweeping phase to trigger clearUnmarked()" << std::endl;
@@ -87,6 +95,7 @@ void GCRegion::clearUnmarked() {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
+    allFreeFlag = 0;
     auto bitMapIterator = bitmap->getIterator();
     MarkStateBit lastMarkState = MarkStateBit::NOT_ALLOCATED;
     int last_offset = 0;
@@ -114,20 +123,37 @@ void GCRegion::clearUnmarked() {
                     throw std::exception();
                 }
             }
+        } else {  //有存活的对象
+            allFreeFlag = -1;
         }
     }
+    if (allFreeFlag == 0) allFreeFlag = 1;
 }
 
 bool GCRegion::canFree() const {
-    // TODO: 删除region的操作……
-    if (regionType == RegionEnum::LARGE && GCPhase::needSweep(largeRegionMarkState)) return true;
-    else return false;
+    if (regionType == RegionEnum::LARGE) {
+        if (GCPhase::needSweep(largeRegionMarkState)) return true;
+        else return false;
+    } else {
+        if (allFreeFlag == 1) return true;
+        else return false;
+    }
 }
 
 bool GCRegion::needEvacuate() const {
     // TODO: 被释放的region只保留转发表？
     if (getFragmentRatio() >= 0.25 && getFreeRatio() < 0.25) return true;
     else return false;
+}
+
+void GCRegion::free() {
+    // 释放整个region，只保留转发表
+    evacuated = true;
+    bitmap = nullptr;
+    total_size = 0;
+    c_offset = 0;
+    ::free(startAddress);
+    startAddress = nullptr;
 }
 
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {

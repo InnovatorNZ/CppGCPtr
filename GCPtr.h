@@ -13,6 +13,8 @@ private:
     T* obj;
     unsigned int obj_size;
     bool is_root;
+
+    const int identifier_tail = GCPTR_IDENTIFIER_TAIL;
 public:
     GCPtr() : obj(nullptr), obj_size(0), is_root(false) {
     }

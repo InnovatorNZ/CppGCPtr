@@ -3,11 +3,12 @@
 
 #include "GCPhase.h"
 
-#define GCPTR_IDENTIFIER 0x1f1e33fc
+constexpr int GCPTR_IDENTIFIER_HEAD = 0x1f1e33fc;
+constexpr int GCPTR_IDENTIFIER_TAIL = 0x03e0e1cc;
 
 class GCPtrBase {
 private:
-    const int identifier = GCPTR_IDENTIFIER;
+    const int identifier_head = GCPTR_IDENTIFIER_HEAD;
 
 protected:
     MarkState inlineMarkState;      // 有点类似zgc的染色指针，加快“读取”染色标记

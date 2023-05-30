@@ -155,6 +155,7 @@ void GCMemoryAllocator::triggerClear() {
             mediumRegionQue[i]->clearUnmarked();
         }
     }
+    // TODO: 四个都要canFree
     {
         {
             std::shared_lock<std::shared_mutex> lock(this->largeRegionQueMtx);
@@ -162,6 +163,7 @@ void GCMemoryAllocator::triggerClear() {
                 if (largeRegionQue[i]->canFree()) {
                     std::unique_lock<std::shared_mutex> lock2(this->regionMapMtx);
                     regionMap.erase(largeRegionQue[i]->getStartAddr());
+                    largeRegionQue[i]->free();
                 }
             }
         }

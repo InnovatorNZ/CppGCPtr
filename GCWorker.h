@@ -40,12 +40,14 @@ private:
     std::condition_variable condition;
     std::unique_ptr<std::thread> gc_thread;
     std::unique_ptr<GCMemoryAllocator> memoryAllocator;
-    const bool enableConcurrentMark, useBitmap, useInlineMarkstate;
+    bool enableConcurrentMark, useBitmap, useInlineMarkstate, enableEvacuation;
     bool stop_, ready_;
 
     GCWorker();
 
-    GCWorker(bool concurrent, bool useBitmap, bool useInlineMarkstate, bool useInternalMemoryManager = false);
+    GCWorker(bool concurrent, bool useBitmap,
+             bool useInlineMarkState = true, bool useInternalMemoryManager = false,
+             bool enableEvacuation = false);
 
     void mark(void*);
 
@@ -64,7 +66,7 @@ public:
 
     static GCWorker* getWorker();
 
-    static void init(bool enableConcurrentMark, bool useBitmap, bool useInlineMarkstate);
+    static void init(bool enableConcurrentMark, bool useBitmap);
 
     void wakeUpGCThread();
 

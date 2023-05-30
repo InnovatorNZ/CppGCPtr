@@ -6,10 +6,11 @@
 #include <atomic>
 #include <mutex>
 #include <unordered_set>
+#include <memory>
 #include "PhaseEnum.h"
 #include "Iterator.h"
 
-#define SINGLE_OBJECT_MARKBIT 2     // 表示每两个bit标记一个对象
+constexpr int SINGLE_OBJECT_MARKBIT = 2;     // 表示每两个bit标记一个对象
 #define USE_SINGLE_OBJECT_MAP false
 
 class GCBitMap {
@@ -18,11 +19,15 @@ private:
     int region_to_bitmap_ratio;     // bitmap的每两个bit对应于region的多少字节，默认为1，即2bit->1byte
     int bitmap_size;
     void* region_start_addr;
-    std::atomic<unsigned char>* bitmap_arr;
+    std::unique_ptr<std::atomic<unsigned char>[]> bitmap_arr;
 #if USE_SINGLE_OBJECT_MAP
     std::unordered_set<void*> single_size_set;      // 存放size<=1byte的对象，由于其无法在bitmap占用头尾标识
     std::mutex single_size_set_mtx;
 #endif
+
+    void addr_to_bit(void* addr, int& offset_byte, int& offset_bit) const;
+
+    void* bit_to_addr(int offset_byte, int offset_bit) const;
 
 public:
 #if USE_SINGLE_OBJECT_MAP
@@ -57,7 +62,9 @@ public:
 
     void mark(void* object_addr, size_t object_size, MarkStateBit state);
 
-    int getRegionToBitmapRatio() const;
+    MarkStateBit getMarkState(void* object_addr) const;
+
+    int getRegionToBitmapRatio() const { return region_to_bitmap_ratio; }
 
     BitMapIterator getIterator() const;
 };
