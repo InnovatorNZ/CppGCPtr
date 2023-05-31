@@ -29,6 +29,27 @@ private:
     GCPtr<MyObject> g;
 };
 
+class Base {
+public:
+    int a;
+    float b;
+
+    virtual ~Base() = default;
+
+    virtual void print() = 0;
+};
+
+class Derived : public Base {
+public:
+    double c;
+
+    explicit Derived(double _c) : c(_c) {}
+
+    void print() override {
+        std::cout << c << std::endl;
+    }
+};
+
 GCPtr<MyObject> obj3;
 
 int main() {
@@ -62,6 +83,7 @@ int main() {
             //obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
             obj2->setG(gc::make_gc<MyObject>());
         }
+        GCPtr<Base> polyTestVar = gc::make_gc2<Derived>(3.14);
 #if 0
         cout << &obj1 << " " << &obj2 << " " << &obj3 << " " << &obj3->d << " " <<
             &obj3->e << " " << &obj3->d->d << endl;
