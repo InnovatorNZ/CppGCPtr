@@ -42,7 +42,7 @@ int main() {
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::high_resolution_clock::now();
 #if TRIGGER_GC
-        gc::triggerGC(true);
+        gc::triggerGC();
         //Sleep(1000);
 #endif
         GCPtr<MyObject> obj2;
@@ -70,7 +70,7 @@ int main() {
 
         obj3->e->f = 114.514;
 #if TRIGGER_GC
-        gc::triggerGC(true);
+        gc::triggerGC();
 #endif
         GCPtr<MyObject> obj5 = gc::make_root<MyObject>();
         {

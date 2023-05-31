@@ -19,11 +19,11 @@ GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager) {
 }
 
 void* GCMemoryAllocator::allocate(size_t size) {
-    if (size <= TINY_OBJECT_THRESHOLD) {
+    if (size <= GCRegion::TINY_OBJECT_THRESHOLD) {
         return this->allocate_from_region(size, RegionEnum::TINY);
-    } else if (size <= SMALL_OBJECT_THRESHOLD) {
+    } else if (size <= GCRegion::SMALL_OBJECT_THRESHOLD) {
         return this->allocate_from_region(size, RegionEnum::SMALL);
-    } else if (size <= MEDIUM_OBJECT_THRESHOLD) {
+    } else if (size <= GCRegion::MEDIUM_OBJECT_THRESHOLD) {
         return this->allocate_from_region(size, RegionEnum::MEDIUM);
     } else {
         return this->allocate_from_region(size, RegionEnum::LARGE);
@@ -45,9 +45,9 @@ void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType
             // 所有region都不够，分配新region
             // TODO: 我为啥不能直接调用操作系统的malloc获取region的内存？？为啥还要搞个全局freelist？？
             // TODO: 调查bitmap究竟怎么和region/freelist配合工作
-            void* new_region_memory = this->allocate_new_memory(SMALL_REGION_SIZE);
+            void* new_region_memory = this->allocate_new_memory(GCRegion::SMALL_REGION_SIZE);
             std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
-                    (RegionEnum::SMALL, new_region_memory, SMALL_REGION_SIZE);
+                    (RegionEnum::SMALL, new_region_memory, GCRegion::SMALL_REGION_SIZE);
             {
                 std::unique_lock<std::shared_mutex> lock(smallRegionQueMtx);
                 smallRegionQue.emplace_back(region_ptr);
@@ -66,9 +66,9 @@ void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType
                     if (addr != nullptr) return addr;
                 }
             }
-            void* new_region_memory = this->allocate_new_memory(MEDIUM_REGION_SIZE);
+            void* new_region_memory = this->allocate_new_memory(GCRegion::MEDIUM_REGION_SIZE);
             std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
-                    (RegionEnum::MEDIUM, new_region_memory, MEDIUM_REGION_SIZE);
+                    (RegionEnum::MEDIUM, new_region_memory, GCRegion::MEDIUM_REGION_SIZE);
             {
                 std::unique_lock<std::shared_mutex> lock(mediumRegionQueMtx);
                 mediumRegionQue.emplace_back(region_ptr);
@@ -100,9 +100,9 @@ void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType
                     if (addr != nullptr) return addr;
                 }
             }
-            void* new_region_memory = this->allocate_new_memory(TINY_REGION_SIZE);
+            void* new_region_memory = this->allocate_new_memory(GCRegion::TINY_REGION_SIZE);
             std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
-                    (RegionEnum::TINY, new_region_memory, TINY_REGION_SIZE);
+                    (RegionEnum::TINY, new_region_memory, GCRegion::TINY_REGION_SIZE);
             {
                 std::unique_lock<std::shared_mutex> lock(tinyRegionQueMtx);
                 tinyRegionQue.emplace_back(region_ptr);

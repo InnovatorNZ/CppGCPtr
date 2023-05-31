@@ -12,7 +12,7 @@ void* GCRegion::allocate(size_t size) {
     if (startAddress == nullptr) return nullptr;
     void* object_addr = nullptr;
     if (regionType == RegionEnum::TINY)
-        size = GCMemoryAllocator::TINY_OBJECT_THRESHOLD;
+        size = TINY_OBJECT_THRESHOLD;
     else
         size = alignUpForBitmap(size);
     while (true) {
@@ -106,7 +106,7 @@ void GCRegion::clearUnmarked() {
         if (GCPhase::needSweep(markState)) {
             if (regionType == RegionEnum::TINY) {
                 void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
-                this->free(addr, GCMemoryAllocator::TINY_OBJECT_THRESHOLD);
+                this->free(addr, TINY_OBJECT_THRESHOLD);
             } else {
                 if (lastMarkState == MarkStateBit::NOT_ALLOCATED) {     // 迭代中首次
                     lastMarkState = markState;
