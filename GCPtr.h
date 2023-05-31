@@ -9,6 +9,9 @@
 
 template<typename T>
 class GCPtr : public GCPtrBase {
+    template<typename U>
+    friend class GCPtr;
+
 private:
     T* obj;
     bool is_root;
@@ -100,6 +103,14 @@ public:
         GCPhase::LeaveCriticalSection();
     }
 
+    template<typename U>
+    GCPtr(GCPtr<U>&& other) : obj(other.obj), is_root(other.is_root) {
+        other.obj = nullptr;
+        if (is_root) {
+            GCWorker::getWorker()->addRoot(this);
+        }
+    }
+
     ~GCPtr() override {
         GCPhase::EnterCriticalSection();
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK && this->obj != nullptr) {
@@ -141,6 +152,11 @@ namespace gc {
         GCPhase::LeaveCriticalSection();
         GCPtr<T> ret(obj, true);
         return ret;
+    }
+
+    template<class T, class... Args>
+    GCPtr <T> make_gc2(Args&& ... args) {
+        return GCPtr<T>(new T(std::forward<Args>(args)...));
     }
 
 #ifdef MORE_USERFRIENDLY
