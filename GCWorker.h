@@ -24,6 +24,11 @@ public:
     GCStatus(MarkState _markState, size_t _objectSize);
 };
 
+struct ObjectAndSize {
+    void* object_addr;
+    size_t object_size;
+};
+
 class GCWorker {
 private:
     static std::unique_ptr<GCWorker> instance;
@@ -31,8 +36,11 @@ private:
     std::shared_mutex object_map_mutex;
     std::unordered_set<GCPtrBase*> root_set;
     std::shared_mutex root_set_mutex;
-    std::vector<void*> root_ptr_snapshot;
+    std::vector<GCPtrBase*> root_ptr_snapshot;
     std::vector<void*> satb_queue;
+    int poolCount;
+    std::vector<std::vector<ObjectAndSize>> satb_queue_pool;
+    std::unique_ptr<std::mutex[]> satb_queue_pool_mutex;
     std::mutex satb_queue_mutex;
     std::unordered_map<void*, std::function<void()>> destructor_map;
     std::mutex destructor_map_mutex;
@@ -52,6 +60,8 @@ private:
     void mark(void*);
 
     void mark_v2(GCPtrBase*);
+
+    void mark_v2(void*, size_t);
 
     void threadLoop();
 
@@ -79,6 +89,8 @@ public:
     void removeRoot(GCPtrBase*);
 
     void addSATB(void* object_addr);
+
+    void addSATB(void* object_addr, size_t object_size);
 
     void registerDestructor(void* object_addr, const std::function<void()>&);
 

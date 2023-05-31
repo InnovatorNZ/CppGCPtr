@@ -5,9 +5,7 @@ std::unique_ptr<GCWorker> GCWorker::instance = nullptr;
 GCStatus::GCStatus(MarkState _markState, size_t _objectSize) : markState(_markState), objectSize(_objectSize) {
 }
 
-GCWorker::GCWorker() : stop_(false), ready_(false), gc_thread(nullptr),
-                       enableConcurrentMark(false), useBitmap(false), useInlineMarkstate(false), enableEvacuation(false) {
-    this->memoryAllocator = std::make_unique<GCMemoryAllocator>();
+GCWorker::GCWorker() : GCWorker(false, false, false, false, false) {
 }
 
 GCWorker::GCWorker(bool concurrent, bool useBitmap, bool useInlineMarkState, bool useInternalMemoryManager, bool enableEvacuation) :
@@ -20,6 +18,9 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool useInlineMarkState, boo
         this->useBitmap = useBitmap;
         this->useInlineMarkstate = useInlineMarkState;
     }
+    this->poolCount = std::thread::hardware_concurrency();
+    this->satb_queue_pool.reserve(poolCount);
+    this->satb_queue_pool_mutex = std::make_unique<std::mutex[]>(poolCount);
     if (concurrent) {
         this->gc_thread = std::make_unique<std::thread>(&GCWorker::threadLoop, this);
     } else {
@@ -93,6 +94,13 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
         gcptr->setInlineMarkState(c_markstate);
     }
 
+    this->mark_v2(object_addr, object_size);
+}
+
+void GCWorker::mark_v2(void* object_addr, size_t object_size) {
+    if (object_addr == nullptr) return;
+    MarkState c_markstate = GCPhase::getCurrentMarkState();
+
     if (!useBitmap) {
         std::shared_lock<std::shared_mutex> read_lock(this->object_map_mutex);
         auto it = object_map.find(object_addr);
@@ -148,6 +156,7 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
         }
     }
 }
+
 
 void GCWorker::threadLoop() {
     Sleep(100);
@@ -226,6 +235,19 @@ void GCWorker::addSATB(void* object_addr) {
     satb_queue.push_back(object_addr);
 }
 
+void GCWorker::addSATB(void* object_addr, size_t object_size) {
+    std::clog << "Adding SATB: " << object_addr << " (" << object_size << " bytes)" << std::endl;
+    if (!useBitmap) {
+        std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
+        satb_queue.push_back(object_addr);
+    } else {
+        std::thread::id tid = std::this_thread::get_id();
+        int pool_idx = std::hash<std::thread::id>()(tid) % poolCount;
+        std::unique_lock<std::mutex> lock(satb_queue_pool_mutex[pool_idx]);
+        satb_queue_pool[pool_idx].emplace_back(object_addr, object_size);
+    }
+}
+
 void GCWorker::registerDestructor(void* object_addr, const std::function<void()>& destructor) {
     std::unique_lock<std::mutex> lock(this->destructor_map_mutex);
     this->destructor_map.emplace(object_addr, destructor);
@@ -239,17 +261,21 @@ void GCWorker::beginMark() {
         {
             std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex);
             for (auto& it : root_set) {
-                void* ptr = it->getVoidPtr();
-                if (ptr != nullptr)
-                    this->root_ptr_snapshot.push_back(ptr);
+                if (it->getVoidPtr() != nullptr)
+                    this->root_ptr_snapshot.push_back(it);
             }
         }
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
         std::clog << "copy root_set duration: " << std::dec << duration.count() << " us" << std::endl;
-
-        for (void* ptr : this->root_ptr_snapshot) {
-            mark(ptr);
+        if (!useBitmap && !useInlineMarkstate) {
+            for (GCPtrBase* gcptr : this->root_ptr_snapshot) {
+                mark(gcptr->getVoidPtr());
+            }
+        } else {
+            for (GCPtrBase* gcptr : this->root_ptr_snapshot) {
+                mark_v2(gcptr);
+            }
         }
     } else {
         std::clog << "Already in concurrent marking phase or in other invalid phase" << std::endl;
@@ -259,13 +285,22 @@ void GCWorker::beginMark() {
 void GCWorker::triggerSATBMark() {
     if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
         GCPhase::SwitchToNextPhase();   // remark
-        for (auto object_addr : satb_queue) {
-            mark(object_addr);
+        if (!useBitmap) {
+            for (auto object_addr : satb_queue) {
+                mark(object_addr);
+            }
+            satb_queue.clear();
+        } else {
+            // TODO: 可按i并行化
+            for (int i = 0; i < poolCount; i++) {
+                for (auto& object_and_size : satb_queue_pool[i]) {
+                    mark_v2(object_and_size.object_addr, object_and_size.object_size);
+                }
+                satb_queue_pool[i].clear();
+            }
         }
-        satb_queue.clear();
-    } else {
+    } else
         std::clog << "Already in remark phase or in other invalid phase" << std::endl;
-    }
 }
 
 void GCWorker::beginSweep() {

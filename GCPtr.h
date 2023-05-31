@@ -122,7 +122,8 @@ public:
     }
 
     template<typename U>
-    GCPtr(GCPtr<U>&& other) : obj(other.obj), is_root(other.is_root) {
+    GCPtr(GCPtr<U>&& other) : obj(other.obj), obj_size(other.obj_size), is_root(other.is_root) {
+        this->setInlineMarkState(other.getInlineMarkState());
         other.obj = nullptr;
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
