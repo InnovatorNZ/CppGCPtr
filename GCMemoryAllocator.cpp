@@ -143,6 +143,7 @@ void* GCMemoryAllocator::allocate_from_freelist(size_t size) {
 }
 
 void GCMemoryAllocator::triggerClear() {
+    // TODO: 调用clearUnmarked可按region并行化
     {
         std::shared_lock<std::shared_mutex> lock(this->smallRegionQueMtx);
         for (int i = 0; i < smallRegionQue.size(); i++) {
@@ -155,31 +156,38 @@ void GCMemoryAllocator::triggerClear() {
             mediumRegionQue[i]->clearUnmarked();
         }
     }
-    // TODO: 四个都要canFree
-    {
-        {
-            std::shared_lock<std::shared_mutex> lock(this->largeRegionQueMtx);
-            for (int i = 0; i < largeRegionQue.size(); i++) {
-                if (largeRegionQue[i]->canFree()) {
-                    std::unique_lock<std::shared_mutex> lock2(this->regionMapMtx);
-                    regionMap.erase(largeRegionQue[i]->getStartAddr());
-                    largeRegionQue[i]->free();
-                }
-            }
-        }
-        {
-            std::unique_lock<std::shared_mutex> lock(this->largeRegionQueMtx);
-            for (auto it = largeRegionQue.begin(); it != largeRegionQue.end(); it++) {
-                if (it->get()->canFree()) {
-                    it = largeRegionQue.erase(it);
-                }
-            }
-        }
-    }
     {
         std::shared_lock<std::shared_mutex> lock(this->tinyRegionQueMtx);
         for (int i = 0; i < tinyRegionQue.size(); i++) {
             tinyRegionQue[i]->clearUnmarked();
+        }
+    }
+    // clearFreeRegion可由四个线程并行化，但对于每种类型应单线程
+    clearFreeRegion(largeRegionQue, largeRegionQueMtx);
+    clearFreeRegion(smallRegionQue, smallRegionQueMtx);
+    clearFreeRegion(mediumRegionQue, mediumRegionQueMtx);
+    clearFreeRegion(tinyRegionQue, tinyRegionQueMtx);
+}
+
+void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
+    {
+        std::shared_lock<std::shared_mutex> lock(regionQueMtx);
+        for (int i = 0; i < regionQue.size(); i++) {
+            if (regionQue[i]->canFree()) {
+                {
+                    std::unique_lock<std::shared_mutex> lock2(this->regionMapMtx);
+                    regionMap.erase(regionQue[i]->getStartAddr());
+                }
+                regionQue[i]->free();
+            }
+        }
+    }
+    {
+        std::unique_lock<std::shared_mutex> lock(regionQueMtx);
+        for (auto it = regionQue.begin(); it != regionQue.end(); it++) {
+            if (it->get()->canFree()) {
+                it = regionQue.erase(it);
+            }
         }
     }
 }

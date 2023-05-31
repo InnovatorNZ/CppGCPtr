@@ -12,9 +12,9 @@
 #include <condition_variable>
 
 #include "GCPtrBase.h"
+#include "GCMemoryAllocator.h"
 #include "GCUtil.h"
 #include "PhaseEnum.h"
-#include "GCMemoryAllocator.h"
 
 class GCStatus {
 public:

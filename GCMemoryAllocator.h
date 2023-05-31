@@ -40,14 +40,14 @@ private:
 
     void* allocate_from_freelist(size_t size);
 
+    void clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
+
 public:
     GCMemoryAllocator();
 
     explicit GCMemoryAllocator(bool useInternalMemoryManager);
 
     void* allocate(size_t size);
-
-    void free(GCRegion region) = delete;
 
     void triggerClear();
 
