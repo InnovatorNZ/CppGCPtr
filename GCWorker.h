@@ -48,12 +48,12 @@ private:
     std::condition_variable condition;
     std::unique_ptr<std::thread> gc_thread;
     std::unique_ptr<GCMemoryAllocator> memoryAllocator;
-    bool enableConcurrentMark, useBitmap, useInlineMarkstate, enableEvacuation;
+    bool enableConcurrentMark, useBitmap, useInlineMarkstate, enableEvacuation, enableDestructorSupport;
     bool stop_, ready_;
 
     GCWorker();
 
-    GCWorker(bool concurrent, bool useBitmap,
+    GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport = true,
              bool useInlineMarkState = true, bool useInternalMemoryManager = false,
              bool enableEvacuation = false);
 
@@ -64,6 +64,8 @@ private:
     void mark_v2(void*, size_t);
 
     void threadLoop();
+
+    void callDestructor(void*, bool remove_after_call = false);
 
 public:
     GCWorker(const GCWorker&) = delete;
@@ -103,6 +105,8 @@ public:
     void endGC();
 
     void printMap();
+
+    bool destructorEnabled() const { return enableDestructorSupport; }
 };
 
 

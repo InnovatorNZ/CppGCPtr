@@ -10,7 +10,8 @@
 template<typename T>
 class GCPtr : public GCPtrBase {
     template<typename U>
-    friend class GCPtr;
+    friend
+    class GCPtr;
 
 private:
     T* obj;
@@ -29,7 +30,8 @@ public:
         GCPhase::EnterCriticalSection();
         this->obj = obj;
         GCWorker::getWorker()->addObject(obj, sizeof(*obj));
-        GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
+        if (GCWorker::getWorker()->destructorEnabled())
+            GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
@@ -56,7 +58,7 @@ public:
         if (this != &other) {
             GCPhase::EnterCriticalSection();
             if (this->obj != nullptr && this->obj != other.obj && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
-                GCWorker::getWorker()->addSATB(this->obj);
+                GCWorker::getWorker()->addSATB(this->obj, this->obj_size);
             }
             this->obj = other.obj;
             this->obj_size = other.obj_size;
@@ -76,7 +78,7 @@ public:
         if (this->obj != nullptr) {
             GCPhase::EnterCriticalSection();
             if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
-                GCWorker::getWorker()->addSATB(this->obj);
+                GCWorker::getWorker()->addSATB(this->obj, this->obj_size);
             }
             this->obj = nullptr;
             this->obj_size = 0;
@@ -133,7 +135,7 @@ public:
     ~GCPtr() override {
         GCPhase::EnterCriticalSection();
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK && this->obj != nullptr) {
-            GCWorker::getWorker()->addSATB(this->obj);
+            GCWorker::getWorker()->addSATB(this->obj, this->obj_size);
         }
         if (is_root) {
             GCWorker::getWorker()->removeRoot(this);

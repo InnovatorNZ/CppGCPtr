@@ -5,12 +5,15 @@ std::unique_ptr<GCWorker> GCWorker::instance = nullptr;
 GCStatus::GCStatus(MarkState _markState, size_t _objectSize) : markState(_markState), objectSize(_objectSize) {
 }
 
-GCWorker::GCWorker() : GCWorker(false, false, false, false, false) {
+GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
 
-GCWorker::GCWorker(bool concurrent, bool useBitmap, bool useInlineMarkState, bool useInternalMemoryManager, bool enableEvacuation) :
-        stop_(false), ready_(false), enableConcurrentMark(concurrent), enableEvacuation(enableEvacuation) {
+GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport, bool useInlineMarkState,
+                   bool useInternalMemoryManager, bool enableEvacuation) :
+        stop_(false), ready_(false), enableConcurrentMark(concurrent),
+        enableEvacuation(enableEvacuation), enableDestructorSupport(enableDestructorSupport) {
     this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
+    if (useBitmap) this->enableDestructorSupport = false;     // TODO: bitmap暂不支持销毁时调用析构函数
     if (enableEvacuation) {
         this->useBitmap = true;
         this->useInlineMarkstate = true;
@@ -270,11 +273,11 @@ void GCWorker::beginMark() {
         std::clog << "copy root_set duration: " << std::dec << duration.count() << " us" << std::endl;
         if (!useBitmap && !useInlineMarkstate) {
             for (GCPtrBase* gcptr : this->root_ptr_snapshot) {
-                mark(gcptr->getVoidPtr());
+                this->mark(gcptr->getVoidPtr());
             }
         } else {
             for (GCPtrBase* gcptr : this->root_ptr_snapshot) {
-                mark_v2(gcptr);
+                this->mark_v2(gcptr);
             }
         }
     } else {
@@ -306,22 +309,33 @@ void GCWorker::triggerSATBMark() {
 void GCWorker::beginSweep() {
     if (GCPhase::getGCPhase() == eGCPhase::REMARK) {
         GCPhase::SwitchToNextPhase();
-        for (auto it = object_map.begin(); it != object_map.end();) {
-            if (GCPhase::needSweep(it->second.markState)) {
-                auto destructor_it = destructor_map.find(it->first);
-                if (destructor_it != destructor_map.end()) {
-                    std::function<void()>& destructor = destructor_it->second;
-                    destructor();
-                    destructor_map.erase(destructor_it);
+        if (!useBitmap) {
+            for (auto it = object_map.begin(); it != object_map.end();) {
+                if (GCPhase::needSweep(it->second.markState)) {
+                    void* object_addr = it->first;
+                    if (enableDestructorSupport)
+                        callDestructor(object_addr, true);
+                    free(object_addr);
+                    it = object_map.erase(it);
+                } else {
+                    ++it;
                 }
-                free(it->first);
-                it = object_map.erase(it);
-            } else {
-                ++it;
             }
+        } else {
+            memoryAllocator->triggerClear();
         }
     } else {
         std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
+    }
+}
+
+void GCWorker::callDestructor(void* object_addr, bool remove_after_call) {
+    auto destructor_it = destructor_map.find(object_addr);
+    if (destructor_it != destructor_map.end()) {
+        std::function<void()>& destructor = destructor_it->second;
+        destructor();
+        if (remove_after_call)
+            destructor_map.erase(destructor_it);
     }
 }
 
