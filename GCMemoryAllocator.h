@@ -15,7 +15,7 @@
 
 class GCMemoryAllocator {
 private:
-    static const size_t INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
+    static const size_t INITIAL_SINGLE_SIZE;
     // GCMemoryManager memoryManager;
     bool enableInternalMemoryManager;
     unsigned int poolCount;

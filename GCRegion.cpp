@@ -1,5 +1,12 @@
 #include "GCRegion.h"
 
+const size_t GCRegion::TINY_OBJECT_THRESHOLD = 4;
+const size_t GCRegion::TINY_REGION_SIZE = 256 * 1024;
+const size_t GCRegion::SMALL_OBJECT_THRESHOLD = 16 * 1024;
+const size_t GCRegion::SMALL_REGION_SIZE = 1 * 1024 * 1024;
+const size_t GCRegion::MEDIUM_OBJECT_THRESHOLD = 1 * 1024 * 1024;
+const size_t GCRegion::MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
+
 GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size) :
         regionType(regionType), startAddress(startAddress), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
         total_size(total_size), frag_size(0), c_offset(0), allFreeFlag(0), evacuated(false) {

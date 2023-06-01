@@ -84,6 +84,8 @@ public:
 
     void triggerGC();
 
+    void* allocate(size_t size);
+
     void addObject(void* object_addr, size_t object_size);
 
     void addRoot(GCPtrBase*);
@@ -104,16 +106,18 @@ public:
 
     void endGC();
 
-    void printMap();
+    void printMap() const;
 
     bool destructorEnabled() const { return enableDestructorSupport; }
+
+    bool bitmapEnabled() const { return useBitmap; }
 };
 
 
 namespace gc {
     void triggerGC();
 
-    void init(bool enableConcurrentMark, bool useBitmap, bool useInlineMarkstate);
+    void init(bool enableConcurrentMark, bool useBitmap);
 }
 
 #endif //CPPGCPTR_GCWORKER_H

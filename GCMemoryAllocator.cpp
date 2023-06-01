@@ -1,5 +1,7 @@
 #include "GCMemoryAllocator.h"
 
+const size_t GCMemoryAllocator::INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
+
 GCMemoryAllocator::GCMemoryAllocator() : GCMemoryAllocator(false) {
 }
 

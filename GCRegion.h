@@ -24,12 +24,12 @@ public:
 
 class GCRegion {
 public:
-    static const size_t TINY_OBJECT_THRESHOLD = 4;
-    static const size_t TINY_REGION_SIZE = 256 * 1024;
-    static const size_t SMALL_OBJECT_THRESHOLD = 16 * 1024;
-    static const size_t SMALL_REGION_SIZE = 1 * 1024 * 1024;
-    static const size_t MEDIUM_OBJECT_THRESHOLD = 1 * 1024 * 1024;
-    static const size_t MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
+    static const size_t TINY_OBJECT_THRESHOLD;
+    static const size_t TINY_REGION_SIZE;
+    static const size_t SMALL_OBJECT_THRESHOLD;
+    static const size_t SMALL_REGION_SIZE;
+    static const size_t MEDIUM_OBJECT_THRESHOLD;
+    static const size_t MEDIUM_REGION_SIZE;
 private:
     void* startAddress;
     size_t total_size;

@@ -22,7 +22,7 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport
         this->useInlineMarkstate = useInlineMarkState;
     }
     this->poolCount = std::thread::hardware_concurrency();
-    this->satb_queue_pool.reserve(poolCount);
+    this->satb_queue_pool.resize(poolCount);
     this->satb_queue_pool_mutex = std::make_unique<std::mutex[]>(poolCount);
     if (concurrent) {
         this->gc_thread = std::make_unique<std::thread>(&GCWorker::threadLoop, this);
@@ -133,8 +133,9 @@ void GCWorker::mark_v2(void* object_addr, size_t object_size) {
         region->mark(object_addr, object_size);
     }
 
+    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 40 : 28;
     char* cptr = reinterpret_cast<char*>(object_addr);
-    for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(GCPtr < void > ); n_addr += sizeof(void*)) {
+    for (char* n_addr = cptr; n_addr < cptr + object_size - SIZEOF_GCPTR; n_addr += sizeof(void*)) {
         int identifier_head = *(reinterpret_cast<int*>(n_addr));
         if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
             // To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
@@ -214,7 +215,15 @@ void GCWorker::triggerGC() {
     }
 }
 
+void* GCWorker::allocate(size_t size) {
+    if (!useBitmap) return nullptr;
+    return memoryAllocator->allocate(size);
+}
+
 void GCWorker::addObject(void* object_addr, size_t object_size) {
+    if (useBitmap)   // 启用bitmap的情况下会在region内分配的时候自动在bitmap内打上标记，无需再次标记
+        return;
+
     std::unique_lock<std::shared_mutex> write_lock(this->object_map_mutex);
     if (GCPhase::duringGC())
         object_map.emplace(object_addr, GCStatus(GCPhase::getCurrentMarkState(), object_size));
@@ -347,7 +356,7 @@ void GCWorker::endGC() {
     }
 }
 
-void GCWorker::printMap() {
+void GCWorker::printMap() const {
     using namespace std;
     cout << "Object map: {" << endl;
     for (auto& it : object_map) {

@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include "GCPtr.h"
 #include "GCMemoryAllocator.h"
 
@@ -6,7 +7,7 @@ class MyObject {
 public:
     int a;
     double b;
-    std::string c;
+    //std::string c;
     GCPtr<MyObject> d;
     double f;
     GCPtr<MyObject> e;
@@ -59,6 +60,7 @@ int main() {
     cout << "Ready to start..." << endl;
     const int n = 25;
     long long time_ = 0;
+    gc::init(true, true);
     Sleep(500);
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::high_resolution_clock::now();
@@ -83,7 +85,10 @@ int main() {
             //obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
             obj2->setG(gc::make_gc<MyObject>());
         }
-        GCPtr<Base> polyTestVar = gc::make_gc2<Derived>(3.14);
+        GCPtr<Base> polyTestVar = gc::make_root<Derived>(3.14);
+        for (int j = 0; j <= 100; j++) {
+            GCPtr<Base> polytest2 = gc::make_root<Derived>(2.71828);
+        }
 #if 0
         cout << &obj1 << " " << &obj2 << " " << &obj3 << " " << &obj3->d << " " <<
             &obj3->e << " " << &obj3->d->d << endl;
