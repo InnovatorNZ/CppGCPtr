@@ -145,6 +145,39 @@ public:
 };
 
 namespace gc {
+    template<class T, class... Args>
+    GCPtr <T> make_gc(Args&& ... args) {
+        GCPhase::EnterCriticalSection();
+        T* obj = nullptr;
+        if (GCWorker::getWorker()->bitmapEnabled()) {
+            obj = static_cast<T*>(GCWorker::getWorker()->allocate(sizeof(T)));
+            new(obj) T(std::forward<Args>(args)...);
+        } else {
+            obj = new T(std::forward<Args>(args)...);
+        }
+        GCPhase::LeaveCriticalSection();
+
+        if (obj == nullptr) throw std::exception();
+        return GCPtr<T>(obj);
+    }
+
+    template<class T, class... Args>
+    GCPtr <T> make_root(Args&& ... args) {
+        GCPhase::EnterCriticalSection();
+        T* obj = nullptr;
+        if (GCWorker::getWorker()->bitmapEnabled()) {
+            obj = static_cast<T*>(GCWorker::getWorker()->allocate(sizeof(T)));
+            new(obj) T(std::forward<Args>(args)...);
+        } else {
+            obj = new T(std::forward<Args>(args)...);
+        }
+        GCPhase::LeaveCriticalSection();
+
+        if (obj == nullptr) throw std::exception();
+        return GCPtr<T>(obj, true);
+    }
+
+#ifdef OLD_MAKEGC
     template<typename T>
     GCPtr <T> make_gc(T* obj) {
         GCPtr<T> ret(obj);
@@ -166,40 +199,6 @@ namespace gc {
         return ret;
     }
 
-    template<class T, class... Args>
-    GCPtr <T> make_gc(Args&& ... args) {
-        GCPhase::EnterCriticalSection();
-        T* obj = nullptr;
-        if (GCWorker::getWorker()->bitmapEnabled()) {
-            obj = static_cast<T*>(GCWorker::getWorker()->allocate(sizeof(T)));
-            new(obj) T(std::forward<Args>(args)...);
-        } else {
-            obj = new T(std::forward<Args>(args)...);
-        }
-
-        if (obj == nullptr) throw std::exception();
-        GCPtr<T> ret(obj);
-        GCPhase::LeaveCriticalSection();
-        return ret;
-    }
-
-    template<class T, class... Args>
-    GCPtr <T> make_root(Args&& ... args) {
-        GCPhase::EnterCriticalSection();
-        T* obj = nullptr;
-        if (GCWorker::getWorker()->bitmapEnabled()) {
-            obj = static_cast<T*>(GCWorker::getWorker()->allocate(sizeof(T)));
-            new(obj) T(std::forward<Args>(args)...);
-        } else {
-            obj = new T(std::forward<Args>(args)...);
-        }
-
-        if (obj == nullptr) throw std::exception();
-        GCPtr<T> ret(obj, true);
-        GCPhase::LeaveCriticalSection();
-        return ret;
-    }
-
     template<typename T>
     GCPtr <T> make_root() {
         GCPhase::EnterCriticalSection();
@@ -208,6 +207,7 @@ namespace gc {
         GCPtr<T> ret(obj, true);
         return ret;
     }
+#endif
 
 #ifdef MORE_USERFRIENDLY
     template<typename T>

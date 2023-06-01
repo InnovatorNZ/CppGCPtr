@@ -12,7 +12,7 @@ public:
     double f;
     GCPtr<MyObject> e;
     int h;
-    double l[512];
+    double l[256];
 
     MyObject() : a(0), b(0), h(0), f(0) {
     }
@@ -119,7 +119,8 @@ int main() {
         }
 
         GCPtr<MyObject> obj9 = gc::make_root<MyObject>();
-        GCPtr<MyObject> aobj[400];
+        const int arr_size = 256;
+        GCPtr<MyObject> aobj[arr_size];
         //GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
         srand(time(0));
         for (int j = 0; j < 100000; j++) {
@@ -128,7 +129,7 @@ int main() {
             if (rand() % 7 == 0)
                 obj9 = temp_obj;
             if (rand() % 11 == 0)
-                aobj[rand() % 400] = temp_obj;
+                aobj[rand() % arr_size] = temp_obj;
             temp_obj->f = 711.53;
             temp_obj->addH();
         }
@@ -142,7 +143,7 @@ int main() {
         cout << "Main thread sleeping" << endl;
         gc::triggerGC(true);
 #endif
-        Sleep(100);
+        Sleep(1000);
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " us" << endl;
     return 0;

@@ -140,7 +140,7 @@ void GCWorker::mark_v2(void* object_addr, size_t object_size) {
         if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
             // To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
             auto _max = [](int x, int y)constexpr { return x > y ? x : y; };
-            constexpr int tail_offset = sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4);
+            constexpr int tail_offset = sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4);
             char* tail_addr = n_addr + tail_offset;
             int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {

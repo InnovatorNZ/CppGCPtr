@@ -2,7 +2,7 @@
 
 GCBitMap::GCBitMap(void* region_start_addr, size_t region_size, int region_to_bitmap_ratio) :
         region_start_addr(region_start_addr), region_to_bitmap_ratio(region_to_bitmap_ratio) {
-    int bitmap_size_ = ceil((double) region_size / (double) (region_to_bitmap_ratio * 8));
+    int bitmap_size_ = ceil((double)region_size / (double)region_to_bitmap_ratio * SINGLE_OBJECT_MARKBIT / 8);
     this->bitmap_size = bitmap_size_;
     this->bitmap_arr = std::make_unique<std::atomic<unsigned char>[]>(bitmap_size_);
 }
@@ -27,11 +27,11 @@ GCBitMap::GCBitMap(GCBitMap&& other) noexcept: region_to_bitmap_ratio(other.regi
 }
 
 void GCBitMap::mark(void* object_addr, size_t object_size, MarkStateBit state) {
-    // todo: object_size要align up
     if (bitmap_arr == nullptr) return;
+    object_size = alignUpSize(object_size);
     int offset = static_cast<int>(reinterpret_cast<char*>(object_addr) - reinterpret_cast<char*>(region_start_addr));
     int offset_end = static_cast<int>(reinterpret_cast<char*>(object_addr) + object_size - reinterpret_cast<char*>(region_start_addr)) - 1;
-    if (offset < 0 || offset_end >= bitmap_size * region_to_bitmap_ratio || offset % region_to_bitmap_ratio != 0) {
+    if (offset < 0 || offset_end >= bitmap_size * region_to_bitmap_ratio * 8 / SINGLE_OBJECT_MARKBIT || offset % region_to_bitmap_ratio != 0) {
         std::clog << "Object address out of bitmap range, or is not divided exactly by ratio" << std::endl;
         return;
     }
@@ -44,7 +44,7 @@ void GCBitMap::mark(void* object_addr, size_t object_size, MarkStateBit state) {
         int offset_bit = offset % 8;
         unsigned char reserve_mask = ~(3 << offset_bit);
         while (true) {
-            unsigned char c_value = bitmap_arr[offset_byte];
+            unsigned char c_value = bitmap_arr[offset_byte].load();
             unsigned char other_value = c_value & reserve_mask;
             unsigned char final_result = other_value | ch_state << offset_bit;
             // bitmap_arr[offset_byte] = final_result;
@@ -59,7 +59,7 @@ void GCBitMap::mark(void* object_addr, size_t object_size, MarkStateBit state) {
         int offset_end_bit = offset_end % 8;
         unsigned char reserve_mask = ~(3 << offset_end_bit);
         while (true) {
-            unsigned char c_value = bitmap_arr[offset_end_byte];
+            unsigned char c_value = bitmap_arr[offset_end_byte].load();
             unsigned char other_value = c_value & reserve_mask;
             unsigned char final_result = other_value | ch_state << offset_end_bit;
             if (bitmap_arr[offset_end_byte].compare_exchange_weak(c_value, final_result))
@@ -84,6 +84,13 @@ MarkStateBit GCBitMap::getMarkState(void* object_addr) const {
 
 GCBitMap::BitMapIterator GCBitMap::getIterator() const {
     return GCBitMap::BitMapIterator(*this);
+}
+
+size_t GCBitMap::alignUpSize(size_t size) {
+    if (size % region_to_bitmap_ratio != 0) {
+        size = (size / region_to_bitmap_ratio + 1) * region_to_bitmap_ratio;
+    }
+    return size;
 }
 
 void GCBitMap::addr_to_bit(void* addr, int& offset_byte, int& offset_bit) const {

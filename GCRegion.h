@@ -74,8 +74,6 @@ public:
 
     float getFreeRatio() const;
 
-    size_t alignUpForBitmap(size_t) const;
-
     void clearUnmarked();
 
     bool canFree() const;

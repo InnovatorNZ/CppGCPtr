@@ -20,8 +20,8 @@ void* GCRegion::allocate(size_t size) {
     void* object_addr = nullptr;
     if (regionType == RegionEnum::TINY)
         size = TINY_OBJECT_THRESHOLD;
-    else
-        size = alignUpForBitmap(size);
+    else if (regionType != RegionEnum::LARGE)
+        size = bitmap->alignUpSize(size);
     while (true) {
         size_t p_offset = c_offset;
         if (p_offset + size > total_size) return nullptr;
@@ -70,13 +70,6 @@ GCRegion::GCRegion(GCRegion&& other) : regionType(other.regionType), startAddres
 bool GCRegion::operator==(const GCRegion& other) const {
     return this->startAddress == other.startAddress && this->regionType == other.regionType
            && this->total_size == other.total_size;
-}
-
-size_t GCRegion::alignUpForBitmap(size_t size) const {
-    if (bitmap != nullptr && size % bitmap->getRegionToBitmapRatio() != 0) {
-        size = (size / bitmap->getRegionToBitmapRatio() + 1) * bitmap->getRegionToBitmapRatio();
-    }
-    return size;
 }
 
 void GCRegion::mark(void* object_addr, size_t object_size) {

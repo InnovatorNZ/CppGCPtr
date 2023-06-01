@@ -64,9 +64,9 @@ public:
 
     MarkStateBit getMarkState(void* object_addr) const;
 
-    int getRegionToBitmapRatio() const { return region_to_bitmap_ratio; }
-
     BitMapIterator getIterator() const;
+
+    size_t alignUpSize(size_t);
 };
 
 
