@@ -33,7 +33,7 @@ public:
 private:
     void* startAddress;
     size_t total_size;
-    std::atomic<size_t> c_offset;
+    std::atomic<size_t> allocated_offset;
     std::atomic<size_t> frag_size;
     RegionEnum regionType;
     MarkStateBit largeRegionMarkState;      // only used in large region
@@ -60,7 +60,7 @@ public:
 
     void* getStartAddr() const { return startAddress; }
 
-    size_t getAllocatedSize() const { return c_offset; }
+    size_t getAllocatedSize() const { return allocated_offset; }
 
     void* allocate(size_t size);
 

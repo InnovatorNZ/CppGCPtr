@@ -242,13 +242,13 @@ void GCWorker::removeRoot(GCPtrBase* from) {
 }
 
 void GCWorker::addSATB(void* object_addr) {
-    //std::clog << "Adding SATB: " << object_addr << std::endl;
+    // std::clog << "Adding SATB: " << object_addr << std::endl;
     std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
     satb_queue.push_back(object_addr);
 }
 
 void GCWorker::addSATB(void* object_addr, size_t object_size) {
-    std::clog << "Adding SATB: " << object_addr << " (" << object_size << " bytes)" << std::endl;
+    // std::clog << "Adding SATB: " << object_addr << " (" << object_size << " bytes)" << std::endl;
     if (!useBitmap) {
         std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
         satb_queue.push_back(object_addr);

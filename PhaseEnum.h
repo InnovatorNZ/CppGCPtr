@@ -79,6 +79,21 @@ public:
                 return 0;
         }
     }
+
+    static const char* toString(MarkStateBit state) {
+        switch (state) {
+            case MarkStateBit::NOT_ALLOCATED:
+                return "NOT_ALLOCATED";
+            case MarkStateBit::REMAPPED:
+                return "REMAPPED";
+            case MarkStateBit::M0:
+                return "M0";
+            case MarkStateBit::M1:
+                return "M1";
+            default:
+                return "???";
+        }
+    }
 };
 
 #endif //CPPGCPTR_PHASEENUM_H

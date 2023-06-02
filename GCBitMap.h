@@ -45,9 +45,9 @@ public:
     public:
         explicit BitMapIterator(const GCBitMap&);
 
-        MarkStateBit next() override;
+        MarkStateBit current() const override;
 
-        bool hasNext() override;
+        bool MoveNext() override;
 
         int getCurrentOffset() const;
     };
@@ -60,7 +60,7 @@ public:
 
     GCBitMap(GCBitMap&&) noexcept;
 
-    void mark(void* object_addr, size_t object_size, MarkStateBit state);
+    void mark(void* object_addr, size_t object_size, MarkStateBit state, bool mark_high_bit = true);
 
     MarkStateBit getMarkState(void* object_addr) const;
 

@@ -143,7 +143,7 @@ int main() {
         cout << "Main thread sleeping" << endl;
         gc::triggerGC(true);
 #endif
-        Sleep(1000);
+        Sleep(100);
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " us" << endl;
     return 0;

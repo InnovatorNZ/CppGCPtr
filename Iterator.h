@@ -7,7 +7,7 @@ public:
 
     virtual ~Iterator() = default;
 
-    virtual T next() = 0;
+    virtual T current() const = 0;
 
-    virtual bool hasNext() = 0;
+    virtual bool MoveNext() = 0;
 };

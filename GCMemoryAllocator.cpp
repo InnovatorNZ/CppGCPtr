@@ -186,9 +186,11 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
     }
     {
         std::unique_lock<std::shared_mutex> lock(regionQueMtx);
-        for (auto it = regionQue.begin(); it != regionQue.end(); it++) {
+        for (auto it = regionQue.begin(); it != regionQue.end(); ) {
             if (it->get()->canFree()) {
                 it = regionQue.erase(it);
+            } else {
+                it++;
             }
         }
     }
