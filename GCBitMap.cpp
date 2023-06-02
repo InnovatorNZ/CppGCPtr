@@ -2,7 +2,7 @@
 
 GCBitMap::GCBitMap(void* region_start_addr, size_t region_size, int region_to_bitmap_ratio) :
         region_start_addr(region_start_addr), region_to_bitmap_ratio(region_to_bitmap_ratio) {
-    int bitmap_size_ = ceil((double)region_size / (double)region_to_bitmap_ratio * SINGLE_OBJECT_MARKBIT / 8);
+    int bitmap_size_ = ceil((double) region_size / (double) region_to_bitmap_ratio * SINGLE_OBJECT_MARKBIT / 8);
     this->bitmap_size = bitmap_size_;
     this->bitmap_arr = std::make_unique<std::atomic<unsigned char>[]>(bitmap_size_);
 }
@@ -86,7 +86,7 @@ GCBitMap::BitMapIterator GCBitMap::getIterator() const {
     return GCBitMap::BitMapIterator(*this);
 }
 
-size_t GCBitMap::alignUpSize(size_t size) {
+size_t GCBitMap::alignUpSize(size_t size) const {
     if (size % region_to_bitmap_ratio != 0) {
         size = (size / region_to_bitmap_ratio + 1) * region_to_bitmap_ratio;
     }

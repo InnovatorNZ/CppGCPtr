@@ -66,7 +66,7 @@ public:
 
     BitMapIterator getIterator() const;
 
-    size_t alignUpSize(size_t);
+    size_t alignUpSize(size_t) const;
 };
 
 
