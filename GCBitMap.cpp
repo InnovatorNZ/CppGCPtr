@@ -128,10 +128,16 @@ bool GCBitMap::BitMapIterator::MoveNext() {
         byte_offset = 0;
         bit_offset = 0;
     } else {
-        bit_offset += SINGLE_OBJECT_MARKBIT;
-        if (bit_offset >= 8) {
-            byte_offset++;
-            bit_offset = 0;
+        if (bit_offset == 0 && byte_offset < bitmap.bitmap_size && bitmap.bitmap_arr[byte_offset] == 0) {
+            do {
+                byte_offset++;
+            } while (bitmap.bitmap_arr[byte_offset] == 0);
+        } else {
+            bit_offset += SINGLE_OBJECT_MARKBIT;
+            if (bit_offset >= 8) {
+                byte_offset++;
+                bit_offset = 0;
+            }
         }
     }
     if (byte_offset >= bitmap.bitmap_size) return false;
