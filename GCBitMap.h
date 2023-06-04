@@ -18,6 +18,7 @@ private:
     // bitmap 采用2个bit标记一个对象，00: Not Allocated, 01: Remapped/Deleted, 10: M0, 11: M1
     int region_to_bitmap_ratio;     // bitmap的每两个bit对应于region的多少字节，默认为1，即2bit->1byte
     int bitmap_size;
+    bool mark_obj_size;             // 是否在位图中标记高位以及对象大小
     void* region_start_addr;
     std::unique_ptr<std::atomic<unsigned char>[]> bitmap_arr;
 #if USE_SINGLE_OBJECT_MAP
@@ -30,29 +31,29 @@ private:
     void* bit_to_addr(int offset_byte, int offset_bit) const;
 
 public:
-#if USE_SINGLE_OBJECT_MAP
     struct BitStatus {
         MarkStateBit markState;
-        bool isSingleObject;
+        unsigned int objectSize;
     };
-#endif
 
-    class BitMapIterator : public Iterator<MarkStateBit> {
+    class BitMapIterator : public Iterator<BitStatus> {
     private:
         int byte_offset;
         int bit_offset;
         const GCBitMap& bitmap;
+
+        unsigned int getCurrentObjectSize() const;
     public:
         explicit BitMapIterator(const GCBitMap&);
 
-        MarkStateBit current() const override;
+        BitStatus current() const override;
 
         bool MoveNext() override;
 
         int getCurrentOffset() const;
     };
 
-    GCBitMap(void* region_start_addr, size_t region_size, int region_to_bitmap_ratio = 1);
+    GCBitMap(void* region_start_addr, size_t region_size, bool mark_high_bit = true, int region_to_bitmap_ratio = 1);
 
     ~GCBitMap();
 
@@ -60,13 +61,13 @@ public:
 
     GCBitMap(GCBitMap&&) noexcept;
 
-    void mark(void* object_addr, size_t object_size, MarkStateBit state, bool mark_high_bit = true);
+    bool mark(void* object_addr, unsigned int object_size, MarkStateBit state);
 
     MarkStateBit getMarkState(void* object_addr) const;
 
     BitMapIterator getIterator() const;
 
-    size_t alignUpSize(size_t) const;
+    unsigned int alignUpSize(unsigned int) const;
 };
 
 

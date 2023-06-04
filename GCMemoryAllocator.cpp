@@ -149,19 +149,19 @@ void GCMemoryAllocator::triggerClear() {
     {
         std::shared_lock<std::shared_mutex> lock(this->smallRegionQueMtx);
         for (int i = 0; i < smallRegionQue.size(); i++) {
-            smallRegionQue[i]->clearUnmarked();
+            smallRegionQue[i]->FilterLive();
         }
     }
     {
         std::shared_lock<std::shared_mutex> lock(this->mediumRegionQueMtx);
         for (int i = 0; i < mediumRegionQue.size(); i++) {
-            mediumRegionQue[i]->clearUnmarked();
+            mediumRegionQue[i]->FilterLive();
         }
     }
     {
         std::shared_lock<std::shared_mutex> lock(this->tinyRegionQueMtx);
         for (int i = 0; i < tinyRegionQue.size(); i++) {
-            tinyRegionQue[i]->clearUnmarked();
+            tinyRegionQue[i]->FilterLive();
         }
     }
     // clearFreeRegion可由四个线程并行化，但对于每种类型应单线程

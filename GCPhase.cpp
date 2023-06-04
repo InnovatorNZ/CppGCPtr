@@ -63,6 +63,10 @@ bool GCPhase::needSweep(MarkStateBit markState) {
     return markState != getCurrentMarkStateBit();
 }
 
+bool GCPhase::isLiveObject(MarkStateBit markState) {
+    return markState == getCurrentMarkStateBit();
+}
+
 std::string GCPhase::getGCPhaseString() {
     switch (gcPhase) {
         case eGCPhase::NONE:

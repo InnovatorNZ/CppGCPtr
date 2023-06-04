@@ -31,6 +31,8 @@ public:
 
     static bool needSweep(MarkStateBit markState);
 
+    static bool isLiveObject(MarkStateBit);
+
     static bool duringGC();
 
     static void EnterCriticalSection() {

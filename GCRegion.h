@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <cstdlib>
+#include <vector>
 #include <atomic>
 #include <mutex>
 #include <memory>
@@ -34,7 +35,8 @@ private:
     void* startAddress;
     size_t total_size;
     std::atomic<size_t> allocated_offset;
-    std::atomic<size_t> frag_size;
+    // std::atomic<size_t> frag_size;
+    std::atomic<size_t> live_size;
     RegionEnum regionType;
     MarkStateBit largeRegionMarkState;      // only used in large region
     std::unique_ptr<GCBitMap> bitmap;
@@ -42,6 +44,13 @@ private:
     std::unordered_map<void*, void*> forwarding_table;
     int allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
     bool evacuated;
+    std::vector<std::pair<void*, size_t>> live_objects;
+    // bool evacuating;
+
+#if USE_REGINOAL_HASHMAP
+    std::unordered_map<void*, GCStatus> object_map;
+    std::mutex object_map_mtx;
+#endif
 
 public:
     struct GCRegionHash {
@@ -74,7 +83,7 @@ public:
 
     float getFreeRatio() const;
 
-    void clearUnmarked();
+    void FilterLive();
 
     bool canFree() const;
 
@@ -83,6 +92,8 @@ public:
     bool needEvacuate() const;
 
     bool isEvacuated() const { return evacuated; }
+
+    bool resetLiveSize() { live_size = 0; }     // TODO: 什么时候调用reset？
 
     // TODO: triggerEvacuate()
 };
