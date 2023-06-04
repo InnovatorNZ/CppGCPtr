@@ -93,7 +93,7 @@ public:
 
     bool isEvacuated() const { return evacuated; }
 
-    bool resetLiveSize() { live_size = 0; }     // TODO: 什么时候调用reset？
+    void resetLiveSize() { live_size = 0; }     // TODO: 什么时候调用reset？
 
     // TODO: triggerEvacuate()
 };
