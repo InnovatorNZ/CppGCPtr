@@ -7,6 +7,7 @@
 #include <stack>
 #include <deque>
 #include <mutex>
+#include "IAllocatable.h"
 
 class MemoryBlock {
 private:
@@ -34,7 +35,7 @@ public:
     void grow_from_back(size_t);
 };
 
-class GCMemoryManager {
+class GCMemoryManager : public IAllocatable {
 private:
     std::deque<MemoryBlock> freeList;
     std::mutex allocate_mutex_;
@@ -47,9 +48,9 @@ public:
 
     GCMemoryManager(void* memoryStart, size_t size);
 
-    void* allocate(size_t size);
+    void* allocate(size_t size) override;
 
-    void free(void* address, size_t size);
+    void free(void* address, size_t size) override;
 };
 
 

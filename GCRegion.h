@@ -11,6 +11,7 @@
 #include "GCBitMap.h"
 #include "GCPhase.h"
 #include "PhaseEnum.h"
+#include "IAllocatable.h"
 
 enum class RegionEnum {
     SMALL, MEDIUM, LARGE, TINY
@@ -23,7 +24,7 @@ public:
     static RegionEnum toRegionEnum(short e);
 };
 
-class GCRegion {
+class GCRegion : public IAllocatable {
 public:
     static const size_t TINY_OBJECT_THRESHOLD;
     static const size_t TINY_REGION_SIZE;
@@ -42,8 +43,9 @@ private:
     std::unique_ptr<GCBitMap> bitmap;
     std::mutex region_mtx;
     std::unordered_map<void*, void*> forwarding_table;
+    std::mutex forwarding_table_mutex;
     int allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
-    bool evacuated;
+    std::atomic<bool> evacuated;
     std::vector<std::pair<void*, size_t>> live_objects;
     // bool evacuating;
 
@@ -71,9 +73,9 @@ public:
 
     size_t getAllocatedSize() const { return allocated_offset; }
 
-    void* allocate(size_t size);
+    void* allocate(size_t size) override;
 
-    void free(void* addr, size_t size);
+    void free(void* addr, size_t size) override;
 
     void mark(void* object_addr, size_t object_size);
 
@@ -95,7 +97,7 @@ public:
 
     void resetLiveSize() { live_size = 0; }     // TODO: 什么时候调用reset？
 
-    // TODO: triggerEvacuate()
+    void triggerRelocation(IAllocatable*);
 };
 
 

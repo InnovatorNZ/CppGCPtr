@@ -171,6 +171,10 @@ void GCMemoryAllocator::triggerClear() {
     clearFreeRegion(tinyRegionQue, tinyRegionQueMtx);
 }
 
+void GCMemoryAllocator::triggerRelocation() {
+    // TODO: ,,,
+}
+
 void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
     {
         std::shared_lock<std::shared_mutex> lock(regionQueMtx);
@@ -186,7 +190,7 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
     }
     {
         std::unique_lock<std::shared_mutex> lock(regionQueMtx);
-        for (auto it = regionQue.begin(); it != regionQue.end(); ) {
+        for (auto it = regionQue.begin(); it != regionQue.end();) {
             if (it->get()->canFree()) {
                 it = regionQue.erase(it);
             } else {
@@ -205,4 +209,10 @@ std::shared_ptr<GCRegion> GCMemoryAllocator::getRegion(void* object_addr) {
         --it;
         return it->second;
     }
+}
+
+void GCMemoryAllocator::free(void* object_addr, size_t object_size) {
+    std::shared_ptr<GCRegion> region = this->getRegion(object_addr);
+    if (region != nullptr)
+        region->free(object_addr, object_size);
 }

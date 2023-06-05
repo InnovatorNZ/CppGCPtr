@@ -22,7 +22,7 @@ GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size)
 }
 
 void* GCRegion::allocate(size_t size) {
-    if (startAddress == nullptr) return nullptr;
+    if (startAddress == nullptr || evacuated) return nullptr;
     void* object_addr = nullptr;
     if (regionType == RegionEnum::TINY)
         size = TINY_OBJECT_THRESHOLD;
@@ -59,7 +59,22 @@ void GCRegion::free(void* addr, size_t size) {
             throw std::exception();
         }
 #endif
-        bitmap->mark(addr, size, MarkStateBit::REMAPPED);
+        bool recently_assigned = false;
+        while (true) {
+            size_t c_allocated_offset = allocated_offset.load();
+            if (reinterpret_cast<char*>(addr) + size == reinterpret_cast<char*>(startAddress) + c_allocated_offset) {
+                // 如果欲销毁的空间正好是region刚刚分配的，则撤销该分配（即减去allocated_offset）
+                if (allocated_offset.compare_exchange_weak(c_allocated_offset, c_allocated_offset - size)) {
+                    recently_assigned = true;
+                    break;
+                }
+            } else {
+                recently_assigned = false;
+                break;
+            }
+        }
+        if (!recently_assigned)
+            bitmap->mark(addr, size, MarkStateBit::REMAPPED);
     } else std::clog << "Free address out of range." << std::endl;
 }
 
@@ -77,11 +92,12 @@ float GCRegion::getFreeRatio() const {
 GCRegion::GCRegion(GCRegion&& other) : regionType(other.regionType), startAddress(other.startAddress),
                                        total_size(other.total_size), bitmap(std::move(other.bitmap)),
                                        largeRegionMarkState(other.largeRegionMarkState),
-                                       allFreeFlag(other.allFreeFlag), evacuated(other.evacuated) {
+                                       allFreeFlag(other.allFreeFlag) {
     std::unique_lock lock(other.region_mtx);
     this->allocated_offset.store(other.allocated_offset.load());
     //this->frag_size.store(other.frag_size.load());
     this->live_size.store(other.live_size.load());
+    this->evacuated.store(other.evacuated.load());
     other.startAddress = nullptr;
     other.total_size = 0;
     other.allocated_offset = 0;
@@ -120,7 +136,7 @@ void GCRegion::FilterLive() {
     allFreeFlag = 0;
     live_objects.clear();
     auto bitMapIterator = bitmap->getIterator();
-    // int last_offset = 0; MarkStateBit lastMarkState = MarkStateBit::NOT_ALLOCATED
+    // int last_offset = 0; MarkStateBit lastMarkState = MarkStateBit::NOT_ALLOCATED;
     while (bitMapIterator.MoveNext()) {
         GCBitMap::BitStatus bitStatus = bitMapIterator.current();
         MarkStateBit& markState = bitStatus.markState;
@@ -169,11 +185,57 @@ void GCRegion::FilterLive() {
     if (allFreeFlag == 0) allFreeFlag = 1;
 }
 
+void GCRegion::triggerRelocation(IAllocatable* memoryAllocator) {
+    // TODO: trigger evacuation...
+    if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
+        std::cerr << "Wrong phase, should in sweeping phase to trigger relocation" << std::endl;
+        throw std::exception();
+    }
+    if (regionType == RegionEnum::LARGE) {
+        std::clog << "Large region doesn't need to trigger this function." << std::endl;
+        return;
+    }
+    evacuated.store(true);
+    auto bitMapIterator = bitmap->getIterator();
+    while (bitMapIterator.MoveNext()) {
+        GCBitMap::BitStatus bitStatus = bitMapIterator.current();
+        MarkStateBit& markState = bitStatus.markState;
+        void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
+        if (GCPhase::isLiveObject(markState)) {     // 筛选出存活对象并转移
+            unsigned int object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : bitStatus.objectSize;
+            if (forwarding_table.contains(addr))      // 已经被应用线程转移了
+                continue;
+            void* new_addr = memoryAllocator->allocate(object_size);
+            ::memcpy(new_addr, addr, object_size);
+            {
+                // TODO: 如果在转移过程中，有应用线程访问了旧地址上的原对象并产生了写入怎么办？参考shenandoah解决方案
+                std::unique_lock<std::mutex> lock(this->forwarding_table_mutex);
+                if (!forwarding_table.contains(addr)) {
+                    forwarding_table.emplace(addr, new_addr);
+                } else {
+                    // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
+                    lock.unlock();
+                    std::clog << "Relocation for " << addr << " cancelled due to someone beats us." << std::endl;
+                    memoryAllocator->free(new_addr, object_size);
+                }
+            }
+        } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
+            // 非存活对象统一标记为REMAPPED；之所以不能标记为NOT_ALLOCATED是因为仍然需要size信息遍历bitmap
+            bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
+        } else if (markState == MarkStateBit::NOT_ALLOCATED) {
+            if (bitMapIterator.getCurrentOffset() >= allocated_offset) break;
+            else if (regionType == RegionEnum::TINY);
+            else throw std::exception();    // todo: 多线程情况下可能会误判
+        }
+    }
+}
+
 bool GCRegion::canFree() const {
     if (regionType == RegionEnum::LARGE) {
         if (GCPhase::needSweep(largeRegionMarkState)) return true;
         else return false;
     } else {
+        // TODO: 应根据inc_live==0判断
         if (allFreeFlag == 1) return true;
         else return false;
     }

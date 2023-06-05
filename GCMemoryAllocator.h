@@ -9,11 +9,12 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
+#include "IAllocatable.h"
 #include "GCRegion.h"
 #include "GCMemoryManager.h"
 
 
-class GCMemoryAllocator {
+class GCMemoryAllocator : public IAllocatable {
 private:
     static const size_t INITIAL_SINGLE_SIZE;
     // GCMemoryManager memoryManager;
@@ -47,9 +48,13 @@ public:
 
     explicit GCMemoryAllocator(bool useInternalMemoryManager);
 
-    void* allocate(size_t size);
+    void* allocate(size_t size) override;
+
+    void free(void*, size_t) override;
 
     void triggerClear();
+
+    void triggerRelocation();
 
     std::shared_ptr<GCRegion> getRegion(void* object_addr);
 };
