@@ -338,6 +338,24 @@ void GCWorker::beginSweep() {
     }
 }
 
+void* GCWorker::getHealedPointer(void* ptr, size_t obj_size) const {
+    std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(ptr);
+    void* ret = region->queryForwardingTable(ptr);
+    if (ret == nullptr) {
+        if (region->isEvacuated()) {        // todo: isEvacuated()还是needEvacuate()？
+            // region已被标识为需要转移，但尚未完成转移
+            region->relocateObject(ptr, obj_size, this->memoryAllocator.get());
+            ret = region->queryForwardingTable(ptr);
+            if (ret == nullptr) throw std::exception();
+            return ret;
+        } else {
+            return ptr;
+        }
+    } else {
+        return ret;
+    }
+}
+
 void GCWorker::callDestructor(void* object_addr, bool remove_after_call) {
     auto destructor_it = destructor_map.find(object_addr);
     if (destructor_it != destructor_map.end()) {
@@ -351,6 +369,7 @@ void GCWorker::callDestructor(void* object_addr, bool remove_after_call) {
 void GCWorker::endGC() {
     if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
         GCPhase::SwitchToNextPhase();
+        memoryAllocator->resetLiveSize();
     } else {
         std::clog << "Not started GC, or not finished sweeping yet" << std::endl;
     }

@@ -43,6 +43,8 @@ private:
 
     void clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
 
+    void relocateRegion(const std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
+
 public:
     GCMemoryAllocator();
 
@@ -54,9 +56,11 @@ public:
 
     void triggerClear();
 
-    void triggerRelocation();
+    void triggerRelocation();     // TODO: 什么时候调用triggerRelocation()？
 
     std::shared_ptr<GCRegion> getRegion(void* object_addr);
+
+    void resetLiveSize();
 };
 
 

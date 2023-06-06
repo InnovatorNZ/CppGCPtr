@@ -19,7 +19,7 @@ public:
 
     virtual ~GCPtrBase() = default;
 
-    virtual void* getVoidPtr() const = 0;
+    virtual void* getVoidPtr() = 0;
 
     virtual unsigned int getObjectSize() const = 0;
 

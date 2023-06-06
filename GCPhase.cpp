@@ -2,7 +2,7 @@
 
 eGCPhase GCPhase::gcPhase = eGCPhase::NONE;
 MarkState GCPhase::currentMarkState = MarkState::REMAPPED;
-#ifdef USE_SPINLOCK
+#if USE_SPINLOCK
 IReadWriteLock* GCPhase::stwLock = new SpinReadWriteLock();
 #else
 IReadWriteLock* GCPhase::stwLock = new MutexReadWriteLock();
@@ -61,6 +61,17 @@ bool GCPhase::needSweep(MarkStateBit markState) {
     }
     if (markState == MarkStateBit::NOT_ALLOCATED) return false;
     return markState != getCurrentMarkStateBit();
+}
+
+bool GCPhase::needSelfHeal(MarkState markState) {
+    if (markState == MarkState::REMAPPED) return false;
+    if (gcPhase == eGCPhase::CONCURRENT_MARK || gcPhase == eGCPhase::REMARK) {
+        // 若在标记阶段，需要完成指针自愈的是上一轮存活的对象
+        return markState != getCurrentMarkState();
+    } else {
+        // 若在转移阶段或非垃圾回收阶段，需要完成指针自愈的是本轮存活的对象
+        return markState == getCurrentMarkState();
+    }
 }
 
 bool GCPhase::isLiveObject(MarkStateBit markState) {

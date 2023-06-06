@@ -46,7 +46,6 @@ void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType
             }
             // 所有region都不够，分配新region
             // TODO: 我为啥不能直接调用操作系统的malloc获取region的内存？？为啥还要搞个全局freelist？？
-            // TODO: 调查bitmap究竟怎么和region/freelist配合工作
             void* new_region_memory = this->allocate_new_memory(GCRegion::SMALL_REGION_SIZE);
             std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
                     (RegionEnum::SMALL, new_region_memory, GCRegion::SMALL_REGION_SIZE);
@@ -146,6 +145,10 @@ void* GCMemoryAllocator::allocate_from_freelist(size_t size) {
 
 void GCMemoryAllocator::triggerClear() {
     // TODO: 调用clearUnmarked可按region并行化
+    if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
+        std::cerr << "Wrong phase, should in sweeping phase to trigger clear." << std::endl;
+        return;
+    }
     {
         std::shared_lock<std::shared_mutex> lock(this->smallRegionQueMtx);
         for (int i = 0; i < smallRegionQue.size(); i++) {
@@ -172,19 +175,40 @@ void GCMemoryAllocator::triggerClear() {
 }
 
 void GCMemoryAllocator::triggerRelocation() {
-    // TODO: ,,,
+    if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
+        std::cerr << "Wrong phase, should in sweeping phase to trigger relocation." << std::endl;
+        return;
+    }
+    relocateRegion(smallRegionQue, smallRegionQueMtx);
+    relocateRegion(mediumRegionQue, mediumRegionQueMtx);
+    relocateRegion(tinyRegionQue, tinyRegionQueMtx);
+}
+
+void GCMemoryAllocator::relocateRegion(const std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
+    std::vector<std::shared_ptr<GCRegion>> regionQueSnapshot(regionQue.size());
+    {
+        std::shared_lock<std::shared_mutex> lock(regionQueMtx);
+        for (auto& region : regionQue) {
+            if (region->needEvacuate()) {
+                regionQueSnapshot.emplace_back(region);
+            }
+        }
+    }
+    for (auto& region : regionQueSnapshot) {
+        region->triggerRelocation(this);
+    }
 }
 
 void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
     {
         std::shared_lock<std::shared_mutex> lock(regionQueMtx);
-        for (int i = 0; i < regionQue.size(); i++) {
-            if (regionQue[i]->canFree()) {
+        for (auto& region : regionQue) {
+            if (region->canFree()) {
                 {
                     std::unique_lock<std::shared_mutex> lock2(this->regionMapMtx);
-                    regionMap.erase(regionQue[i]->getStartAddr());
+                    regionMap.erase(region->getStartAddr());
                 }
-                regionQue[i]->free();
+                region->free();
             }
         }
     }
@@ -215,4 +239,25 @@ void GCMemoryAllocator::free(void* object_addr, size_t object_size) {
     std::shared_ptr<GCRegion> region = this->getRegion(object_addr);
     if (region != nullptr)
         region->free(object_addr, object_size);
+}
+
+void GCMemoryAllocator::resetLiveSize() {
+    {
+        std::shared_lock<std::shared_mutex> lock(smallRegionQueMtx);
+        for (auto& region : smallRegionQue) {
+            region->resetLiveSize();
+        }
+    }
+    {
+        std::shared_lock<std::shared_mutex> lock(mediumRegionQueMtx);
+        for (auto& region : mediumRegionQue) {
+            region->resetLiveSize();
+        }
+    }
+    {
+        std::shared_lock<std::shared_mutex> lock(tinyRegionQueMtx);
+        for (auto& region : tinyRegionQue) {
+            region->resetLiveSize();
+        }
+    }
 }

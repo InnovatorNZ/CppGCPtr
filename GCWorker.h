@@ -104,6 +104,8 @@ public:
 
     void beginSweep();
 
+    void* getHealedPointer(void*, size_t) const;
+
     void endGC();
 
     void printMap() const;

@@ -9,7 +9,7 @@
 #include "SpinReadWriteLock.h"
 #include "MutexReadWriteLock.h"
 
-//#define USE_SPINLOCK
+#define USE_SPINLOCK false
 
 class GCPhase {
 private:
@@ -30,6 +30,8 @@ public:
     static bool needSweep(MarkState markState);
 
     static bool needSweep(MarkStateBit markState);
+
+    static bool needSelfHeal(MarkState markState);
 
     static bool isLiveObject(MarkStateBit);
 

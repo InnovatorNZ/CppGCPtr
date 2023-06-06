@@ -38,20 +38,39 @@ public:
         GCPhase::LeaveCriticalSection();
     }
 
-    T* get() const {
+    T* get() {
+        this->selfHeal();
         return obj;
+    }
+
+    T* get() const {
+        std::clog << "Calling const get() will disable pointer self-heal, which is not recommend" << std::endl;
+        if (GCPhase::needSelfHeal(getInlineMarkState()))
+            return GCWorker::getWorker()->getHealedPointer(this->obj);
+        else
+            return obj;
+    }
+
+    T* operator->() {
+        return this->get();
     }
 
     T* operator->() const {
-        return obj;
+        return this->get();
     }
 
-    void* getVoidPtr() const override {
-        return reinterpret_cast<void*>(this->obj);
+    void* getVoidPtr() override {
+        return reinterpret_cast<void*>(this->get());
     }
 
     unsigned int getObjectSize() const override {
         return obj_size;
+    }
+
+    void selfHeal() {
+        if (GCPhase::needSelfHeal(getInlineMarkState())) {
+            this->obj = static_cast<T*>(GCWorker::getWorker()->getHealedPointer(this->obj, this->obj_size));
+        }
     }
 
     GCPtr<T>& operator=(const GCPtr<T>& other) {

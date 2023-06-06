@@ -187,10 +187,6 @@ void GCRegion::FilterLive() {
 
 void GCRegion::triggerRelocation(IAllocatable* memoryAllocator) {
     // TODO: trigger evacuation...
-    if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
-        std::cerr << "Wrong phase, should in sweeping phase to trigger relocation" << std::endl;
-        throw std::exception();
-    }
     if (regionType == RegionEnum::LARGE) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
@@ -200,32 +196,43 @@ void GCRegion::triggerRelocation(IAllocatable* memoryAllocator) {
     while (bitMapIterator.MoveNext()) {
         GCBitMap::BitStatus bitStatus = bitMapIterator.current();
         MarkStateBit& markState = bitStatus.markState;
-        void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
+        void* object_addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
         if (GCPhase::isLiveObject(markState)) {     // 筛选出存活对象并转移
             unsigned int object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : bitStatus.objectSize;
-            if (forwarding_table.contains(addr))      // 已经被应用线程转移了
-                continue;
-            void* new_addr = memoryAllocator->allocate(object_size);
-            ::memcpy(new_addr, addr, object_size);
-            {
-                // TODO: 如果在转移过程中，有应用线程访问了旧地址上的原对象并产生了写入怎么办？参考shenandoah解决方案
-                std::unique_lock<std::mutex> lock(this->forwarding_table_mutex);
-                if (!forwarding_table.contains(addr)) {
-                    forwarding_table.emplace(addr, new_addr);
-                } else {
-                    // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
-                    lock.unlock();
-                    std::clog << "Relocation for " << addr << " cancelled due to someone beats us." << std::endl;
-                    memoryAllocator->free(new_addr, object_size);
-                }
-            }
+            this->relocateObject(object_addr, object_size, memoryAllocator);
         } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
             // 非存活对象统一标记为REMAPPED；之所以不能标记为NOT_ALLOCATED是因为仍然需要size信息遍历bitmap
-            bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
+            bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
         } else if (markState == MarkStateBit::NOT_ALLOCATED) {
             if (bitMapIterator.getCurrentOffset() >= allocated_offset) break;
             else if (regionType == RegionEnum::TINY);
             else throw std::exception();    // todo: 多线程情况下可能会误判
+        }
+    }
+}
+
+void GCRegion::relocateObject(void* object_addr, size_t object_size, IAllocatable* allocator) {
+    if ((char*) object_addr + object_size >= (char*) startAddress + allocated_offset) {
+        std::clog << "The relocating object does not in current region!" << std::endl;
+        return;
+    }
+    {
+        std::shared_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
+        if (forwarding_table.contains(object_addr))      // 已经被应用线程转移了
+            return;
+    }
+    void* new_addr = allocator->allocate(object_size);
+    ::memcpy(new_addr, object_addr, object_size);
+    {
+        // 如果在转移过程中，有应用线程访问了旧地址上的原对象并产生了写入怎么办？参考shenandoah解决方案
+        std::unique_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
+        if (!forwarding_table.contains(object_addr)) {
+            forwarding_table.emplace(object_addr, new_addr);
+        } else {
+            // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
+            lock.unlock();
+            std::clog << "Relocation for " << object_addr << " cancelled due to someone beats us." << std::endl;
+            allocator->free(new_addr, object_size);
         }
     }
 }
@@ -235,14 +242,12 @@ bool GCRegion::canFree() const {
         if (GCPhase::needSweep(largeRegionMarkState)) return true;
         else return false;
     } else {
-        // TODO: 应根据inc_live==0判断
-        if (allFreeFlag == 1) return true;
+        if (live_size == 0) return true;
         else return false;
     }
 }
 
 bool GCRegion::needEvacuate() const {
-    // TODO: 被释放的region只保留转发表？
     if (getFragmentRatio() >= 0.25 && getFreeRatio() < 0.25) return true;
     else return false;
 }
@@ -255,6 +260,13 @@ void GCRegion::free() {
     allocated_offset = 0;
     ::free(startAddress);
     startAddress = nullptr;
+}
+
+void* GCRegion::queryForwardingTable(void* ptr) {
+    std::shared_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
+    auto it = forwarding_table.find(ptr);
+    if (it == forwarding_table.end()) return nullptr;
+    else return it->second;
 }
 
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {

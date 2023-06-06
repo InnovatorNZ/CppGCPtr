@@ -43,7 +43,7 @@ private:
     std::unique_ptr<GCBitMap> bitmap;
     std::mutex region_mtx;
     std::unordered_map<void*, void*> forwarding_table;
-    std::mutex forwarding_table_mutex;
+    std::shared_mutex forwarding_table_mutex;
     int allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
     std::atomic<bool> evacuated;
     std::vector<std::pair<void*, size_t>> live_objects;
@@ -95,9 +95,13 @@ public:
 
     bool isEvacuated() const { return evacuated; }
 
-    void resetLiveSize() { live_size = 0; }     // TODO: 什么时候调用reset？
+    void resetLiveSize() { live_size = 0; }
 
     void triggerRelocation(IAllocatable*);
+
+    void relocateObject(void*, size_t, IAllocatable*);
+
+    void* queryForwardingTable(void*);
 };
 
 
