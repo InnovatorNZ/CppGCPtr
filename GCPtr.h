@@ -68,8 +68,9 @@ public:
     }
 
     void selfHeal() {
-        if (GCPhase::needSelfHeal(getInlineMarkState())) {
+        if (GCPhase::needSelfHeal(this->getInlineMarkState())) {
             this->obj = static_cast<T*>(GCWorker::getWorker()->getHealedPointer(this->obj, this->obj_size));
+            this->setInlineMarkState(MarkState::REMAPPED);
         }
     }
 

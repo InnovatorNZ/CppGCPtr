@@ -18,6 +18,9 @@ GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size)
         case RegionEnum::TINY:
             bitmap = std::make_unique<GCBitMap>(startAddress, total_size, false);
             break;
+        default:
+            bitmap = nullptr;
+            break;
     }
 }
 
@@ -59,7 +62,7 @@ void GCRegion::free(void* addr, size_t size) {
             throw std::exception();
         }
 #endif
-        bool recently_assigned = false;
+        bool recently_assigned;
         while (true) {
             size_t c_allocated_offset = allocated_offset.load();
             if (reinterpret_cast<char*>(addr) + size == reinterpret_cast<char*>(startAddress) + c_allocated_offset) {
@@ -124,7 +127,7 @@ bool GCRegion::marked(void* object_addr) const {
         return bitmap->getMarkState(object_addr) == GCPhase::getCurrentMarkStateBit();
 }
 
-void GCRegion::FilterLive() {
+void GCRegion::clearUnmarked() {
     if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
         std::cerr << "Wrong phase, should in sweeping phase to trigger clearUnmarked()" << std::endl;
         throw std::exception();
@@ -134,7 +137,7 @@ void GCRegion::FilterLive() {
         return;
     }
     allFreeFlag = 0;
-    live_objects.clear();
+    // live_objects.clear();        // live_objects好像没什么用了
     auto bitMapIterator = bitmap->getIterator();
     // int last_offset = 0; MarkStateBit lastMarkState = MarkStateBit::NOT_ALLOCATED;
     while (bitMapIterator.MoveNext()) {
@@ -143,7 +146,8 @@ void GCRegion::FilterLive() {
         // 有必要搞single_size_set吗？？不能把single_size的放到单独的region里去？答：有道理（
         // 通过iterator遍历筛选出存活的对象
         void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
-        if (GCPhase::isLiveObject(markState)) {     // 筛选出存活对象
+        if (GCPhase::isLiveObject(markState)) {
+#if 0
             if (regionType == RegionEnum::TINY) {
                 live_objects.emplace_back(addr, TINY_OBJECT_THRESHOLD);
             } else {
@@ -171,6 +175,7 @@ void GCRegion::FilterLive() {
                 }
 #endif
             }
+#endif
             allFreeFlag = -1;
         } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
             // 非存活对象统一标记为REMAPPED
@@ -179,19 +184,22 @@ void GCRegion::FilterLive() {
         } else if (markState == MarkStateBit::NOT_ALLOCATED) {
             if (bitMapIterator.getCurrentOffset() >= allocated_offset) break;
             else if (regionType == RegionEnum::TINY);
-            else throw std::exception();    // todo: 多线程情况下可能会误判
+            else throw std::exception();    // 多线程情况下可能会误判
         }
     }
     if (allFreeFlag == 0) allFreeFlag = 1;
 }
 
 void GCRegion::triggerRelocation(IAllocatable* memoryAllocator) {
-    // TODO: trigger evacuation...
     if (regionType == RegionEnum::LARGE) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
     evacuated.store(true);
+    if (this->canFree()) {      // 已经没有存活对象了
+        this->free();
+        return;
+    }
     auto bitMapIterator = bitmap->getIterator();
     while (bitMapIterator.MoveNext()) {
         GCBitMap::BitStatus bitStatus = bitMapIterator.current();
@@ -206,9 +214,10 @@ void GCRegion::triggerRelocation(IAllocatable* memoryAllocator) {
         } else if (markState == MarkStateBit::NOT_ALLOCATED) {
             if (bitMapIterator.getCurrentOffset() >= allocated_offset) break;
             else if (regionType == RegionEnum::TINY);
-            else throw std::exception();    // todo: 多线程情况下可能会误判
+            else throw std::exception();    // 多线程情况下可能会误判
         }
     }
+    this->free();       // todo: 要不要free()？
 }
 
 void GCRegion::relocateObject(void* object_addr, size_t object_size, IAllocatable* allocator) {
@@ -242,7 +251,8 @@ bool GCRegion::canFree() const {
         if (GCPhase::needSweep(largeRegionMarkState)) return true;
         else return false;
     } else {
-        if (live_size == 0) return true;
+        if (allFreeFlag == 0 && live_size == 0) return true;
+        else if (allFreeFlag == 1) return true;
         else return false;
     }
 }

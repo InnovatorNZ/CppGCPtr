@@ -152,19 +152,19 @@ void GCMemoryAllocator::triggerClear() {
     {
         std::shared_lock<std::shared_mutex> lock(this->smallRegionQueMtx);
         for (int i = 0; i < smallRegionQue.size(); i++) {
-            smallRegionQue[i]->FilterLive();
+            smallRegionQue[i]->clearUnmarked();
         }
     }
     {
         std::shared_lock<std::shared_mutex> lock(this->mediumRegionQueMtx);
         for (int i = 0; i < mediumRegionQue.size(); i++) {
-            mediumRegionQue[i]->FilterLive();
+            mediumRegionQue[i]->clearUnmarked();
         }
     }
     {
         std::shared_lock<std::shared_mutex> lock(this->tinyRegionQueMtx);
         for (int i = 0; i < tinyRegionQue.size(); i++) {
-            tinyRegionQue[i]->FilterLive();
+            tinyRegionQue[i]->clearUnmarked();
         }
     }
     // clearFreeRegion可由四个线程并行化，但对于每种类型应单线程
@@ -182,6 +182,7 @@ void GCMemoryAllocator::triggerRelocation() {
     relocateRegion(smallRegionQue, smallRegionQueMtx);
     relocateRegion(mediumRegionQue, mediumRegionQueMtx);
     relocateRegion(tinyRegionQue, tinyRegionQueMtx);
+    clearFreeRegion(largeRegionQue, largeRegionQueMtx);
 }
 
 void GCMemoryAllocator::relocateRegion(const std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
@@ -197,6 +198,7 @@ void GCMemoryAllocator::relocateRegion(const std::deque<std::shared_ptr<GCRegion
     for (auto& region : regionQueSnapshot) {
         region->triggerRelocation(this);
     }
+    // TODO: 完成relocate的region应该free，包括从regionMap中移除canFree的region，以及下轮垃圾回收清理只含有转发表的region
 }
 
 void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {

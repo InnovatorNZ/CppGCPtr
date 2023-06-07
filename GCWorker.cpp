@@ -9,12 +9,12 @@ GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
 
 GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport, bool useInlineMarkState,
-                   bool useInternalMemoryManager, bool enableEvacuation) :
+                   bool useInternalMemoryManager, bool enableRelocation) :
         stop_(false), ready_(false), enableConcurrentMark(concurrent),
-        enableEvacuation(enableEvacuation), enableDestructorSupport(enableDestructorSupport) {
+        enableRelocation(enableRelocation), enableDestructorSupport(enableDestructorSupport) {
     this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
     if (useBitmap) this->enableDestructorSupport = false;     // TODO: bitmap暂不支持销毁时调用析构函数
-    if (enableEvacuation) {
+    if (enableRelocation) {
         this->useBitmap = true;
         this->useInlineMarkstate = true;
     } else {
@@ -331,7 +331,10 @@ void GCWorker::beginSweep() {
                 }
             }
         } else {
-            memoryAllocator->triggerClear();
+            if (enableRelocation)
+                memoryAllocator->triggerRelocation();
+            else
+                memoryAllocator->triggerClear();
         }
     } else {
         std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
@@ -369,7 +372,8 @@ void GCWorker::callDestructor(void* object_addr, bool remove_after_call) {
 void GCWorker::endGC() {
     if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
         GCPhase::SwitchToNextPhase();
-        memoryAllocator->resetLiveSize();
+        if (enableRelocation)
+            memoryAllocator->resetLiveSize();
     } else {
         std::clog << "Not started GC, or not finished sweeping yet" << std::endl;
     }

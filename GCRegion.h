@@ -44,10 +44,9 @@ private:
     std::mutex region_mtx;
     std::unordered_map<void*, void*> forwarding_table;
     std::shared_mutex forwarding_table_mutex;
-    int allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
+    short allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
     std::atomic<bool> evacuated;
-    std::vector<std::pair<void*, size_t>> live_objects;
-    // bool evacuating;
+    // std::vector<std::pair<void*, size_t>> live_objects;
 
 #if USE_REGINOAL_HASHMAP
     std::unordered_map<void*, GCStatus> object_map;
@@ -85,7 +84,7 @@ public:
 
     float getFreeRatio() const;
 
-    void FilterLive();
+    void clearUnmarked();
 
     bool canFree() const;
 
@@ -102,6 +101,8 @@ public:
     void relocateObject(void*, size_t, IAllocatable*);
 
     void* queryForwardingTable(void*);
+
+    // TODO: 要不要加个reclaim，重新利用已被释放的region？
 };
 
 

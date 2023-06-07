@@ -24,6 +24,7 @@ private:
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> smallRegionSet;
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> mediumRegionSet;
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> largeRegionSet;
+    // TODO: 能否使用无锁双向链表管理region？
     std::deque<std::shared_ptr<GCRegion>> smallRegionQue;
     std::deque<std::shared_ptr<GCRegion>> mediumRegionQue;
     std::deque<std::shared_ptr<GCRegion>> largeRegionQue;
@@ -56,7 +57,7 @@ public:
 
     void triggerClear();
 
-    void triggerRelocation();     // TODO: 什么时候调用triggerRelocation()？
+    void triggerRelocation();
 
     std::shared_ptr<GCRegion> getRegion(void* object_addr);
 
