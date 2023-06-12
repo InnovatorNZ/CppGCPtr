@@ -12,11 +12,13 @@
 #include "IAllocatable.h"
 #include "GCRegion.h"
 #include "GCMemoryManager.h"
+#include "ConcurrentLinkedList.h"
 
 
 class GCMemoryAllocator : public IAllocatable {
 private:
     static const size_t INITIAL_SINGLE_SIZE;
+    static const bool useConcurrentLinkedList;
     // GCMemoryManager memoryManager;
     bool enableInternalMemoryManager;
     unsigned int poolCount;
@@ -24,7 +26,13 @@ private:
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> smallRegionSet;
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> mediumRegionSet;
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> largeRegionSet;
-    // TODO: 能否使用无锁双向链表管理region？
+    // TODO: 能否使用无锁链表管理region？
+// #if USE_CONCURRENT_LINKEDLIST
+    ConcurrentLinkedList<std::shared_ptr<GCRegion>> smallRegionList;
+    ConcurrentLinkedList<std::shared_ptr<GCRegion>> mediumRegionList;
+    ConcurrentLinkedList<std::shared_ptr<GCRegion>> largeRegionList;
+    ConcurrentLinkedList<std::shared_ptr<GCRegion>> tinyRegionList;
+// #else
     std::deque<std::shared_ptr<GCRegion>> smallRegionQue;
     std::deque<std::shared_ptr<GCRegion>> mediumRegionQue;
     std::deque<std::shared_ptr<GCRegion>> largeRegionQue;
@@ -33,10 +41,19 @@ private:
     std::shared_mutex mediumRegionQueMtx;
     std::shared_mutex largeRegionQueMtx;
     std::shared_mutex tinyRegionQueMtx;
+// #endif
     std::map<void*, std::shared_ptr<GCRegion>> regionMap;
     std::shared_mutex regionMapMtx;
 
     void* allocate_from_region(size_t size, RegionEnum regionType);
+
+    void* tryAllocateFromExistingRegion(size_t, ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
+
+    void* tryAllocateFromExistingRegion(size_t, std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
+
+    void allocate_new_region(RegionEnum regionType);
+
+    void allocate_new_region(RegionEnum regionType, size_t regionSize);
 
     void* allocate_new_memory(size_t size);
 
@@ -44,7 +61,11 @@ private:
 
     void clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
 
+    void clearFreeRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
+
     void relocateRegion(const std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
+
+    void relocateRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
 
 public:
     GCMemoryAllocator();

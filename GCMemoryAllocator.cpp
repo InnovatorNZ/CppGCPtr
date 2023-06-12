@@ -1,6 +1,7 @@
 #include "GCMemoryAllocator.h"
 
 const size_t GCMemoryAllocator::INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
+const bool GCMemoryAllocator::useConcurrentLinkedList = true;
 
 GCMemoryAllocator::GCMemoryAllocator() : GCMemoryAllocator(false) {
 }
@@ -32,87 +33,132 @@ void* GCMemoryAllocator::allocate(size_t size) {
     }
 }
 
-void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType) {
-    if (size == 0) return nullptr;
-    if (regionType == RegionEnum::SMALL) {
-        while (true) {
-            // 从已有region中寻找空闲区域
-            {
-                std::shared_lock<std::shared_mutex> lock(smallRegionQueMtx);
-                for (int i = smallRegionQue.size() - 1; i >= 0; i--) {
-                    void* addr = smallRegionQue[i]->allocate(size);
-                    if (addr != nullptr) return addr;
-                }
-            }
-            // 所有region都不够，分配新region
-            // TODO: 我为啥不能直接调用操作系统的malloc获取region的内存？？为啥还要搞个全局freelist？？
-            void* new_region_memory = this->allocate_new_memory(GCRegion::SMALL_REGION_SIZE);
-            std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
-                    (RegionEnum::SMALL, new_region_memory, GCRegion::SMALL_REGION_SIZE);
-            {
+void* GCMemoryAllocator::tryAllocateFromExistingRegion(size_t size, ConcurrentLinkedList<std::shared_ptr<GCRegion>>& regionList) {
+    auto iterator = regionList.getRemovableIterator();
+    while (iterator->MoveNext()) {
+        std::shared_ptr<GCRegion> region = iterator->current();
+        void* addr = region->allocate(size);
+        if (addr != nullptr) return addr;
+    }
+    return nullptr;
+}
+
+void*
+GCMemoryAllocator::tryAllocateFromExistingRegion(size_t size, std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
+    std::shared_lock<std::shared_mutex> lock(regionQueMtx);
+    for (int i = regionQue.size() - 1; i >= 0; i--) {
+        void* addr = regionQue[i]->allocate(size);
+        if (addr != nullptr) return addr;
+    }
+    return nullptr;
+}
+
+void GCMemoryAllocator::allocate_new_region(RegionEnum regionType) {
+    size_t regionSize;
+    switch (regionType) {
+        case RegionEnum::SMALL:
+            regionSize = GCRegion::SMALL_REGION_SIZE;
+            break;
+        case RegionEnum::MEDIUM:
+            regionSize = GCRegion::MEDIUM_REGION_SIZE;
+            break;
+        case RegionEnum::TINY:
+            regionSize = GCRegion::TINY_REGION_SIZE;
+            break;
+        default:
+            regionSize = 0;
+            break;
+    }
+    allocate_new_region(regionType, regionSize);
+}
+
+void GCMemoryAllocator::allocate_new_region(RegionEnum regionType, size_t regionSize) {
+    // 为啥不能直接调用操作系统的malloc获取region的内存？为啥还要搞个全局freelist？
+    void* new_region_memory = this->allocate_new_memory(regionSize);
+    std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>(regionType, new_region_memory, regionSize);
+
+    switch (regionType) {
+        case RegionEnum::SMALL:
+            if (useConcurrentLinkedList) {
+                smallRegionList.push_head(region_ptr);
+            } else {
                 std::unique_lock<std::shared_mutex> lock(smallRegionQueMtx);
                 smallRegionQue.emplace_back(region_ptr);
             }
-            {
-                std::unique_lock<std::shared_mutex> lock(regionMapMtx);
-                regionMap.emplace(new_region_memory, region_ptr);
-            }
-        }
-    } else if (regionType == RegionEnum::MEDIUM) {
-        while (true) {
-            {
-                std::shared_lock<std::shared_mutex> lock(mediumRegionQueMtx);
-                for (int i = mediumRegionQue.size() - 1; i >= 0; i--) {
-                    void* addr = mediumRegionQue[i]->allocate(size);
-                    if (addr != nullptr) return addr;
-                }
-            }
-            void* new_region_memory = this->allocate_new_memory(GCRegion::MEDIUM_REGION_SIZE);
-            std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
-                    (RegionEnum::MEDIUM, new_region_memory, GCRegion::MEDIUM_REGION_SIZE);
-            {
+            break;
+        case RegionEnum::MEDIUM:
+            if (useConcurrentLinkedList) {
+                mediumRegionList.push_head(region_ptr);
+            } else {
                 std::unique_lock<std::shared_mutex> lock(mediumRegionQueMtx);
                 mediumRegionQue.emplace_back(region_ptr);
             }
-            {
-                std::unique_lock<std::shared_mutex> lock(regionMapMtx);
-                regionMap.emplace(new_region_memory, region_ptr);
-            }
-        }
-    } else if (regionType == RegionEnum::LARGE) {
-        // 分配Large的时候不会从已有region里找，直接分配新的一块region
-        void* new_region_memory = this->allocate_new_memory(size);
-        std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
-                (RegionEnum::LARGE, new_region_memory, size);
-        {
-            std::unique_lock<std::shared_mutex> lock(largeRegionQueMtx);
-            largeRegionQue.emplace_back(region_ptr);
-        }
-        {
-            std::unique_lock<std::shared_mutex> lock(regionMapMtx);
-            regionMap.emplace(new_region_memory, region_ptr);
-        }
-    } else if (regionType == RegionEnum::TINY) {
-        while (true) {
-            {
-                std::shared_lock<std::shared_mutex> lock(tinyRegionQueMtx);
-                for (int i = tinyRegionQue.size() - 1; i >= 0; i--) {
-                    void* addr = tinyRegionQue[i]->allocate(size);
-                    if (addr != nullptr) return addr;
-                }
-            }
-            void* new_region_memory = this->allocate_new_memory(GCRegion::TINY_REGION_SIZE);
-            std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>
-                    (RegionEnum::TINY, new_region_memory, GCRegion::TINY_REGION_SIZE);
-            {
+            break;
+        case RegionEnum::TINY:
+            if (useConcurrentLinkedList) {
+                tinyRegionList.push_head(region_ptr);
+            } else {
                 std::unique_lock<std::shared_mutex> lock(tinyRegionQueMtx);
                 tinyRegionQue.emplace_back(region_ptr);
             }
-            {
-                std::unique_lock<std::shared_mutex> lock(regionMapMtx);
-                regionMap.emplace(new_region_memory, region_ptr);
+            break;
+        case RegionEnum::LARGE:
+            if (useConcurrentLinkedList) {
+                largeRegionList.push_head(region_ptr);
+            } else {
+                std::unique_lock<std::shared_mutex> lock(largeRegionQueMtx);
+                largeRegionQue.emplace_back(region_ptr);
+            }
+            break;
+    }
+    {
+        std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+        regionMap.emplace(new_region_memory, region_ptr);
+    }
+}
+
+void* GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType) {
+    if (size == 0) return nullptr;
+    while (true) {
+        // 从已有region中寻找空闲区域
+        void* addr = nullptr;
+        if (useConcurrentLinkedList) {
+            switch (regionType) {
+                case RegionEnum::SMALL:
+                    addr = this->tryAllocateFromExistingRegion(size, this->smallRegionList);
+                    break;
+                case RegionEnum::MEDIUM:
+                    addr = this->tryAllocateFromExistingRegion(size, this->mediumRegionList);
+                    break;
+                case RegionEnum::TINY:
+                    addr = this->tryAllocateFromExistingRegion(size, this->tinyRegionList);
+                    break;
+                case RegionEnum::LARGE:
+                    // 分配Large的时候不会从已有region里找，直接分配新的一块region
+                    break;
+            }
+        } else {
+            switch (regionType) {
+                case RegionEnum::SMALL:
+                    addr = this->tryAllocateFromExistingRegion(size, this->smallRegionQue, this->smallRegionQueMtx);
+                    break;
+                case RegionEnum::MEDIUM:
+                    addr = this->tryAllocateFromExistingRegion(size, this->mediumRegionQue, this->mediumRegionQueMtx);
+                    break;
+                case RegionEnum::TINY:
+                    addr = this->tryAllocateFromExistingRegion(size, this->tinyRegionQue, this->tinyRegionQueMtx);
+                    break;
+                case RegionEnum::LARGE:
+                    // 分配Large的时候不会从已有region里找，直接分配新的一块region
+                    break;
             }
         }
+        if (addr != nullptr) return addr;
+        // 所有region都不够，分配新region
+        if (regionType == RegionEnum::LARGE)
+            this->allocate_new_region(regionType, size);
+        else
+            this->allocate_new_region(regionType);
     }
 }
 
@@ -144,34 +190,41 @@ void* GCMemoryAllocator::allocate_from_freelist(size_t size) {
 }
 
 void GCMemoryAllocator::triggerClear() {
-    // TODO: 调用clearUnmarked可按region并行化
     if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
         std::cerr << "Wrong phase, should in sweeping phase to trigger clear." << std::endl;
         return;
     }
-    {
-        std::shared_lock<std::shared_mutex> lock(this->smallRegionQueMtx);
-        for (int i = 0; i < smallRegionQue.size(); i++) {
-            smallRegionQue[i]->clearUnmarked();
+    if (useConcurrentLinkedList) {
+        clearFreeRegion(this->largeRegionList);
+        clearFreeRegion(this->smallRegionList);
+        clearFreeRegion(this->mediumRegionList);
+        clearFreeRegion(this->tinyRegionList);
+    } else {
+        // 调用clearUnmarked可按region并行化
+        {
+            std::shared_lock<std::shared_mutex> lock(this->smallRegionQueMtx);
+            for (int i = 0; i < smallRegionQue.size(); i++) {
+                smallRegionQue[i]->clearUnmarked();
+            }
         }
-    }
-    {
-        std::shared_lock<std::shared_mutex> lock(this->mediumRegionQueMtx);
-        for (int i = 0; i < mediumRegionQue.size(); i++) {
-            mediumRegionQue[i]->clearUnmarked();
+        {
+            std::shared_lock<std::shared_mutex> lock(this->mediumRegionQueMtx);
+            for (int i = 0; i < mediumRegionQue.size(); i++) {
+                mediumRegionQue[i]->clearUnmarked();
+            }
         }
-    }
-    {
-        std::shared_lock<std::shared_mutex> lock(this->tinyRegionQueMtx);
-        for (int i = 0; i < tinyRegionQue.size(); i++) {
-            tinyRegionQue[i]->clearUnmarked();
+        {
+            std::shared_lock<std::shared_mutex> lock(this->tinyRegionQueMtx);
+            for (int i = 0; i < tinyRegionQue.size(); i++) {
+                tinyRegionQue[i]->clearUnmarked();
+            }
         }
+        // clearFreeRegion可由四个线程并行化，但对于每种类型应单线程
+        clearFreeRegion(largeRegionQue, largeRegionQueMtx);
+        clearFreeRegion(smallRegionQue, smallRegionQueMtx);
+        clearFreeRegion(mediumRegionQue, mediumRegionQueMtx);
+        clearFreeRegion(tinyRegionQue, tinyRegionQueMtx);
     }
-    // clearFreeRegion可由四个线程并行化，但对于每种类型应单线程
-    clearFreeRegion(largeRegionQue, largeRegionQueMtx);
-    clearFreeRegion(smallRegionQue, smallRegionQueMtx);
-    clearFreeRegion(mediumRegionQue, mediumRegionQueMtx);
-    clearFreeRegion(tinyRegionQue, tinyRegionQueMtx);
 }
 
 void GCMemoryAllocator::triggerRelocation() {
@@ -179,10 +232,30 @@ void GCMemoryAllocator::triggerRelocation() {
         std::cerr << "Wrong phase, should in sweeping phase to trigger relocation." << std::endl;
         return;
     }
-    relocateRegion(smallRegionQue, smallRegionQueMtx);
-    relocateRegion(mediumRegionQue, mediumRegionQueMtx);
-    relocateRegion(tinyRegionQue, tinyRegionQueMtx);
-    clearFreeRegion(largeRegionQue, largeRegionQueMtx);
+    if (useConcurrentLinkedList) {
+        relocateRegion(this->smallRegionList);
+        relocateRegion(this->mediumRegionList);
+        relocateRegion(this->tinyRegionList);
+        clearFreeRegion(this->largeRegionList);
+    } else {
+        relocateRegion(smallRegionQue, smallRegionQueMtx);
+        relocateRegion(mediumRegionQue, mediumRegionQueMtx);
+        relocateRegion(tinyRegionQue, tinyRegionQueMtx);
+        clearFreeRegion(largeRegionQue, largeRegionQueMtx);
+    }
+}
+
+void GCMemoryAllocator::relocateRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>& regionList) {
+    auto iterator = regionList.getRemovableIterator();
+    while (iterator->MoveNext()) {
+        std::shared_ptr<GCRegion> region = iterator->current();
+        if (region->isFreed()) {
+            // todo: 是否是对于上一轮垃圾回收后只含有转发表的region移除？答：好像并不是，考虑到并发链表会有重复元素的风险，可能会导致本轮已被evacuate的立即被释放
+            iterator->remove();
+        } else if (region->needEvacuate()) {
+            region->triggerRelocation(this);
+        }
+    }
 }
 
 void GCMemoryAllocator::relocateRegion(const std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
@@ -226,6 +299,22 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
     }
 }
 
+void GCMemoryAllocator::clearFreeRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>& regionList) {
+    auto iterator = regionList.getRemovableIterator();
+    while (iterator->MoveNext()) {
+        std::shared_ptr<GCRegion> region = iterator->current();
+        region->clearUnmarked();
+        if (region->canFree()) {
+            {
+                std::unique_lock<std::shared_mutex> lock_(this->regionMapMtx);
+                regionMap.erase(region->getStartAddr());
+            }
+            region->free();
+            iterator->remove(region);
+        }
+    }
+}
+
 std::shared_ptr<GCRegion> GCMemoryAllocator::getRegion(void* object_addr) {
     std::shared_lock<std::shared_mutex> lock(this->regionMapMtx);
     auto it = regionMap.upper_bound(object_addr);
@@ -244,22 +333,31 @@ void GCMemoryAllocator::free(void* object_addr, size_t object_size) {
 }
 
 void GCMemoryAllocator::resetLiveSize() {
-    {
-        std::shared_lock<std::shared_mutex> lock(smallRegionQueMtx);
-        for (auto& region : smallRegionQue) {
-            region->resetLiveSize();
+    if (useConcurrentLinkedList) {
+        for (auto regionList : {&smallRegionList, &mediumRegionList, &tinyRegionList}) {
+            auto iterator = regionList->getIterator();
+            while (iterator->MoveNext()) {
+                iterator->current()->resetLiveSize();
+            }
         }
-    }
-    {
-        std::shared_lock<std::shared_mutex> lock(mediumRegionQueMtx);
-        for (auto& region : mediumRegionQue) {
-            region->resetLiveSize();
+    } else {
+        {
+            std::shared_lock<std::shared_mutex> lock(smallRegionQueMtx);
+            for (auto& region : smallRegionQue) {
+                region->resetLiveSize();
+            }
         }
-    }
-    {
-        std::shared_lock<std::shared_mutex> lock(tinyRegionQueMtx);
-        for (auto& region : tinyRegionQue) {
-            region->resetLiveSize();
+        {
+            std::shared_lock<std::shared_mutex> lock(mediumRegionQueMtx);
+            for (auto& region : mediumRegionQue) {
+                region->resetLiveSize();
+            }
+        }
+        {
+            std::shared_lock<std::shared_mutex> lock(tinyRegionQueMtx);
+            for (auto& region : tinyRegionQue) {
+                region->resetLiveSize();
+            }
         }
     }
 }

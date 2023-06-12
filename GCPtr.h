@@ -44,7 +44,7 @@ public:
     }
 
     T* get() const {
-        std::clog << "Calling const get() will disable pointer self-heal, which is not recommend" << std::endl;
+        // Calling const get() will disable pointer self-heal, which is not recommend
         if (GCPhase::needSelfHeal(getInlineMarkState()))
             return GCWorker::getWorker()->getHealedPointer(this->obj);
         else
@@ -107,8 +107,8 @@ public:
         return *this;
     }
 
-    bool operator==(const GCPtr<T>& other) const {
-        return this->obj == other.obj;
+    bool operator==(GCPtr<T>& other) {
+        return this->get() == other.get();
     }
 
     bool operator==(std::nullptr_t) const {
