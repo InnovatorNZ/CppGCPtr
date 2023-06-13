@@ -26,18 +26,18 @@ private:
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> smallRegionSet;
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> mediumRegionSet;
     // std::unordered_set<GCRegion, GCRegion::GCRegionHash> largeRegionSet;
-    // TODO: 能否使用无锁链表管理region？
+    // 能否使用无锁链表管理region？ TODO: 似乎使用链表管理region会导致多线程优化较为困难
 // #if USE_CONCURRENT_LINKEDLIST
-    ConcurrentLinkedList<std::shared_ptr<GCRegion>> smallRegionList;
+    std::unique_ptr<ConcurrentLinkedList<std::shared_ptr<GCRegion>>[]> smallRegionLists;
     ConcurrentLinkedList<std::shared_ptr<GCRegion>> mediumRegionList;
     ConcurrentLinkedList<std::shared_ptr<GCRegion>> largeRegionList;
     ConcurrentLinkedList<std::shared_ptr<GCRegion>> tinyRegionList;
 // #else
-    std::deque<std::shared_ptr<GCRegion>> smallRegionQue;
+    std::unique_ptr<std::deque<std::shared_ptr<GCRegion>>[]> smallRegionQues;
     std::deque<std::shared_ptr<GCRegion>> mediumRegionQue;
     std::deque<std::shared_ptr<GCRegion>> largeRegionQue;
     std::deque<std::shared_ptr<GCRegion>> tinyRegionQue;
-    std::shared_mutex smallRegionQueMtx;
+    std::unique_ptr<std::shared_mutex[]> smallRegionQueMtxs;
     std::shared_mutex mediumRegionQueMtx;
     std::shared_mutex largeRegionQueMtx;
     std::shared_mutex tinyRegionQueMtx;
@@ -66,6 +66,8 @@ private:
     void relocateRegion(const std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
 
     void relocateRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
+
+    int getPoolIdx();
 
 public:
     GCMemoryAllocator();
