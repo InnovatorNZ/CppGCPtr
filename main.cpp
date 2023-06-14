@@ -1,7 +1,6 @@
 #include <iostream>
 #include <string>
 #include "GCPtr.h"
-#include "GCMemoryAllocator.h"
 
 class MyObject {
 public:
@@ -60,7 +59,7 @@ int main() {
     cout << "Ready to start..." << endl;
     const int n = 25;
     long long time_ = 0;
-    gc::init(true, true);
+    gc::init(true, true, false);
     Sleep(500);
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::high_resolution_clock::now();
@@ -108,10 +107,6 @@ int main() {
         double _f = obj3->e->f;
         obj3 = nullptr;
         obj2 = nullptr;
-#if TRIGGER_GC && TEST_RWLOCK
-        cout << (obj3 == nullptr) << " " << (obj2 == nullptr) << endl;
-        gc::triggerGC(true);        //测试读写锁用
-#endif
         GCPtr<MyObject> obj6 = gc::make_root<MyObject>();
         GCPtr<MyObject> obj7 = gc::make_root<MyObject>();
         {
@@ -138,11 +133,7 @@ int main() {
         long long duration = chrono::duration_cast<chrono::microseconds>(end_time - start_time).count();
         cout << "User thread duration: " << duration << " us" << endl;
         time_ += duration;
-#if 0
-        cout << "Another gc triggering" << endl;
-        cout << "Main thread sleeping" << endl;
-        gc::triggerGC(true);
-#endif
+
         Sleep(100);
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " us" << endl;

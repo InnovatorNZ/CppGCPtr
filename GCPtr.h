@@ -83,8 +83,8 @@ public:
             this->obj = other.obj;
             this->obj_size = other.obj_size;
             this->setInlineMarkState(other.getInlineMarkState());
-            //GCWorker::getWorker()->insertReference(this, &other, sizeof(*(other.get())));
-            //GCWorker::getWorker()->addObject(obj, sizeof(*obj));
+            // GCWorker::getWorker()->insertReference(this, &other, sizeof(*(other.get())));
+            // GCWorker::getWorker()->addObject(obj, sizeof(*obj));
             this->is_root = other.is_root;
             if (is_root) {
                 GCWorker::getWorker()->addRoot(this);

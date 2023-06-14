@@ -1,7 +1,7 @@
 #include "GCMemoryAllocator.h"
 
 const size_t GCMemoryAllocator::INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
-//const bool GCMemoryAllocator::useConcurrentLinkedList = true;        // todo: 仅限编写代码期间注释本行
+const bool GCMemoryAllocator::useConcurrentLinkedList = true;        // todo: 仅限编写代码期间注释本行
 
 GCMemoryAllocator::GCMemoryAllocator() : GCMemoryAllocator(false) {
 }

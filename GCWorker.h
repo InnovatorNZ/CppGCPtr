@@ -78,7 +78,11 @@ public:
 
     static GCWorker* getWorker();
 
-    static void init(bool enableConcurrentMark, bool useBitmap);
+    template<class... Args>
+    static void init(Args... args) {
+        GCWorker* pGCWorker = new GCWorker(args...);
+        GCWorker::instance = std::unique_ptr<GCWorker>(pGCWorker);
+    }
 
     void wakeUpGCThread();
 
@@ -119,7 +123,9 @@ public:
 namespace gc {
     void triggerGC();
 
-    void init(bool enableConcurrentMark, bool useBitmap);
+    void init(bool concurrent, bool useBitmap,
+              bool enableRelocation = false, bool enableDestructorSupport = false, bool useInlineMarkState = false,
+              bool useInternalMemoryManager = false);
 }
 
 #endif //CPPGCPTR_GCWORKER_H

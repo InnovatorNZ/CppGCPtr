@@ -52,11 +52,6 @@ GCWorker* GCWorker::getWorker() {
     return instance.get();
 }
 
-void GCWorker::init(bool enableConcurrentMark, bool useBitmap) {
-    GCWorker* pGCWorker = new GCWorker(enableConcurrentMark, useBitmap);
-    GCWorker::instance = std::unique_ptr<GCWorker>(pGCWorker);
-}
-
 void GCWorker::mark(void* object_addr) {
     if (object_addr == nullptr) return;
     std::shared_lock<std::shared_mutex> read_lock(this->object_map_mutex);
@@ -92,7 +87,7 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (useInlineMarkstate) {
         if (gcptr->getInlineMarkState() == c_markstate)     // 标记过了
             return;
-        // TODO: 读取转发表的条件：即当前标记阶段为上一次被标记阶段
+        // 读取转发表的条件：即当前标记阶段为上一次被标记阶段
         // 客观地说，指针自愈确实应该在标记对象前面（？）
         gcptr->setInlineMarkState(c_markstate);
     }
@@ -402,7 +397,8 @@ namespace gc {
         GCWorker::getWorker()->triggerGC();
     }
 
-    void init(bool enableConcurrentMark, bool useBitmap) {
-        GCWorker::init(enableConcurrentMark, useBitmap);
+    void init(bool concurrent, bool useBitmap, bool enableRelocation, bool enableDestructorSupport, bool useInlineMarkState,
+              bool useInternalMemoryManager) {
+        GCWorker::init(concurrent, useBitmap, enableDestructorSupport, useInlineMarkState, useInternalMemoryManager, enableRelocation);
     }
 }
