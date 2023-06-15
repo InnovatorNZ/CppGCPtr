@@ -1,7 +1,7 @@
 #include "GCMemoryAllocator.h"
 
 const size_t GCMemoryAllocator::INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
-const bool GCMemoryAllocator::useConcurrentLinkedList = true;        // todo: 仅限编写代码期间注释本行
+const bool GCMemoryAllocator::useConcurrentLinkedList = false;        // todo: 仅限编写代码期间注释本行
 
 GCMemoryAllocator::GCMemoryAllocator() : GCMemoryAllocator(false) {
 }
@@ -279,7 +279,8 @@ void GCMemoryAllocator::relocateRegion(ConcurrentLinkedList<std::shared_ptr<GCRe
 }
 
 void GCMemoryAllocator::relocateRegion(const std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
-    std::vector<std::shared_ptr<GCRegion>> regionQueSnapshot(regionQue.size());
+    std::vector<std::shared_ptr<GCRegion>> regionQueSnapshot;
+    regionQueSnapshot.reserve(regionQue.size() / 2);
     {
         std::shared_lock<std::shared_mutex> lock(regionQueMtx);
         for (auto& region : regionQue) {
@@ -289,7 +290,8 @@ void GCMemoryAllocator::relocateRegion(const std::deque<std::shared_ptr<GCRegion
         }
     }
     for (auto& region : regionQueSnapshot) {
-        region->triggerRelocation(this);
+        if (region != nullptr)
+            region->triggerRelocation(this);
     }
     // TODO: 完成relocate的region应该free，包括从regionMap中移除canFree的region，以及下轮垃圾回收清理只含有转发表的region
 }

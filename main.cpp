@@ -59,13 +59,13 @@ int main() {
     cout << "Ready to start..." << endl;
     const int n = 25;
     long long time_ = 0;
-    gc::init(true, true, false);
+    gc::init(true, true, true);
     Sleep(500);
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::high_resolution_clock::now();
 #if TRIGGER_GC
         gc::triggerGC();
-        //Sleep(1000);
+        Sleep(1000);
 #endif
         GCPtr<MyObject> obj2;
         {

@@ -54,8 +54,8 @@ private:
     GCWorker();
 
     GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport = true,
-             bool useInlineMarkState = true, bool useInternalMemoryManager = false,
-             bool enableRelocation = false);
+        bool useInlineMarkState = true, bool useInternalMemoryManager = false,
+        bool enableRelocation = false);
 
     void mark(void*);
 
@@ -117,6 +117,8 @@ public:
     bool destructorEnabled() const { return enableDestructorSupport; }
 
     bool bitmapEnabled() const { return useBitmap; }
+
+    bool relocationEnabled() const { return enableRelocation; }
 };
 
 

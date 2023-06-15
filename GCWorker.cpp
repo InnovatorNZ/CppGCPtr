@@ -122,6 +122,7 @@ void GCWorker::mark_v2(void* object_addr, size_t object_size) {
             reinterpret_cast<char*>(region->getStartAddr()) + region->getAllocatedSize()
             < reinterpret_cast<char*>(object_addr) + object_size) {
             std::clog << "Object range out of region or region is evacuated or free!" << std::endl;
+            throw std::exception();
             return;
         }
         if (region->marked(object_addr)) return;

@@ -10,15 +10,24 @@
 template<typename T>
 class GCPtr : public GCPtrBase {
     template<typename U>
-    friend
-    class GCPtr;
+    friend class GCPtr;
 
 private:
     T* obj;
     unsigned int obj_size;
     bool is_root;
-
     const int identifier_tail = GCPTR_IDENTIFIER_TAIL;
+
+    bool needHeal() const {
+        return this->obj != nullptr && GCWorker::getWorker()->relocationEnabled()
+            && GCPhase::needSelfHeal(getInlineMarkState());
+    }
+
+    void selfHeal() {
+        this->obj = static_cast<T*>(GCWorker::getWorker()->getHealedPointer(this->obj, this->obj_size));
+        this->setInlineMarkState(MarkState::REMAPPED);
+    }
+
 public:
     GCPtr() : obj(nullptr), obj_size(0), is_root(false) {
     }
@@ -39,13 +48,14 @@ public:
     }
 
     T* get() {
-        this->selfHeal();
-        return obj;
+        if (this->needHeal())
+            this->selfHeal();
+        return this->obj;
     }
 
     T* get() const {
         // Calling const get() will disable pointer self-heal, which is not recommend
-        if (GCPhase::needSelfHeal(getInlineMarkState()))
+        if (this->needHeal())
             return GCWorker::getWorker()->getHealedPointer(this->obj);
         else
             return obj;
@@ -65,13 +75,6 @@ public:
 
     unsigned int getObjectSize() const override {
         return obj_size;
-    }
-
-    void selfHeal() {
-        if (GCPhase::needSelfHeal(this->getInlineMarkState())) {
-            this->obj = static_cast<T*>(GCWorker::getWorker()->getHealedPointer(this->obj, this->obj_size));
-            this->setInlineMarkState(MarkState::REMAPPED);
-        }
     }
 
     GCPtr<T>& operator=(const GCPtr<T>& other) {
