@@ -223,6 +223,7 @@ void GCRegion::triggerRelocation(IAllocatable* memoryAllocator) {
 void GCRegion::relocateObject(void* object_addr, size_t object_size, IAllocatable* allocator) {
     if ((char*) object_addr + object_size >= (char*) startAddress + allocated_offset) {
         std::clog << "The relocating object does not in current region!" << std::endl;
+        throw std::exception();
         return;
     }
     {

@@ -345,12 +345,14 @@ void* GCWorker::getHealedPointer(void* ptr, size_t obj_size) const {
             // region已被标识为需要转移，但尚未完成转移
             region->relocateObject(ptr, obj_size, this->memoryAllocator.get());
             ret = region->queryForwardingTable(ptr);
+            std::clog << "Region need to evacuate but not yet found for " << ptr << std::endl;
             if (ret == nullptr) throw std::exception();
             return ret;
         } else {
             return ptr;
         }
     } else {
+        std::clog << "Healing pointer from " << ptr << " to " << ret << std::endl;
         return ret;
     }
 }

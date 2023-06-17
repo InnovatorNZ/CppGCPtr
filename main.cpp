@@ -63,10 +63,6 @@ int main() {
     Sleep(500);
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::high_resolution_clock::now();
-#if TRIGGER_GC
-        gc::triggerGC();
-        Sleep(1000);
-#endif
         GCPtr<MyObject> obj2;
         {
             GCPtr<MyObject> obj1 = gc::make_root<MyObject>();
@@ -94,10 +90,11 @@ int main() {
         cout << obj3->e->f << endl;
 #endif
 
-        obj3->e->f = 114.514;
 #if TRIGGER_GC
         gc::triggerGC();
 #endif
+        obj3->e->f = 114.514;
+
         GCPtr<MyObject> obj5 = gc::make_root<MyObject>();
         {
             GCPtr<MyObject> obj4 = gc::make_root<MyObject>();
@@ -134,7 +131,10 @@ int main() {
         cout << "User thread duration: " << duration << " us" << endl;
         time_ += duration;
 
-        Sleep(100);
+#if TRIGGER_GC
+        gc::triggerGC();
+        Sleep(1000);
+#endif
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " us" << endl;
     return 0;
