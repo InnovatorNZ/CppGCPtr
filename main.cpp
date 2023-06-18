@@ -13,7 +13,7 @@ public:
     int h;
     double l[256];
 
-    MyObject() : a(0), b(0), h(0), f(0) {
+    MyObject() : a(rand() % RAND_MAX), b(0), h(0), f(0) {
     }
 
     void setG(GCPtr<MyObject> _g) {

@@ -8,7 +8,8 @@ GCMemoryAllocator::GCMemoryAllocator() : GCMemoryAllocator(false) {
 
 GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager) {
     this->enableInternalMemoryManager = useInternalMemoryManager;
-    this->poolCount = std::thread::hardware_concurrency();
+    //this->poolCount = std::thread::hardware_concurrency();
+    this->poolCount = 1;
     if (useInternalMemoryManager) {
         size_t initialSize = INITIAL_SINGLE_SIZE * poolCount;
         void* initialMemory = malloc(initialSize);
@@ -344,6 +345,11 @@ std::shared_ptr<GCRegion> GCMemoryAllocator::getRegion(void* object_addr) {
         return nullptr;
     } else {
         --it;
+#if 0
+        auto& region = it->second;
+        if (!region->inside_region(object_addr))
+            throw std::runtime_error("Not inside queried region!");
+#endif
         return it->second;
     }
 }

@@ -24,7 +24,10 @@ private:
     }
 
     void selfHeal() {
+        void* old_addr = obj;
         this->obj = static_cast<T*>(GCWorker::getWorker()->getHealedPointer(this->obj, this->obj_size));
+        std::clog << "Healing GCPtr(" << this << ", " << MarkStateUtil::toString(getInlineMarkState()) <<
+            ") from " << old_addr << " to " << obj << std::endl;
         this->setInlineMarkState(MarkState::REMAPPED);
     }
 
@@ -55,6 +58,7 @@ public:
 
     T* get() const {
         // Calling const get() will disable pointer self-heal, which is not recommend
+        std::clog << "Calling get() const on " << obj << ", temporarily disable self - heal" << std::endl;
         if (this->needHeal())
             return GCWorker::getWorker()->getHealedPointer(this->obj);
         else

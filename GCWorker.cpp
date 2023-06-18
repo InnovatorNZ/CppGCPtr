@@ -87,6 +87,7 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (useInlineMarkstate) {
         if (gcptr->getInlineMarkState() == c_markstate)     // 标记过了
             return;
+        std::clog << "Marking " << gcptr << " from " << MarkStateUtil::toString(gcptr->getInlineMarkState()) << " to " << MarkStateUtil::toString(c_markstate) << std::endl;
         // 读取转发表的条件：即当前标记阶段为上一次被标记阶段
         // 客观地说，指针自愈确实应该在标记对象前面（？）
         gcptr->setInlineMarkState(c_markstate);
@@ -118,9 +119,7 @@ void GCWorker::mark_v2(void* object_addr, size_t object_size) {
         }
     } else {
         std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(object_addr);
-        if (region == nullptr || region->isEvacuated() ||
-            reinterpret_cast<char*>(region->getStartAddr()) + region->getAllocatedSize()
-            < reinterpret_cast<char*>(object_addr) + object_size) {
+        if (region == nullptr || region->isEvacuated() || !region->inside_region(object_addr, object_size)) {
             std::clog << "Object range out of region or region is evacuated or free!" << std::endl;
             throw std::exception();
             return;
@@ -343,9 +342,9 @@ void* GCWorker::getHealedPointer(void* ptr, size_t obj_size) const {
     if (ret == nullptr) {
         if (region->isEvacuated()) {        // todo: isEvacuated()还是needEvacuate()？
             // region已被标识为需要转移，但尚未完成转移
+            std::clog << "Region need to evacuate but not yet found for " << ptr << std::endl;
             region->relocateObject(ptr, obj_size, this->memoryAllocator.get());
             ret = region->queryForwardingTable(ptr);
-            std::clog << "Region need to evacuate but not yet found for " << ptr << std::endl;
             if (ret == nullptr) throw std::exception();
             return ret;
         } else {

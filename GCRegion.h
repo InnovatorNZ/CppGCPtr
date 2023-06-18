@@ -47,6 +47,7 @@ private:
     short allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
     std::atomic<bool> evacuated;
     // std::vector<std::pair<void*, size_t>> live_objects;
+    int debug_not_deleted;  // todo: remove this var after debug
 
 #if USE_REGINOAL_HASHMAP
     std::unordered_map<void*, GCStatus> object_map;
@@ -69,8 +70,6 @@ public:
     size_t getTotalSize() const { return total_size; }
 
     void* getStartAddr() const { return startAddress; }
-
-    size_t getAllocatedSize() const { return allocated_offset; }
 
     void* allocate(size_t size) override;
 
@@ -103,6 +102,8 @@ public:
     void relocateObject(void*, size_t, IAllocatable*);
 
     void* queryForwardingTable(void*);
+
+    bool inside_region(void*, size_t = 0) const;
 
     // TODO: 要不要加个reclaim，重新利用已被释放的region？
 };

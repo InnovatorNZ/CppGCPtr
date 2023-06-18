@@ -200,6 +200,7 @@ void GCRegion::triggerRelocation(IAllocatable* memoryAllocator) {
         this->free();
         return;
     }
+    std::clog << "Relocating region " << this << std::endl;
     auto bitMapIterator = bitmap->getIterator();
     while (bitMapIterator.MoveNext()) {
         GCBitMap::BitStatus bitStatus = bitMapIterator.current();
@@ -221,7 +222,7 @@ void GCRegion::triggerRelocation(IAllocatable* memoryAllocator) {
 }
 
 void GCRegion::relocateObject(void* object_addr, size_t object_size, IAllocatable* allocator) {
-    if ((char*) object_addr + object_size >= (char*) startAddress + allocated_offset) {
+    if (!inside_region(object_addr, object_size)) {
         std::clog << "The relocating object does not in current region!" << std::endl;
         throw std::exception();
         return;
@@ -238,6 +239,7 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IAllocatabl
         std::unique_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
         if (!forwarding_table.contains(object_addr)) {
             forwarding_table.emplace(object_addr, new_addr);
+            std::clog << "Forwarding " << object_addr << " to " << new_addr << std::endl;
         } else {
             // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
             lock.unlock();
@@ -266,11 +268,20 @@ bool GCRegion::needEvacuate() const {
 void GCRegion::free() {
     // 释放整个region，只保留转发表
     evacuated = true;
+    // TODO: debug完成后请取消注释以下几行并还原
+#if _DEBUG
+    if (regionType != RegionEnum::LARGE && debug_not_deleted != 79) {
+        ::free(startAddress);
+        //bitmap = nullptr;
+        debug_not_deleted = 79;
+    }
+#else
     bitmap = nullptr;
     total_size = 0;
     allocated_offset = 0;
     ::free(startAddress);
     startAddress = nullptr;
+#endif
 }
 
 void* GCRegion::queryForwardingTable(void* ptr) {
@@ -278,6 +289,11 @@ void* GCRegion::queryForwardingTable(void* ptr) {
     auto it = forwarding_table.find(ptr);
     if (it == forwarding_table.end()) return nullptr;
     else return it->second;
+}
+
+bool GCRegion::inside_region(void* addr, size_t size) const {
+    return (char*)addr >= (char*)startAddress
+        && (char*)addr + size <= (char*)startAddress + allocated_offset;
 }
 
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {
