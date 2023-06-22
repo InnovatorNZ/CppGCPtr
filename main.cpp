@@ -1,7 +1,6 @@
 #include <iostream>
 #include <string>
 #include "GCPtr.h"
-#include "MemoryAllocatorTest.h"
 
 class MyObject {
 public:

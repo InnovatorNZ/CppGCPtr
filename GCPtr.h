@@ -16,6 +16,7 @@ private:
     T* obj;
     unsigned int obj_size;
     bool is_root;
+    std::shared_ptr<GCRegion> region;
     const int identifier_tail = GCPTR_IDENTIFIER_TAIL;
 
     bool needHeal() const {
@@ -24,10 +25,13 @@ private:
     }
 
     void selfHeal() {
-        void* old_addr = obj;
-        this->obj = static_cast<T*>(GCWorker::getWorker()->getHealedPointer(this->obj, this->obj_size));
-        std::clog << "Healing GCPtr(" << this << ", " << MarkStateUtil::toString(getInlineMarkState()) <<
-            ") from " << old_addr << " to " << obj << std::endl;
+        auto healed = GCWorker::getWorker()->getHealedPointer(this->obj, this->obj_size, region);
+        if (healed.first != nullptr) {
+            std::clog << "Healing GCPtr(" << this << ", " << MarkStateUtil::toString(getInlineMarkState()) <<
+                ") from " << obj << " to " << healed.first << std::endl;
+            this->obj = static_cast<T*>(healed.first);
+            this->region = healed.second;
+        }
         this->setInlineMarkState(MarkState::REMAPPED);
     }
 
@@ -41,7 +45,20 @@ public:
     GCPtr(T* obj, bool is_root) : is_root(is_root), obj_size(sizeof(*obj)) {
         GCPhase::EnterCriticalSection();
         this->obj = obj;
-        GCWorker::getWorker()->addObject(obj, sizeof(*obj));
+        GCWorker::getWorker()->registerObject(obj, sizeof(*obj));
+        if (GCWorker::getWorker()->destructorEnabled())
+            GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
+        if (is_root) {
+            GCWorker::getWorker()->addRoot(this);
+        }
+        GCPhase::LeaveCriticalSection();
+    }
+
+    GCPtr(T* obj, bool is_root, std::shared_ptr<GCRegion> region) : is_root(is_root) {
+        GCPhase::EnterCriticalSection();
+        this->obj = obj;
+        this->obj_size = sizeof(*obj);
+        this->region = region;
         if (GCWorker::getWorker()->destructorEnabled())
             GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
         if (is_root) {
@@ -58,9 +75,9 @@ public:
 
     T* get() const {
         // Calling const get() will disable pointer self-heal, which is not recommend
-        std::clog << "Calling get() const on " << obj << ", temporarily disable self - heal" << std::endl;
+        std::clog << "Calling get() const on " << obj << ", temporarily disable selfheal" << std::endl;
         if (this->needHeal())
-            return GCWorker::getWorker()->getHealedPointer(this->obj);
+            return static_cast<T*>(GCWorker::getWorker()->getHealedPointer(this->obj, this->obj_size, region).first);
         else
             return obj;
     }
@@ -81,6 +98,10 @@ public:
         return obj_size;
     }
 
+    std::shared_ptr<GCRegion> getRegion() const override {
+        return this->region;
+    }
+
     GCPtr<T>& operator=(const GCPtr<T>& other) {
         if (this != &other) {
             GCPhase::EnterCriticalSection();
@@ -89,13 +110,11 @@ public:
             }
             this->obj = other.obj;
             this->obj_size = other.obj_size;
+            this->region = other.region;
             this->setInlineMarkState(other.getInlineMarkState());
-            // GCWorker::getWorker()->insertReference(this, &other, sizeof(*(other.get())));
-            // GCWorker::getWorker()->addObject(obj, sizeof(*obj));
             this->is_root = other.is_root;
-            if (is_root) {
+            if (is_root)
                 GCWorker::getWorker()->addRoot(this);
-            }
             GCPhase::LeaveCriticalSection();
         }
         return *this;
@@ -109,6 +128,7 @@ public:
             }
             this->obj = nullptr;
             this->obj_size = 0;
+            this->region = nullptr;
             GCPhase::LeaveCriticalSection();
         }
         return *this;
@@ -128,6 +148,7 @@ public:
         this->obj = other.obj;
         this->obj_size = other.obj_size;
         this->is_root = other.is_root;
+        this->region = other.region;
         this->setInlineMarkState(other.getInlineMarkState());
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
@@ -141,6 +162,7 @@ public:
         this->obj = other.obj;
         this->obj_size = other.obj_size;
         this->is_root = other.is_root;
+        this->region = std::move(other.region);
         this->setInlineMarkState(other.getInlineMarkState());
         other.obj = nullptr;
         other.obj_size = 0;
@@ -153,6 +175,7 @@ public:
     template<typename U>
     GCPtr(GCPtr<U>&& other) : obj(other.obj), obj_size(other.obj_size), is_root(other.is_root) {
         this->setInlineMarkState(other.getInlineMarkState());
+        this->region = std::move(other.region);
         other.obj = nullptr;
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
@@ -176,8 +199,11 @@ namespace gc {
     GCPtr <T> make_gc(Args&& ... args) {
         GCPhase::EnterCriticalSection();
         T* obj = nullptr;
+        std::shared_ptr<GCRegion> region = nullptr;
         if (GCWorker::getWorker()->bitmapEnabled()) {
-            obj = static_cast<T*>(GCWorker::getWorker()->allocate(sizeof(T)));
+            auto pair = GCWorker::getWorker()->allocate(sizeof(T));
+            obj = static_cast<T*>(pair.first);
+            region = pair.second;
             new(obj) T(std::forward<Args>(args)...);
         } else {
             obj = new T(std::forward<Args>(args)...);
@@ -185,15 +211,21 @@ namespace gc {
         GCPhase::LeaveCriticalSection();
 
         if (obj == nullptr) throw std::exception();
-        return GCPtr<T>(obj);
+        if (region == nullptr)
+            return GCPtr<T>(obj);
+        else
+            return GCPtr<T>(obj, false, region);
     }
 
     template<class T, class... Args>
     GCPtr <T> make_root(Args&& ... args) {
         GCPhase::EnterCriticalSection();
         T* obj = nullptr;
+        std::shared_ptr<GCRegion> region = nullptr;
         if (GCWorker::getWorker()->bitmapEnabled()) {
-            obj = static_cast<T*>(GCWorker::getWorker()->allocate(sizeof(T)));
+            auto pair = GCWorker::getWorker()->allocate(sizeof(T));
+            obj = static_cast<T*>(pair.first);
+            region = pair.second;
             new(obj) T(std::forward<Args>(args)...);
         } else {
             obj = new T(std::forward<Args>(args)...);
@@ -201,7 +233,10 @@ namespace gc {
         GCPhase::LeaveCriticalSection();
 
         if (obj == nullptr) throw std::exception();
-        return GCPtr<T>(obj, true);
+        if (region == nullptr)
+            return GCPtr<T>(obj, true);
+        else
+            return GCPtr<T>(obj, true, region);
     }
 
 #ifdef OLD_MAKEGC

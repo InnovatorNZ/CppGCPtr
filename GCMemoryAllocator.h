@@ -9,13 +9,13 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
-#include "IAllocatable.h"
+#include "IMemoryAllocator.h"
 #include "GCRegion.h"
 #include "GCMemoryManager.h"
 #include "ConcurrentLinkedList.h"
 
 
-class GCMemoryAllocator : public IAllocatable {
+class GCMemoryAllocator : public IMemoryAllocator {
 private:
     static const size_t INITIAL_SINGLE_SIZE;
     static const bool useConcurrentLinkedList;
@@ -42,14 +42,14 @@ private:
     std::shared_mutex largeRegionQueMtx;
     std::shared_mutex tinyRegionQueMtx;
 // #endif
-    std::map<void*, std::shared_ptr<GCRegion>> regionMap;
-    std::shared_mutex regionMapMtx;
+    // std::map<void*, std::shared_ptr<GCRegion>> regionMap;
+    // std::shared_mutex regionMapMtx;
 
-    void* allocate_from_region(size_t size, RegionEnum regionType);
+    std::pair<void*, std::shared_ptr<GCRegion>> allocate_from_region(size_t size, RegionEnum regionType);
 
-    void* tryAllocateFromExistingRegion(size_t, ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
+    std::pair<void*, std::shared_ptr<GCRegion>> tryAllocateFromExistingRegion(size_t, ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
 
-    void* tryAllocateFromExistingRegion(size_t, std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
+    std::pair<void*, std::shared_ptr<GCRegion>> tryAllocateFromExistingRegion(size_t, std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
 
     void allocate_new_region(RegionEnum regionType);
 
@@ -74,15 +74,15 @@ public:
 
     explicit GCMemoryAllocator(bool useInternalMemoryManager);
 
-    void* allocate(size_t size) override;
+    std::pair<void*, std::shared_ptr<GCRegion>> allocate(size_t size) override;
 
-    void free(void*, size_t) override;
+    // void free(void*, size_t, std::shared_ptr<GCRegion>) override;
 
     void triggerClear();
 
     void triggerRelocation();
 
-    std::shared_ptr<GCRegion> getRegion(void* object_addr);
+    // std::shared_ptr<GCRegion> getRegion(void* object_addr);
 
     void resetLiveSize();
 };

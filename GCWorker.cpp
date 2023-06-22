@@ -94,10 +94,10 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
         gcptr->setInlineMarkState(c_markstate);
     }
 
-    this->mark_v2(object_addr, object_size);
+    this->mark_v2(object_addr, object_size, gcptr->getRegion());
 }
 
-void GCWorker::mark_v2(void* object_addr, size_t object_size) {
+void GCWorker::mark_v2(void* object_addr, size_t object_size, std::shared_ptr<GCRegion> region) {
     if (object_addr == nullptr) return;
     MarkState c_markstate = GCPhase::getCurrentMarkState();
 
@@ -119,7 +119,7 @@ void GCWorker::mark_v2(void* object_addr, size_t object_size) {
             object_size = it->second.objectSize;
         }
     } else {
-        std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(object_addr);
+        // std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(object_addr);
         if (region == nullptr || region->isEvacuated() || !region->inside_region(object_addr, object_size)) {
             std::clog << "Evacuated region or Out of range!" << std::endl;
             throw std::exception();
@@ -129,14 +129,15 @@ void GCWorker::mark_v2(void* object_addr, size_t object_size) {
         region->mark(object_addr, object_size);
     }
 
-    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 40 : 28;
+    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 56 : 36;
     char* cptr = reinterpret_cast<char*>(object_addr);
     for (char* n_addr = cptr; n_addr < cptr + object_size - SIZEOF_GCPTR; n_addr += sizeof(void*)) {
         int identifier_head = *(reinterpret_cast<int*>(n_addr));
         if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
             // To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
             auto _max = [](int x, int y)constexpr { return x > y ? x : y; };
-            constexpr int tail_offset = sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4);
+            constexpr int tail_offset =
+                sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) + sizeof(std::shared_ptr<GCRegion>);
             char* tail_addr = n_addr + tail_offset;
             int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {
@@ -152,7 +153,9 @@ void GCWorker::mark_v2(void* object_addr, size_t object_size) {
                 }
 #endif
                 mark_v2(next_ptr);
-            } else std::clog << "Identifier head found at " << n_addr << " but not found tail" << std::endl;
+            } else {
+                std::clog << "Identifier head found at " << n_addr << " but not found tail" << std::endl;
+            }
         }
     }
 }
@@ -211,12 +214,12 @@ void GCWorker::triggerGC() {
     }
 }
 
-void* GCWorker::allocate(size_t size) {
-    if (!useBitmap) return nullptr;
+std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::allocate(size_t size) {
+    if (!useBitmap) return std::make_pair(nullptr, nullptr);
     return memoryAllocator->allocate(size);
 }
 
-void GCWorker::addObject(void* object_addr, size_t object_size) {
+void GCWorker::registerObject(void* object_addr, size_t object_size) {
     if (useBitmap)   // 启用bitmap的情况下会在region内分配的时候自动在bitmap内打上标记，无需再次标记
         return;
 
@@ -338,22 +341,22 @@ void GCWorker::beginSweep() {
     }
 }
 
-void* GCWorker::getHealedPointer(void* ptr, size_t obj_size) const {
-    std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(ptr);
-    void* ret = region->queryForwardingTable(ptr);
-    if (ret == nullptr) {
+std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr, size_t obj_size, std::shared_ptr<GCRegion> region) const {
+    // std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(ptr);
+    std::pair<void*, std::shared_ptr<GCRegion>> ret = region->queryForwardingTable(ptr);
+    if (ret.first == nullptr) {
         if (region->isEvacuated()) {        // todo: isEvacuated()还是needEvacuate()？
             // region已被标识为需要转移，但尚未完成转移
             std::clog << "Region need to evacuate but not yet found for " << ptr << std::endl;
             region->relocateObject(ptr, obj_size, this->memoryAllocator.get());
             ret = region->queryForwardingTable(ptr);
-            if (ret == nullptr) throw std::exception();
+            if (ret.first == nullptr) throw std::exception();
             return ret;
         } else {
-            return ptr;
+            return std::make_pair(nullptr, nullptr);
         }
     } else {
-        std::clog << "Healing pointer from " << ptr << " to " << ret << std::endl;
+        std::clog << "Healing pointer from " << ptr << " to " << ret.first << std::endl;
         return ret;
     }
 }

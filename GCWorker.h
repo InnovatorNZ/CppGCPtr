@@ -61,7 +61,7 @@ private:
 
     void mark_v2(GCPtrBase*);
 
-    void mark_v2(void*, size_t);
+    void mark_v2(void*, size_t, std::shared_ptr<GCRegion>);
 
     void threadLoop();
 
@@ -88,9 +88,9 @@ public:
 
     void triggerGC();
 
-    void* allocate(size_t size);
+    std::pair<void*, std::shared_ptr<GCRegion>> allocate(size_t size);
 
-    void addObject(void* object_addr, size_t object_size);
+    void registerObject(void* object_addr, size_t object_size);
 
     void addRoot(GCPtrBase*);
 
@@ -108,7 +108,7 @@ public:
 
     void beginSweep();
 
-    void* getHealedPointer(void*, size_t) const;
+    std::pair<void*, std::shared_ptr<GCRegion>> getHealedPointer(void*, size_t, std::shared_ptr<GCRegion>) const;
 
     void endGC();
 

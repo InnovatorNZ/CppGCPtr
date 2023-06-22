@@ -12,6 +12,9 @@
 #include "GCPhase.h"
 #include "PhaseEnum.h"
 #include "IAllocatable.h"
+#include "IMemoryAllocator.h"
+
+class IMemoryAllocator;
 
 enum class RegionEnum {
     SMALL, MEDIUM, LARGE, TINY
@@ -43,7 +46,7 @@ private:
     MarkStateBit largeRegionMarkState;      // only used in large region
     std::unique_ptr<GCBitMap> bitmap;
     std::mutex region_mtx;
-    std::unordered_map<void*, void*> forwarding_table;
+    std::unordered_map<void*, std::pair<void*, std::shared_ptr<GCRegion>>> forwarding_table;
     std::shared_mutex forwarding_table_mutex;
     short allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
     std::atomic<bool> evacuated;
@@ -98,11 +101,11 @@ public:
 
     void resetLiveSize() { live_size = 0; }
 
-    void triggerRelocation(IAllocatable*);
+    void triggerRelocation(IMemoryAllocator*);
 
-    void relocateObject(void*, size_t, IAllocatable*);
+    void relocateObject(void*, size_t, IMemoryAllocator*);
 
-    void* queryForwardingTable(void*);
+    std::pair<void*, std::shared_ptr<GCRegion>> queryForwardingTable(void*);
 
     bool inside_region(void*, size_t = 0) const;
 

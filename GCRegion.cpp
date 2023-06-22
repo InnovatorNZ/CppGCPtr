@@ -191,7 +191,7 @@ void GCRegion::clearUnmarked() {
     if (allFreeFlag == 0) allFreeFlag = 1;
 }
 
-void GCRegion::triggerRelocation(IAllocatable* memoryAllocator) {
+void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
     if (regionType == RegionEnum::LARGE) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
@@ -222,7 +222,7 @@ void GCRegion::triggerRelocation(IAllocatable* memoryAllocator) {
     this->free();       // todo: 要不要free()？
 }
 
-void GCRegion::relocateObject(void* object_addr, size_t object_size, IAllocatable* allocator) {
+void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllocator* memoryAllocator) {
     if (!inside_region(object_addr, object_size)) {
         std::clog << "The relocating object does not in current region!" << std::endl;
         throw std::exception();
@@ -233,19 +233,22 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IAllocatabl
         if (forwarding_table.contains(object_addr))      // 已经被应用线程转移了
             return;
     }
-    void* new_addr = allocator->allocate(object_size);
-    ::memcpy(new_addr, object_addr, object_size);
+    auto new_addr = memoryAllocator->allocate(object_size);
+    void* new_object_addr = new_addr.first;
+    std::shared_ptr<GCRegion>& new_region = new_addr.second;
+    ::memcpy(new_object_addr, object_addr, object_size);
     {
         // 如果在转移过程中，有应用线程访问了旧地址上的原对象并产生了写入怎么办？参考shenandoah解决方案
         std::unique_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
         if (!forwarding_table.contains(object_addr)) {
             forwarding_table.emplace(object_addr, new_addr);
-            std::clog << "Forwarding " << object_addr << " to " << new_addr << std::endl;
+            std::clog << "Forwarding " << object_addr << " to " << new_object_addr << std::endl;
         } else {
             // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
             lock.unlock();
             std::clog << "Cancelling relocation due to someone beats us for " << object_addr << std::endl;
-            allocator->free(new_addr, object_size);
+            new_region->free(new_object_addr, object_size);
+            // memoryAllocator->free(new_addr.first, object_size, new_addr.second);
         }
     }
 }
@@ -286,10 +289,10 @@ void GCRegion::free() {
 #endif
 }
 
-void* GCRegion::queryForwardingTable(void* ptr) {
+std::pair<void*, std::shared_ptr<GCRegion>> GCRegion::queryForwardingTable(void* ptr) {
     std::shared_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
     auto it = forwarding_table.find(ptr);
-    if (it == forwarding_table.end()) return nullptr;
+    if (it == forwarding_table.end()) return std::make_pair(nullptr, nullptr);
     else return it->second;
 }
 
