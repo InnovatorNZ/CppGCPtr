@@ -25,7 +25,7 @@ GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size)
 }
 
 void* GCRegion::allocate(size_t size) {
-    if (startAddress == nullptr || evacuated) return nullptr;
+    if (startAddress == nullptr || evacuated.load()) return nullptr;
     void* object_addr = nullptr;
     if (regionType == RegionEnum::TINY)
         size = TINY_OBJECT_THRESHOLD;
@@ -33,7 +33,7 @@ void* GCRegion::allocate(size_t size) {
         size = bitmap->alignUpSize(size);
     while (true) {
         size_t p_offset = allocated_offset;
-        if (p_offset + size >= total_size) return nullptr;
+        if (p_offset + size > total_size) return nullptr;
         if (allocated_offset.compare_exchange_weak(p_offset, p_offset + size)) {
             object_addr = reinterpret_cast<void*>(reinterpret_cast<char*>(startAddress) + p_offset);
             break;
@@ -53,7 +53,7 @@ void GCRegion::free(void* addr, size_t size) {
         // free()要不要调用mark(addr, size, MarkStateBit::NOT_ALLOCATED)？好像还是要的
         // 现已改为mark的时候统计live_size，而不是frag_size，因此free时不能再mark为NOT_ALLOCATED，而是mark为REMAPPED
         // frag_size += size;
-#if _DEBUG
+#if _DEBUG      // todo: 由于不再标记高位（？），大概要删掉这段了
         auto markstate = bitmap->getMarkState(addr);
         auto markstate2 = bitmap->getMarkState((char*)addr + size - 1);
         if (markstate == MarkStateBit::NOT_ALLOCATED ||
@@ -78,6 +78,7 @@ void GCRegion::free(void* addr, size_t size) {
         }
         if (!recently_assigned)
             bitmap->mark(addr, size, MarkStateBit::REMAPPED);
+        std::clog << "free(addr,size) triggered in GCRegion" << std::endl;
     } else std::clog << "Free address out of range." << std::endl;
 }
 
@@ -243,7 +244,7 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IAllocatabl
         } else {
             // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
             lock.unlock();
-            std::clog << "Relocation for " << object_addr << " cancelled due to someone beats us." << std::endl;
+            std::clog << "Cancelling relocation due to someone beats us for " << object_addr << std::endl;
             allocator->free(new_addr, object_size);
         }
     }
@@ -266,6 +267,7 @@ bool GCRegion::needEvacuate() const {
 }
 
 void GCRegion::free() {
+    std::clog << "Freeing region " << this << std::endl;
     // 释放整个region，只保留转发表
     evacuated = true;
     // TODO: debug完成后请取消注释以下几行并还原

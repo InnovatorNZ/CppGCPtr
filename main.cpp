@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include "GCPtr.h"
+#include "MemoryAllocatorTest.h"
 
 class MyObject {
 public:
@@ -53,13 +54,19 @@ public:
 GCPtr<MyObject> obj3;
 
 int main() {
+#define UNITTEST 0
+#if UNITTEST
+    MemoryAllocatorTest test;
+    test.test();
+#else
 #define TRIGGER_GC 1
     using namespace std;
+    bool enableRelocation = true;
     cout << "Size of MyObject: " << sizeof(MyObject) << endl;
     cout << "Ready to start..." << endl;
     const int n = 25;
     long long time_ = 0;
-    gc::init(true, true, true);
+    gc::init(true, true, enableRelocation);
     Sleep(500);
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::high_resolution_clock::now();
@@ -137,5 +144,6 @@ int main() {
 #endif
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " us" << endl;
+#endif
     return 0;
 }

@@ -18,7 +18,8 @@ private:
     // bitmap 采用2个bit标记一个对象，00: Not Allocated, 01: Remapped/Deleted, 10: M0, 11: M1
     int region_to_bitmap_ratio;     // bitmap的每两个bit对应于region的多少字节，默认为1，即2bit->1byte
     int bitmap_size;
-    bool mark_obj_size;             // 是否在位图中标记高位以及对象大小
+    bool mark_obj_size;             // 是否在位图中标记对象大小
+    bool mark_high_bit;             // 是否在位图中标记高位
     void* region_start_addr;
     std::unique_ptr<std::atomic<unsigned char>[]> bitmap_arr;
 #if USE_SINGLE_OBJECT_MAP
@@ -53,7 +54,7 @@ public:
         int getCurrentOffset() const;
     };
 
-    GCBitMap(void* region_start_addr, size_t region_size, bool mark_high_bit = true, int region_to_bitmap_ratio = 1);
+    GCBitMap(void* region_start_addr, size_t region_size, bool mark_obj_size = true, int region_to_bitmap_ratio = 1);
 
     ~GCBitMap();
 

@@ -25,6 +25,7 @@ public:
 };
 
 class GCRegion : public IAllocatable {
+    friend class MemoryAllocatorTest;
 public:
     static const size_t TINY_OBJECT_THRESHOLD;
     static const size_t TINY_REGION_SIZE;

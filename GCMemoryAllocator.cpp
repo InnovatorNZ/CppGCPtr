@@ -273,7 +273,7 @@ void GCMemoryAllocator::relocateRegion(ConcurrentLinkedList<std::shared_ptr<GCRe
     auto iterator = regionList.getRemovableIterator();
     while (iterator->MoveNext()) {
         std::shared_ptr<GCRegion> region = iterator->current();
-        if (region->needEvacuate()) {
+        if (!region->isEvacuated() && region->needEvacuate()) {
             region->triggerRelocation(this);
         }
     }
@@ -285,7 +285,7 @@ void GCMemoryAllocator::relocateRegion(const std::deque<std::shared_ptr<GCRegion
     {
         std::shared_lock<std::shared_mutex> lock(regionQueMtx);
         for (auto& region : regionQue) {
-            if (region->needEvacuate()) {
+            if (!region->isEvacuated() && region->needEvacuate()) {
                 regionQueSnapshot.emplace_back(region);
             }
         }
