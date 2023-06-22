@@ -97,7 +97,7 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     this->mark_v2(object_addr, object_size, gcptr->getRegion());
 }
 
-void GCWorker::mark_v2(void* object_addr, size_t object_size, std::shared_ptr<GCRegion> region) {
+void GCWorker::mark_v2(void* object_addr, size_t object_size, GCRegion* region) {
     if (object_addr == nullptr) return;
     MarkState c_markstate = GCPhase::getCurrentMarkState();
 
@@ -246,7 +246,7 @@ void GCWorker::addSATB(void* object_addr) {
     satb_queue.push_back(object_addr);
 }
 
-void GCWorker::addSATB(void* object_addr, size_t object_size) {
+void GCWorker::addSATB(void* object_addr, size_t object_size, GCRegion* region) {
     // std::clog << "Adding SATB: " << object_addr << " (" << object_size << " bytes)" << std::endl;
     if (!useBitmap) {
         std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
@@ -255,7 +255,7 @@ void GCWorker::addSATB(void* object_addr, size_t object_size) {
         std::thread::id tid = std::this_thread::get_id();
         int pool_idx = std::hash<std::thread::id>()(tid) % poolCount;
         std::unique_lock<std::mutex> lock(satb_queue_pool_mutex[pool_idx]);
-        satb_queue_pool[pool_idx].emplace_back(object_addr, object_size);
+        satb_queue_pool[pool_idx].emplace_back(object_addr, object_size, region);
     }
 }
 
@@ -304,9 +304,9 @@ void GCWorker::triggerSATBMark() {
         } else {
             // TODO: 可按i并行化
             for (int i = 0; i < poolCount; i++) {
-                for (auto& object_and_size : satb_queue_pool[i]) {
-                    std::clog << "SATB marking " << object_and_size.object_addr << " (" << object_and_size.object_size << " bytes)" << std::endl;
-                    mark_v2(object_and_size.object_addr, object_and_size.object_size);
+                for (auto& object_info : satb_queue_pool[i]) {
+                    std::clog << "SATB marking " << object_info.object_addr << " (" << object_info.object_size << " bytes)" << std::endl;
+                    mark_v2(object_info.object_addr, object_info.object_size, object_info.region);
                 }
                 satb_queue_pool[i].clear();
             }
@@ -341,11 +341,11 @@ void GCWorker::beginSweep() {
     }
 }
 
-std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr, size_t obj_size, std::shared_ptr<GCRegion> region) const {
+std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr, size_t obj_size, GCRegion* region) const {
     // std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(ptr);
     std::pair<void*, std::shared_ptr<GCRegion>> ret = region->queryForwardingTable(ptr);
     if (ret.first == nullptr) {
-        if (region->isEvacuated()) {        // todo: isEvacuated()还是needEvacuate()？
+        if (region->isEvacuated()) {
             // region已被标识为需要转移，但尚未完成转移
             std::clog << "Region need to evacuate but not yet found for " << ptr << std::endl;
             region->relocateObject(ptr, obj_size, this->memoryAllocator.get());

@@ -24,9 +24,10 @@ public:
     GCStatus(MarkState _markState, size_t _objectSize);
 };
 
-struct ObjectAndSize {
+struct ObjectInfo {
     void* object_addr;
     size_t object_size;
+    GCRegion* region;
 };
 
 class GCWorker {
@@ -39,7 +40,7 @@ private:
     std::vector<GCPtrBase*> root_ptr_snapshot;
     std::vector<void*> satb_queue;
     int poolCount;
-    std::vector<std::vector<ObjectAndSize>> satb_queue_pool;
+    std::vector<std::vector<ObjectInfo>> satb_queue_pool;
     std::unique_ptr<std::mutex[]> satb_queue_pool_mutex;
     std::mutex satb_queue_mutex;
     std::unordered_map<void*, std::function<void()>> destructor_map;
@@ -61,7 +62,7 @@ private:
 
     void mark_v2(GCPtrBase*);
 
-    void mark_v2(void*, size_t, std::shared_ptr<GCRegion>);
+    void mark_v2(void*, size_t, GCRegion*);
 
     void threadLoop();
 
@@ -98,7 +99,7 @@ public:
 
     void addSATB(void* object_addr);
 
-    void addSATB(void* object_addr, size_t object_size);
+    void addSATB(void* object_addr, size_t object_size, GCRegion* region);
 
     void registerDestructor(void* object_addr, const std::function<void()>&);
 
@@ -108,7 +109,7 @@ public:
 
     void beginSweep();
 
-    std::pair<void*, std::shared_ptr<GCRegion>> getHealedPointer(void*, size_t, std::shared_ptr<GCRegion>) const;
+    std::pair<void*, std::shared_ptr<GCRegion>> getHealedPointer(void*, size_t, GCRegion*) const;
 
     void endGC();
 

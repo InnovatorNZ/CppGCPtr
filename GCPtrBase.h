@@ -25,7 +25,7 @@ public:
 
     virtual unsigned int getObjectSize() const = 0;
 
-    virtual std::shared_ptr<GCRegion> getRegion() const = 0;
+    virtual GCRegion* getRegion() const = 0;
 
     MarkState getInlineMarkState() const {
         return inlineMarkState;

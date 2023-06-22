@@ -25,7 +25,7 @@ private:
     }
 
     void selfHeal() {
-        auto healed = GCWorker::getWorker()->getHealedPointer(this->obj, this->obj_size, region);
+        auto healed = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get());
         if (healed.first != nullptr) {
             std::clog << "Healing GCPtr(" << this << ", " << MarkStateUtil::toString(getInlineMarkState()) <<
                 ") from " << obj << " to " << healed.first << std::endl;
@@ -77,7 +77,7 @@ public:
         // Calling const get() will disable pointer self-heal, which is not recommend
         std::clog << "Calling get() const on " << obj << ", temporarily disable selfheal" << std::endl;
         if (this->needHeal())
-            return static_cast<T*>(GCWorker::getWorker()->getHealedPointer(this->obj, this->obj_size, region).first);
+            return static_cast<T*>(GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get()).first);
         else
             return obj;
     }
@@ -98,15 +98,15 @@ public:
         return obj_size;
     }
 
-    std::shared_ptr<GCRegion> getRegion() const override {
-        return this->region;
+    GCRegion* getRegion() const override {
+        return this->region.get();
     }
 
     GCPtr<T>& operator=(const GCPtr<T>& other) {
         if (this != &other) {
             GCPhase::EnterCriticalSection();
             if (this->obj != nullptr && this->obj != other.obj && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
-                GCWorker::getWorker()->addSATB(this->obj, this->obj_size);
+                GCWorker::getWorker()->addSATB(this->obj, this->obj_size, this->region.get());
             }
             this->obj = other.obj;
             this->obj_size = other.obj_size;
@@ -124,7 +124,7 @@ public:
         if (this->obj != nullptr) {
             GCPhase::EnterCriticalSection();
             if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
-                GCWorker::getWorker()->addSATB(this->obj, this->obj_size);
+                GCWorker::getWorker()->addSATB(this->obj, this->obj_size, this->region.get());
             }
             this->obj = nullptr;
             this->obj_size = 0;
@@ -185,7 +185,7 @@ public:
     ~GCPtr() override {
         GCPhase::EnterCriticalSection();
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK && this->obj != nullptr) {
-            GCWorker::getWorker()->addSATB(this->obj, this->obj_size);
+            GCWorker::getWorker()->addSATB(this->obj, this->obj_size, this->region.get());
         }
         if (is_root) {
             GCWorker::getWorker()->removeRoot(this);
