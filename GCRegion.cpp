@@ -273,20 +273,11 @@ void GCRegion::free() {
     std::clog << "Freeing region " << this << std::endl;
     // 释放整个region，只保留转发表
     evacuated = true;
-    // TODO: debug完成后请取消注释以下几行并还原
-#if _DEBUG
-    if (regionType != RegionEnum::LARGE && debug_not_deleted != 79) {
-        ::free(startAddress);
-        //bitmap = nullptr;
-        debug_not_deleted = 79;
-    }
-#else
     bitmap = nullptr;
     total_size = 0;
     allocated_offset = 0;
     ::free(startAddress);
     startAddress = nullptr;
-#endif
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCRegion::queryForwardingTable(void* ptr) {

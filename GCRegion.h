@@ -50,8 +50,6 @@ private:
     std::shared_mutex forwarding_table_mutex;
     short allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
     std::atomic<bool> evacuated;
-    // std::vector<std::pair<void*, size_t>> live_objects;
-    int debug_not_deleted;  // todo: remove this var after debug
 
 #if USE_REGINOAL_HASHMAP
     std::unordered_map<void*, GCStatus> object_map;

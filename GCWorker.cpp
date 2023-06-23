@@ -356,7 +356,6 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr
             return std::make_pair(nullptr, nullptr);
         }
     } else {
-        std::clog << "Healing pointer from " << ptr << " to " << ret.first << std::endl;
         return ret;
     }
 }
