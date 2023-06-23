@@ -63,7 +63,7 @@ private:
 
     void clearFreeRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
 
-    void relocateRegion(const std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
+    void relocateRegion(std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
 
     void relocateRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
 

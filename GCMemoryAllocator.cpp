@@ -282,15 +282,18 @@ void GCMemoryAllocator::relocateRegion(ConcurrentLinkedList<std::shared_ptr<GCRe
     }
 }
 
-void GCMemoryAllocator::relocateRegion(const std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
+void GCMemoryAllocator::relocateRegion(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
     std::vector<std::shared_ptr<GCRegion>> regionQueSnapshot;
     regionQueSnapshot.reserve(regionQue.size() / 2);
     {
-        std::shared_lock<std::shared_mutex> lock(regionQueMtx);
-        for (auto& region : regionQue) {
+        std::unique_lock<std::shared_mutex> lock(regionQueMtx);
+        for (auto it = regionQue.begin(); it != regionQue.end(); ) {
+            std::shared_ptr<GCRegion>& region = *it;
             if (!region->isEvacuated() && region->needEvacuate()) {
                 regionQueSnapshot.emplace_back(region);
-                // todo: 全程使用shared_ptr管理gcregion的话这里可以删除了
+                it = regionQue.erase(it);
+            } else {
+                it++;
             }
         }
     }
@@ -298,8 +301,8 @@ void GCMemoryAllocator::relocateRegion(const std::deque<std::shared_ptr<GCRegion
         if (region != nullptr)
             region->triggerRelocation(this);
     }
-    // TODO: 完成relocate的region应该free，包括从regionMap中移除canFree的region，以及下轮垃圾回收清理只含有转发表的region
-    // 如果全程使用shared_ptr管理GCRegion，也许无需手动清理了
+    // 完成relocate的region应该free，包括从regionMap中移除canFree的region，以及下轮垃圾回收清理只含有转发表的region
+    // 由于全程使用shared_ptr管理GCRegion，因此这里可以直接移除被触发疏散的region，GCPtr会持有其引用直到消亡
 }
 
 void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
