@@ -95,7 +95,9 @@ public:
 
     bool isEvacuated() const { return evacuated; }
 
-    bool isFreed() const { return evacuated && startAddress == nullptr; }   // todo: 能否用作判断依据？
+    void setEvacuated() { evacuated.store(true); }
+
+    // bool isFreed() const { return evacuated && startAddress == nullptr; }   // todo: 能否用作判断依据？
 
     void resetLiveSize() { live_size = 0; }
 

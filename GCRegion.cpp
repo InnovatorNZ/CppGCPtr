@@ -196,7 +196,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
-    evacuated.store(true);
+    evacuated = true;
     if (this->canFree()) {      // 已经没有存活对象了
         this->free();
         return;

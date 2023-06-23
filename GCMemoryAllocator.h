@@ -19,13 +19,9 @@ class GCMemoryAllocator : public IMemoryAllocator {
 private:
     static const size_t INITIAL_SINGLE_SIZE;
     static const bool useConcurrentLinkedList;
-    // GCMemoryManager memoryManager;
     bool enableInternalMemoryManager;
     unsigned int poolCount;
     std::vector<GCMemoryManager> memoryPools;
-    // std::unordered_set<GCRegion, GCRegion::GCRegionHash> smallRegionSet;
-    // std::unordered_set<GCRegion, GCRegion::GCRegionHash> mediumRegionSet;
-    // std::unordered_set<GCRegion, GCRegion::GCRegionHash> largeRegionSet;
     // 能否使用无锁链表管理region？ TODO: 似乎使用链表管理region会导致多线程优化较为困难
 // #if USE_CONCURRENT_LINKEDLIST
     std::unique_ptr<ConcurrentLinkedList<std::shared_ptr<GCRegion>>[]> smallRegionLists;
@@ -42,6 +38,7 @@ private:
     std::shared_mutex largeRegionQueMtx;
     std::shared_mutex tinyRegionQueMtx;
 // #endif
+    std::vector<std::shared_ptr<GCRegion>> evacuationQue;
     // std::map<void*, std::shared_ptr<GCRegion>> regionMap;
     // std::shared_mutex regionMapMtx;
 
@@ -67,6 +64,10 @@ private:
 
     void relocateRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
 
+    void selectRelocationSet(std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
+
+    void selectRelocationSet(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
+
     int getPoolIdx();
 
 public:
@@ -79,6 +80,8 @@ public:
     // void free(void*, size_t, std::shared_ptr<GCRegion>) override;
 
     void triggerClear();
+
+    void SelectRelocationSet();
 
     void triggerRelocation();
 

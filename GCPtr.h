@@ -31,6 +31,9 @@ private:
                 ") from " << obj << " to " << healed.first << std::endl;
             this->obj = static_cast<T*>(healed.first);
             this->region = healed.second;
+        } else {
+            std::clog << "Healing non-forwarding GCPtr(" << this << ", " << MarkStateUtil::toString(getInlineMarkState())
+                << "): " << obj << std::endl;
         }
         this->setInlineMarkState(MarkState::REMAPPED);
     }

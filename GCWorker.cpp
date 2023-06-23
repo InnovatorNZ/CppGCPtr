@@ -25,7 +25,7 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport
     this->satb_queue_pool.resize(poolCount);
     this->satb_queue_pool_mutex = std::make_unique<std::mutex[]>(poolCount);
     if (concurrent) {
-        this->gc_thread = std::make_unique<std::thread>(&GCWorker::threadLoop, this);
+        this->gc_thread = std::make_unique<std::thread>(&GCWorker::GCThreadLoop, this);
     } else {
         this->gc_thread = nullptr;
     }
@@ -161,7 +161,7 @@ void GCWorker::mark_v2(void* object_addr, size_t object_size, GCRegion* region) 
 }
 
 
-void GCWorker::threadLoop() {
+void GCWorker::GCThreadLoop() {
     Sleep(100);
     while (true) {
         {
@@ -170,22 +170,17 @@ void GCWorker::threadLoop() {
             ready_ = false;
         }
         if (stop_) break;
-        //std::clog << "Triggered concurrent GC" << std::endl;
-        //GCWorker::getWorker()->printMap();
         GCWorker::getWorker()->beginMark();
-        //GCWorker::getWorker()->printMap();
         GCUtil::stop_the_world(GCPhase::getSTWLock());
         auto start_time = std::chrono::high_resolution_clock::now();
         GCWorker::getWorker()->triggerSATBMark();
-        //GCWorker::getWorker()->printMap();
-        GCWorker::getWorker()->beginSweep();
-        //GCWorker::getWorker()->printMap();
-        GCWorker::getWorker()->endGC();
+        GCWorker::getWorker()->selectRelocationSet();
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
         std::clog << "Stop-the-world duration: " << std::dec << duration.count() << " us" << std::endl;
         GCUtil::resume_the_world(GCPhase::getSTWLock());
-        //std::clog << "End of concurrent GC" << std::endl;
+        GCWorker::getWorker()->beginSweep();
+        GCWorker::getWorker()->endGC();
     }
 }
 
@@ -315,9 +310,20 @@ void GCWorker::triggerSATBMark() {
         std::clog << "Already in remark phase or in other invalid phase" << std::endl;
 }
 
+void GCWorker::selectRelocationSet() {
+    if (!useBitmap || !enableRelocation) return;
+    if (GCPhase::getGCPhase() != eGCPhase::REMARK) {
+        std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
+        return;
+    }
+    GCPhase::SwitchToNextPhase();
+    memoryAllocator->SelectRelocationSet();
+}
+
 void GCWorker::beginSweep() {
-    if (GCPhase::getGCPhase() == eGCPhase::REMARK) {
+    if (GCPhase::getGCPhase() == eGCPhase::REMARK)
         GCPhase::SwitchToNextPhase();
+    if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
         if (!useBitmap) {
             for (auto it = object_map.begin(); it != object_map.end();) {
                 if (GCPhase::needSweep(it->second.markState)) {
@@ -336,9 +342,7 @@ void GCWorker::beginSweep() {
             else
                 memoryAllocator->triggerClear();
         }
-    } else {
-        std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
-    }
+    } else std::clog << "Invalid phase, should in sweep phase" << std::endl;
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr, size_t obj_size, GCRegion* region) const {

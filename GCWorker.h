@@ -64,7 +64,7 @@ private:
 
     void mark_v2(void*, size_t, GCRegion*);
 
-    void threadLoop();
+    void GCThreadLoop();
 
     void callDestructor(void*, bool remove_after_call = false);
 
@@ -108,6 +108,8 @@ public:
     void triggerSATBMark();
 
     void beginSweep();
+
+    void selectRelocationSet();
 
     std::pair<void*, std::shared_ptr<GCRegion>> getHealedPointer(void*, size_t, GCRegion*) const;
 
