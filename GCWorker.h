@@ -14,6 +14,7 @@
 #include "GCPtrBase.h"
 #include "GCMemoryAllocator.h"
 #include "GCUtil.h"
+#include "ObjectInfo.h"
 #include "PhaseEnum.h"
 
 class GCStatus {
@@ -22,12 +23,6 @@ public:
     size_t objectSize;
 
     GCStatus(MarkState _markState, size_t _objectSize);
-};
-
-struct ObjectInfo {
-    void* object_addr;
-    size_t object_size;
-    GCRegion* region;
 };
 
 class GCWorker {
@@ -55,14 +50,14 @@ private:
     GCWorker();
 
     GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport = true,
-        bool useInlineMarkState = true, bool useInternalMemoryManager = false,
-        bool enableRelocation = false);
+             bool useInlineMarkState = true, bool useInternalMemoryManager = false,
+             bool enableRelocation = false);
 
     void mark(void*);
 
     void mark_v2(GCPtrBase*);
 
-    void mark_v2(void*, size_t, GCRegion*);
+    void mark_v2(const ObjectInfo&);
 
     void GCThreadLoop();
 
@@ -99,7 +94,7 @@ public:
 
     void addSATB(void* object_addr);
 
-    void addSATB(void* object_addr, size_t object_size, GCRegion* region);
+    void addSATB(const ObjectInfo&);
 
     void registerDestructor(void* object_addr, const std::function<void()>&);
 

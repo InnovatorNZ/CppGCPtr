@@ -4,6 +4,7 @@
 #include <iostream>
 #include <memory>
 #include <unordered_map>
+#include <atomic>
 #include "GCPtrBase.h"
 #include "GCWorker.h"
 
@@ -13,7 +14,7 @@ class GCPtr : public GCPtrBase {
     friend class GCPtr;
 
 private:
-    T* obj;
+    std::atomic<T*> obj;
     unsigned int obj_size;
     bool is_root;
     std::shared_ptr<GCRegion> region;
@@ -21,19 +22,19 @@ private:
 
     bool needHeal() const {
         return this->obj != nullptr && GCWorker::getWorker()->relocationEnabled()
-            && GCPhase::needSelfHeal(getInlineMarkState());
+               && GCPhase::needSelfHeal(getInlineMarkState());
     }
 
     void selfHeal() {
         auto healed = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get());
         if (healed.first != nullptr) {
             std::clog << "Healing GCPtr(" << this << ", " << MarkStateUtil::toString(getInlineMarkState()) <<
-                ") from " << obj << " to " << healed.first << std::endl;
+                      ") from " << obj << " to " << healed.first << std::endl;
             this->obj = static_cast<T*>(healed.first);
             this->region = healed.second;
         } else {
             std::clog << "Healing non-forwarding GCPtr(" << this << ", " << MarkStateUtil::toString(getInlineMarkState())
-                << "): " << obj << std::endl;
+                      << "): " << obj << std::endl;
         }
         this->setInlineMarkState(MarkState::REMAPPED);
     }
@@ -57,10 +58,10 @@ public:
         GCPhase::LeaveCriticalSection();
     }
 
-    GCPtr(T* obj, bool is_root, std::shared_ptr<GCRegion> region) : is_root(is_root) {
+    GCPtr(T* obj, bool is_root, const std::shared_ptr<GCRegion>& region) :
+            is_root(is_root), obj_size(sizeof(*obj)) {
         GCPhase::EnterCriticalSection();
         this->obj = obj;
-        this->obj_size = sizeof(*obj);
         this->region = region;
         if (GCWorker::getWorker()->destructorEnabled())
             GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
@@ -78,7 +79,6 @@ public:
 
     T* get() const {
         // Calling const get() will disable pointer self-heal, which is not recommend
-        std::clog << "Calling get() const on " << obj << ", temporarily disable selfheal" << std::endl;
         if (this->needHeal())
             return static_cast<T*>(GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get()).first);
         else
@@ -97,21 +97,17 @@ public:
         return reinterpret_cast<void*>(this->get());
     }
 
-    unsigned int getObjectSize() const override {
-        return obj_size;
-    }
-
-    GCRegion* getRegion() const override {
-        return this->region.get();
+    ObjectInfo getObjectInfo() override {
+        return ObjectInfo{ this->getVoidPtr(), obj_size, region.get() };
     }
 
     GCPtr<T>& operator=(const GCPtr<T>& other) {
         if (this != &other) {
             GCPhase::EnterCriticalSection();
             if (this->obj != nullptr && this->obj != other.obj && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
-                GCWorker::getWorker()->addSATB(this->obj, this->obj_size, this->region.get());
+                GCWorker::getWorker()->addSATB(this->getObjectInfo());
             }
-            this->obj = other.obj;
+            this->obj.store(other.obj.load());
             this->obj_size = other.obj_size;
             this->region = other.region;
             this->setInlineMarkState(other.getInlineMarkState());
@@ -127,7 +123,7 @@ public:
         if (this->obj != nullptr) {
             GCPhase::EnterCriticalSection();
             if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
-                GCWorker::getWorker()->addSATB(this->obj, this->obj_size, this->region.get());
+                GCWorker::getWorker()->addSATB(this->getObjectInfo());
             }
             this->obj = nullptr;
             this->obj_size = 0;
@@ -145,12 +141,10 @@ public:
         return this->obj == nullptr;
     }
 
-    GCPtr(const GCPtr& other) {
+    GCPtr(const GCPtr& other) : is_root(other.is_root), obj_size(other.obj_size) {
         GCPhase::EnterCriticalSection();
         std::clog << "Copy constructor: " << this << std::endl;
-        this->obj = other.obj;
-        this->obj_size = other.obj_size;
-        this->is_root = other.is_root;
+        this->obj.store(other.obj.load());
         this->region = other.region;
         this->setInlineMarkState(other.getInlineMarkState());
         if (is_root) {
@@ -159,12 +153,10 @@ public:
         GCPhase::LeaveCriticalSection();
     }
 
-    GCPtr(GCPtr&& other) {
+    GCPtr(GCPtr&& other) : is_root(other.is_root), obj_size(other.obj_size) {
         GCPhase::EnterCriticalSection();
         std::clog << "Move constructor: " << this << std::endl;
-        this->obj = other.obj;
-        this->obj_size = other.obj_size;
-        this->is_root = other.is_root;
+        this->obj.store(other.obj.load());
         this->region = std::move(other.region);
         this->setInlineMarkState(other.getInlineMarkState());
         other.obj = nullptr;
@@ -188,7 +180,7 @@ public:
     ~GCPtr() override {
         GCPhase::EnterCriticalSection();
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK && this->obj != nullptr) {
-            GCWorker::getWorker()->addSATB(this->obj, this->obj_size, this->region.get());
+            GCWorker::getWorker()->addSATB(this->getObjectInfo());
         }
         if (is_root) {
             GCWorker::getWorker()->removeRoot(this);

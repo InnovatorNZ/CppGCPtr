@@ -59,14 +59,19 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
         }
         // 对象大小嵌入位图中
         if (mark_obj_size) {
-            unsigned char s0 = object_size & 0xff;
-            unsigned char s1 = object_size >> 8 & 0xff;
-            unsigned char s2 = object_size >> 16 & 0xff;
-            unsigned char s3 = object_size >> 24 & 0xff;
-            bitmap_arr[offset_byte + 1] = s0;
-            bitmap_arr[offset_byte + 2] = s1;
-            bitmap_arr[offset_byte + 3] = s2;
-            bitmap_arr[offset_byte + 4] = s3;
+            unsigned int ori_obj_size = *reinterpret_cast<unsigned int*>(bitmap_arr.get() + offset_byte + 1);
+            if (ori_obj_size == 0) {
+                unsigned char s0 = object_size & 0xff;
+                unsigned char s1 = object_size >> 8 & 0xff;
+                unsigned char s2 = object_size >> 16 & 0xff;
+                unsigned char s3 = object_size >> 24 & 0xff;
+                bitmap_arr[offset_byte + 1] = s0;
+                bitmap_arr[offset_byte + 2] = s1;
+                bitmap_arr[offset_byte + 3] = s2;
+                bitmap_arr[offset_byte + 4] = s3;
+            } else if (ori_obj_size != object_size) {
+                std::clog << "Different object size found in bitmap! original: " << ori_obj_size << ", target: " << object_size << std::endl;
+            }
         }
     }
     // 高位
@@ -91,7 +96,6 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
         single_size_set.emplace(object_addr);
     }
 #endif
-    //std::clog << "Bitmap marked for " << object_addr << std::endl;
     return true;
 }
 

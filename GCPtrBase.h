@@ -2,8 +2,8 @@
 #define CPPGCPTR_GCPTRBASE_H
 
 #include <memory>
-#include "GCRegion.h"
-#include "GCPhase.h"
+#include "ObjectInfo.h"
+#include "PhaseEnum.h"
 
 constexpr int GCPTR_IDENTIFIER_HEAD = 0x1f1e33fc;
 constexpr int GCPTR_IDENTIFIER_TAIL = 0x03e0e1cc;
@@ -23,9 +23,7 @@ public:
 
     virtual void* getVoidPtr() = 0;
 
-    virtual unsigned int getObjectSize() const = 0;
-
-    virtual GCRegion* getRegion() const = 0;
+    virtual ObjectInfo getObjectInfo() = 0;
 
     MarkState getInlineMarkState() const {
         return inlineMarkState;

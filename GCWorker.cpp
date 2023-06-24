@@ -80,25 +80,29 @@ void GCWorker::mark(void* object_addr) {
 
 void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (gcptr == nullptr) return;
-    void* object_addr = gcptr->getVoidPtr();
-    if (object_addr == nullptr) return;
-    size_t object_size = gcptr->getObjectSize();
+    ObjectInfo objectInfo = gcptr->getObjectInfo();
+
+    if (objectInfo.object_addr == nullptr || objectInfo.region == nullptr) return;
     MarkState c_markstate = GCPhase::getCurrentMarkState();
     if (useInlineMarkstate) {
         if (gcptr->getInlineMarkState() == c_markstate)     // 标记过了
             return;
-        std::clog << "Marking " << gcptr << " (" << object_addr << ") from "
-            << MarkStateUtil::toString(gcptr->getInlineMarkState()) << " to " << MarkStateUtil::toString(c_markstate) << std::endl;
+        std::clog << "Marking " << gcptr << " (" << objectInfo.object_addr << ") from "
+                  << MarkStateUtil::toString(gcptr->getInlineMarkState()) << " to " << MarkStateUtil::toString(c_markstate) << std::endl;
         // 读取转发表的条件：即当前标记阶段为上一次被标记阶段
         // 客观地说，指针自愈确实应该在标记对象前面（？）
         gcptr->setInlineMarkState(c_markstate);
     }
-
-    this->mark_v2(object_addr, object_size, gcptr->getRegion());
+    // 因为有SATB的存在，并且GC期间新对象一律标为存活，因此不用担心取出来的object_addr和object_region陈旧问题
+    // 但是好像object_size不一致的问题可能还是有麻烦的
+    this->mark_v2(objectInfo);
 }
 
-void GCWorker::mark_v2(void* object_addr, size_t object_size, GCRegion* region) {
+void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
+    void* object_addr = objectInfo.object_addr;
     if (object_addr == nullptr) return;
+    size_t object_size = objectInfo.object_size;
+    GCRegion* region = objectInfo.region;
     MarkState c_markstate = GCPhase::getCurrentMarkState();
 
     if (!useBitmap) {
@@ -114,7 +118,7 @@ void GCWorker::mark_v2(void* object_addr, size_t object_size, GCRegion* region) 
             return;
         it->second.markState = c_markstate;
         if (object_size != it->second.objectSize) {
-            std::clog << "Why object size doesn't equal??" << std::endl;
+            std::clog << "Object size doesn't equal!" << std::endl;
             throw std::exception();
             object_size = it->second.objectSize;
         }
@@ -137,7 +141,8 @@ void GCWorker::mark_v2(void* object_addr, size_t object_size, GCRegion* region) 
             // To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
             auto _max = [](int x, int y)constexpr { return x > y ? x : y; };
             constexpr int tail_offset =
-                sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) + sizeof(std::shared_ptr<GCRegion>);
+                    sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
+                    sizeof(std::shared_ptr<GCRegion>);
             char* tail_addr = n_addr + tail_offset;
             int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {
@@ -182,6 +187,7 @@ void GCWorker::GCThreadLoop() {
         GCWorker::getWorker()->beginSweep();
         GCWorker::getWorker()->endGC();
     }
+    std::cout << "GC thread exited." << std::endl;
 }
 
 void GCWorker::wakeUpGCThread() {
@@ -241,16 +247,16 @@ void GCWorker::addSATB(void* object_addr) {
     satb_queue.push_back(object_addr);
 }
 
-void GCWorker::addSATB(void* object_addr, size_t object_size, GCRegion* region) {
+void GCWorker::addSATB(const ObjectInfo& objectInfo) {
     // std::clog << "Adding SATB: " << object_addr << " (" << object_size << " bytes)" << std::endl;
     if (!useBitmap) {
         std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
-        satb_queue.push_back(object_addr);
+        satb_queue.push_back(objectInfo.object_addr);
     } else {
         std::thread::id tid = std::this_thread::get_id();
         int pool_idx = std::hash<std::thread::id>()(tid) % poolCount;
         std::unique_lock<std::mutex> lock(satb_queue_pool_mutex[pool_idx]);
-        satb_queue_pool[pool_idx].emplace_back(object_addr, object_size, region);
+        satb_queue_pool[pool_idx].emplace_back(objectInfo);
     }
 }
 
@@ -301,7 +307,7 @@ void GCWorker::triggerSATBMark() {
             for (int i = 0; i < poolCount; i++) {
                 for (auto& object_info : satb_queue_pool[i]) {
                     std::clog << "SATB marking " << object_info.object_addr << " (" << object_info.object_size << " bytes)" << std::endl;
-                    mark_v2(object_info.object_addr, object_info.object_size, object_info.region);
+                    mark_v2(object_info);
                 }
                 satb_queue_pool[i].clear();
             }
