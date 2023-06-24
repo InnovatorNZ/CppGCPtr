@@ -45,7 +45,7 @@ private:
     std::unique_ptr<std::thread> gc_thread;
     std::unique_ptr<GCMemoryAllocator> memoryAllocator;
     bool enableConcurrentMark, useBitmap, useInlineMarkstate, enableRelocation, enableDestructorSupport;
-    bool stop_, ready_;
+    volatile bool stop_, ready_;
 
     GCWorker();
 

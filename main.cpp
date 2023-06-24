@@ -67,6 +67,7 @@ int main() {
     long long time_ = 0;
     gc::init(true, true, enableRelocation);
     Sleep(500);
+
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::high_resolution_clock::now();
         GCPtr<MyObject> obj2;
@@ -106,7 +107,7 @@ int main() {
             GCPtr<MyObject> obj4 = gc::make_root<MyObject>();
         }
 
-        Sleep(200);
+        // Sleep(200);
         double _f = obj3->e->f;
         obj3 = nullptr;
         obj2 = nullptr;
@@ -139,7 +140,7 @@ int main() {
 
 #if TRIGGER_GC
         gc::triggerGC();
-        Sleep(1000);
+        // Sleep(100);
 #endif
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " us" << endl;

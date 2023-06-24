@@ -306,7 +306,6 @@ void GCWorker::triggerSATBMark() {
             // TODO: 可按i并行化
             for (int i = 0; i < poolCount; i++) {
                 for (auto& object_info : satb_queue_pool[i]) {
-                    std::clog << "SATB marking " << object_info.object_addr << " (" << object_info.object_size << " bytes)" << std::endl;
                     mark_v2(object_info);
                 }
                 satb_queue_pool[i].clear();
