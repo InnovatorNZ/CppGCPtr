@@ -87,8 +87,8 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (useInlineMarkstate) {
         if (gcptr->getInlineMarkState() == c_markstate)     // 标记过了
             return;
-        std::clog << "Marking " << gcptr << " (" << objectInfo.object_addr << ") from "
-                  << MarkStateUtil::toString(gcptr->getInlineMarkState()) << " to " << MarkStateUtil::toString(c_markstate) << std::endl;
+        //std::clog << "Marking " << gcptr << " (" << objectInfo.object_addr << ") from "
+        //         << MarkStateUtil::toString(gcptr->getInlineMarkState()) << " to " << MarkStateUtil::toString(c_markstate) << std::endl;
         // 读取转发表的条件：即当前标记阶段为上一次被标记阶段
         // 客观地说，指针自愈确实应该在标记对象前面（？）
         gcptr->setInlineMarkState(c_markstate);

@@ -98,7 +98,8 @@ public:
     }
 
     ObjectInfo getObjectInfo() override {
-        return ObjectInfo{ this->getVoidPtr(), obj_size, region.get() };
+        void* obj_addr = this->getVoidPtr();
+        return ObjectInfo{ obj_addr, obj_size, region.get() };
     }
 
     GCPtr<T>& operator=(const GCPtr<T>& other) {
