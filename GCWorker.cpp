@@ -356,7 +356,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr
     if (ret.first == nullptr) {
         if (region->isEvacuated()) {
             // region已被标识为需要转移，但尚未完成转移
-            std::clog << "Region need to evacuate but not yet found for " << ptr << std::endl;
+            // std::clog << "Region need to evacuate but not yet found for " << ptr << std::endl;
             region->relocateObject(ptr, obj_size, this->memoryAllocator.get());
             ret = region->queryForwardingTable(ptr);
             if (ret.first == nullptr) throw std::exception();

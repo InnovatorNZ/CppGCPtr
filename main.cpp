@@ -132,7 +132,10 @@ int main() {
             temp_obj->f = 6294.83;
             temp_obj->addH();
             int r = rand() % arr_size;
-            if (aobj[r] != nullptr) aobj[r]->b = 7.17;
+            if (aobj[r] != nullptr) {
+                aobj[r]->b = 7.17;
+                double _b = aobj[r]->b;
+            }
         }
 
         auto end_time = chrono::steady_clock::now();

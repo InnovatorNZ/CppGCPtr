@@ -214,7 +214,8 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
 }
 
 void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllocator* memoryAllocator) {
-    if (isFreed() || !inside_region(object_addr, object_size)) {
+    if (isFreed()) return;
+    if (!inside_region(object_addr, object_size)) {
         std::clog << "The relocating object does not in current region." << std::endl;
         // throw std::exception();
         return;
@@ -238,7 +239,7 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
         }
     }
     // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
-    std::clog << "Withdrawing relocation due to someone beats us for " << object_addr << std::endl;
+    // std::clog << "Withdrawing relocation due to someone beats us for " << object_addr << std::endl;
     new_region->free(new_object_addr, object_size);
 }
 
