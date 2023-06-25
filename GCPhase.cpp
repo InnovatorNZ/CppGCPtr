@@ -65,7 +65,7 @@ bool GCPhase::needSweep(MarkStateBit markState) {
 
 bool GCPhase::needSelfHeal(MarkState markState) {
     if (markState == MarkState::REMAPPED) return false;
-    if (gcPhase == eGCPhase::CONCURRENT_MARK || gcPhase == eGCPhase::REMARK) {
+    if (duringMarking()) {
         // 若在标记阶段，需要完成指针自愈的是上一轮存活的对象
         return markState != getCurrentMarkState();
     } else {
@@ -91,8 +91,4 @@ std::string GCPhase::getGCPhaseString() {
         default:
             return "Invalid";
     }
-}
-
-bool GCPhase::duringGC() {
-    return gcPhase != eGCPhase::NONE;
 }

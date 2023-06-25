@@ -35,7 +35,13 @@ public:
 
     static bool isLiveObject(MarkStateBit);
 
-    static bool duringGC();
+    static bool duringGC() {
+        return gcPhase != eGCPhase::NONE;
+    }
+
+    static bool duringMarking() {
+        return gcPhase == eGCPhase::CONCURRENT_MARK || gcPhase == eGCPhase::REMARK;
+    }
 
     static void EnterCriticalSection() {
         stwLock->lockRead();
