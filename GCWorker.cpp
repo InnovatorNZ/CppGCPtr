@@ -87,10 +87,7 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (useInlineMarkstate) {
         if (gcptr->getInlineMarkState() == c_markstate)     // 标记过了
             return;
-        //std::clog << "Marking " << gcptr << " (" << objectInfo.object_addr << ") from "
-        //         << MarkStateUtil::toString(gcptr->getInlineMarkState()) << " to " << MarkStateUtil::toString(c_markstate) << std::endl;
-        // 读取转发表的条件：即当前标记阶段为上一次被标记阶段
-        // 客观地说，指针自愈确实应该在标记对象前面（？）
+        // 客观地说，指针自愈确实应该在标记对象前面
         gcptr->setInlineMarkState(c_markstate);
     }
     // 因为有SATB的存在，并且GC期间新对象一律标为存活，因此不用担心取出来的object_addr和object_region陈旧问题
@@ -123,7 +120,6 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
             object_size = it->second.objectSize;
         }
     } else {
-        // std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(object_addr);
         if (region == nullptr || region->isEvacuated() || !region->inside_region(object_addr, object_size)) {
             std::clog << "Evacuated region or Out of range!" << std::endl;
             throw std::exception();
@@ -138,7 +134,6 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
     for (char* n_addr = cptr; n_addr < cptr + object_size - SIZEOF_GCPTR; n_addr += sizeof(void*)) {
         int identifier_head = *(reinterpret_cast<int*>(n_addr));
         if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
-            // To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
             auto _max = [](int x, int y)constexpr { return x > y ? x : y; };
             constexpr int tail_offset =
                     sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
@@ -148,8 +143,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {
                 GCPtrBase* next_ptr = reinterpret_cast<GCPtrBase*>(n_addr - sizeof(void*));
 #if 0
-                if (next_ptr->getVoidPtr() == nullptr) return;
-                // std::clog << "Identifer found at " << (void*) n_addr << std::endl;
+                // To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
                 void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState)));
                 if (next_addr != nullptr) {
                     auto markstate = static_cast<MarkState>(*(n_addr + sizeof(void*) * 2));
@@ -242,13 +236,11 @@ void GCWorker::removeRoot(GCPtrBase* from) {
 }
 
 void GCWorker::addSATB(void* object_addr) {
-    // std::clog << "Adding SATB: " << object_addr << std::endl;
     std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
     satb_queue.push_back(object_addr);
 }
 
 void GCWorker::addSATB(const ObjectInfo& objectInfo) {
-    // std::clog << "Adding SATB: " << object_addr << " (" << object_size << " bytes)" << std::endl;
     if (!useBitmap) {
         std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
         satb_queue.push_back(objectInfo.object_addr);
@@ -280,6 +272,7 @@ void GCWorker::beginMark() {
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
         std::clog << "copy root_set duration: " << std::dec << duration.count() << " us" << std::endl;
+        // TODO: 此处有概率触发内存访问异常，这是由于gcptr可能已经析构，而gc线程仍然试图访问指向已析构对象的指针
         if (!useBitmap && !useInlineMarkstate) {
             for (GCPtrBase* gcptr : this->root_ptr_snapshot) {
                 this->mark(gcptr->getVoidPtr());
@@ -351,12 +344,10 @@ void GCWorker::beginSweep() {
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr, size_t obj_size, GCRegion* region) const {
-    // std::shared_ptr<GCRegion> region = memoryAllocator->getRegion(ptr);
     std::pair<void*, std::shared_ptr<GCRegion>> ret = region->queryForwardingTable(ptr);
     if (ret.first == nullptr) {
         if (region->isEvacuated()) {
             // region已被标识为需要转移，但尚未完成转移
-            // std::clog << "Region need to evacuate but not yet found for " << ptr << std::endl;
             region->relocateObject(ptr, obj_size, this->memoryAllocator.get());
             ret = region->queryForwardingTable(ptr);
             if (ret.first == nullptr) throw std::exception();

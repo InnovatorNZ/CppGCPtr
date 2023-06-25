@@ -90,7 +90,6 @@ GCRegion::GCRegion(GCRegion&& other) : regionType(other.regionType), startAddres
                                        allFreeFlag(other.allFreeFlag) {
     std::unique_lock lock(other.region_mtx);
     this->allocated_offset.store(other.allocated_offset.load());
-    //this->frag_size.store(other.frag_size.load());
     this->live_size.store(other.live_size.load());
     this->evacuated.store(other.evacuated.load());
     other.startAddress = nullptr;
@@ -129,14 +128,12 @@ void GCRegion::clearUnmarked() {
         return;
     }
     allFreeFlag = 0;
-    // live_objects.clear();        // live_objects好像没什么用了
     auto bitMapIterator = bitmap->getIterator();
     // int last_offset = 0; MarkStateBit lastMarkState = MarkStateBit::NOT_ALLOCATED;
     while (bitMapIterator.MoveNext()) {
         GCBitMap::BitStatus bitStatus = bitMapIterator.current();
         MarkStateBit& markState = bitStatus.markState;
         // 有必要搞single_size_set吗？？不能把single_size的放到单独的region里去？答：有道理（
-        // 通过iterator遍历筛选出存活的对象
         void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
         if (GCPhase::isLiveObject(markState)) {
 #if 0
@@ -192,7 +189,6 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
         this->free();
         return;
     }
-    //std::clog << "Relocating region " << this << std::endl;
     auto bitMapIterator = bitmap->getIterator();
     while (bitMapIterator.MoveNext()) {
         GCBitMap::BitStatus bitStatus = bitMapIterator.current();
@@ -210,14 +206,13 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
             else throw std::exception();    // 多线程情况下可能会误判
         }
     }
-    this->free();       // todo: 要不要free()？
+    this->free();
 }
 
 void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllocator* memoryAllocator) {
     if (isFreed()) return;
     if (!inside_region(object_addr, object_size)) {
         std::clog << "The relocating object does not in current region." << std::endl;
-        // throw std::exception();
         return;
     }
     {
@@ -234,12 +229,10 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
         std::unique_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
         if (!forwarding_table.contains(object_addr)) {
             forwarding_table.emplace(object_addr, new_addr);
-            // std::clog << "Forwarding " << object_addr << " to " << new_object_addr << std::endl;
             return;
         }
     }
     // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
-    // std::clog << "Withdrawing relocation due to someone beats us for " << object_addr << std::endl;
     new_region->free(new_object_addr, object_size);
 }
 
@@ -260,7 +253,6 @@ bool GCRegion::needEvacuate() const {
 }
 
 void GCRegion::free() {
-    //std::clog << "Freeing region " << this << std::endl;
     // 释放整个region，只保留转发表
     evacuated = true;
     bitmap = nullptr;

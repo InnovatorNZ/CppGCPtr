@@ -60,15 +60,11 @@ private:
 
     void clearFreeRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
 
-    void relocateRegion(std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
-
-    void relocateRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
-
     void selectRelocationSet(std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
 
     void selectRelocationSet(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
 
-    int getPoolIdx();
+    int getPoolIdx() const;
 
 public:
     GCMemoryAllocator();
@@ -77,15 +73,11 @@ public:
 
     std::pair<void*, std::shared_ptr<GCRegion>> allocate(size_t size) override;
 
-    // void free(void*, size_t, std::shared_ptr<GCRegion>) override;
-
     void triggerClear();
 
     void SelectRelocationSet();
 
     void triggerRelocation();
-
-    // std::shared_ptr<GCRegion> getRegion(void* object_addr);
 
     void resetLiveSize();
 };

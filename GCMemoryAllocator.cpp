@@ -8,8 +8,7 @@ GCMemoryAllocator::GCMemoryAllocator() : GCMemoryAllocator(false) {
 
 GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager) {
     this->enableInternalMemoryManager = useInternalMemoryManager;
-    //this->poolCount = std::thread::hardware_concurrency();
-    this->poolCount = 1;
+    this->poolCount = std::thread::hardware_concurrency();
     if (useInternalMemoryManager) {
         size_t initialSize = INITIAL_SINGLE_SIZE * poolCount;
         void* initialMemory = malloc(initialSize);
@@ -38,7 +37,8 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate(size_t s
     }
 }
 
-std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::tryAllocateFromExistingRegion(size_t size, ConcurrentLinkedList<std::shared_ptr<GCRegion>>& regionList) {
+std::pair<void*, std::shared_ptr<GCRegion>>
+GCMemoryAllocator::tryAllocateFromExistingRegion(size_t size, ConcurrentLinkedList<std::shared_ptr<GCRegion>>& regionList) {
     auto iterator = regionList.getRemovableIterator();
     while (iterator->MoveNext()) {
         std::shared_ptr<GCRegion> region = iterator->current();
@@ -120,19 +120,13 @@ void GCMemoryAllocator::allocate_new_region(RegionEnum regionType, size_t region
             }
             break;
     }
-#if 0
-    {
-        std::unique_lock<std::shared_mutex> lock(regionMapMtx);
-        regionMap.emplace(new_region_memory, region_ptr);
-    }
-#endif
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType) {
     if (size == 0) return std::make_pair(nullptr, nullptr);
     while (true) {
         // 从已有region中寻找空闲区域
-        std::pair<void*, std::shared_ptr<GCRegion>> ret{ nullptr, nullptr };
+        std::pair<void*, std::shared_ptr<GCRegion>> ret{nullptr, nullptr};
         if (useConcurrentLinkedList) {
             switch (regionType) {
                 case RegionEnum::SMALL:
@@ -289,39 +283,6 @@ void GCMemoryAllocator::SelectRelocationSet() {
     }
 }
 
-void GCMemoryAllocator::relocateRegion(ConcurrentLinkedList<std::shared_ptr<GCRegion>>& regionList) {
-    auto iterator = regionList.getRemovableIterator();
-    while (iterator->MoveNext()) {
-        std::shared_ptr<GCRegion> region = iterator->current();
-        if (!region->isEvacuated() && region->needEvacuate()) {
-            region->triggerRelocation(this);
-        }
-    }
-}
-
-void GCMemoryAllocator::relocateRegion(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
-    std::vector<std::shared_ptr<GCRegion>> regionQueSnapshot;
-    regionQueSnapshot.reserve(regionQue.size() / 2);
-    {
-        std::unique_lock<std::shared_mutex> lock(regionQueMtx);
-        for (auto it = regionQue.begin(); it != regionQue.end(); ) {
-            std::shared_ptr<GCRegion>& region = *it;
-            if (!region->isEvacuated() && region->needEvacuate()) {
-                regionQueSnapshot.emplace_back(region);
-                it = regionQue.erase(it);
-            } else {
-                it++;
-            }
-        }
-    }
-    for (auto& region : regionQueSnapshot) {
-        if (region != nullptr)
-            region->triggerRelocation(this);
-    }
-    // 完成relocate的region应该free，包括从regionMap中移除canFree的region，以及下轮垃圾回收清理只含有转发表的region
-    // 由于全程使用shared_ptr管理GCRegion，因此这里可以直接移除被触发疏散的region，GCPtr会持有其引用直到消亡
-}
-
 void GCMemoryAllocator::selectRelocationSet(std::deque<std::shared_ptr<GCRegion>>& regionQue,
                                             std::shared_mutex& regionQueMtx) {
     std::unique_lock<std::shared_mutex> lock(regionQueMtx);
@@ -354,12 +315,6 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
         std::shared_lock<std::shared_mutex> lock(regionQueMtx);
         for (auto& region : regionQue) {
             if (region->canFree()) {
-#if 0
-                {
-                    std::unique_lock<std::shared_mutex> lock2(this->regionMapMtx);
-                    regionMap.erase(region->getStartAddr());
-                }
-#endif
                 region->free();
             }
         }
@@ -382,41 +337,11 @@ void GCMemoryAllocator::clearFreeRegion(ConcurrentLinkedList<std::shared_ptr<GCR
         std::shared_ptr<GCRegion> region = iterator->current();
         region->clearUnmarked();
         if (region->canFree()) {
-#if 0
-            {
-                std::unique_lock<std::shared_mutex> lock_(this->regionMapMtx);
-                regionMap.erase(region->getStartAddr());
-            }
-#endif
             region->free();
             iterator->remove(region);
         }
     }
 }
-
-#if 0
-std::shared_ptr<GCRegion> GCMemoryAllocator::getRegion(void* object_addr) {
-    std::shared_lock<std::shared_mutex> lock(this->regionMapMtx);
-    auto it = regionMap.upper_bound(object_addr);
-    if (it == regionMap.begin()) {
-        return nullptr;
-    } else {
-        --it;
-#if 0
-        auto& region = it->second;
-        if (!region->inside_region(object_addr))
-            throw std::runtime_error("Not inside queried region!");
-#endif
-        return it->second;
-    }
-}
-
-void GCMemoryAllocator::free(void* object_addr, size_t object_size, std::shared_ptr<GCRegion> region) {
-    // std::shared_ptr<GCRegion> region = this->getRegion(object_addr);
-    if (region != nullptr)
-        region->free(object_addr, object_size);
-}
-#endif
 
 void GCMemoryAllocator::resetLiveSize() {
     if (useConcurrentLinkedList) {
@@ -456,7 +381,7 @@ void GCMemoryAllocator::resetLiveSize() {
     }
 }
 
-int GCMemoryAllocator::getPoolIdx() {
+int GCMemoryAllocator::getPoolIdx() const {
     std::thread::id tid = std::this_thread::get_id();
     int pool_idx = std::hash<std::thread::id>()(tid) % poolCount;
     return pool_idx;
