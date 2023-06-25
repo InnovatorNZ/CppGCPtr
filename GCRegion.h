@@ -93,11 +93,11 @@ public:
 
     bool needEvacuate() const;
 
-    bool isEvacuated() const { return evacuated; }
+    bool isEvacuated() const { return evacuated.load(); }
 
     void setEvacuated() { evacuated.store(true); }
 
-    // bool isFreed() const { return evacuated && startAddress == nullptr; }   // todo: 能否用作判断依据？
+    bool isFreed() const { return startAddress == nullptr && evacuated; }
 
     void resetLiveSize() { live_size = 0; }
 

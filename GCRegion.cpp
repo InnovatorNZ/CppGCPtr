@@ -49,19 +49,10 @@ void* GCRegion::allocate(size_t size) {
 }
 
 void GCRegion::free(void* addr, size_t size) {
-    if (reinterpret_cast<char*>(addr) < reinterpret_cast<char*>(startAddress) + allocated_offset) {
+    if (inside_region(addr, size)) {
         // free()要不要调用mark(addr, size, MarkStateBit::NOT_ALLOCATED)？好像还是要的
         // 现已改为mark的时候统计live_size，而不是frag_size，因此free时不能再mark为NOT_ALLOCATED，而是mark为REMAPPED
         // frag_size += size;
-#if _DEBUG      // todo: 由于不再标记高位（？），大概要删掉这段了
-        auto markstate = bitmap->getMarkState(addr);
-        auto markstate2 = bitmap->getMarkState((char*)addr + size - 1);
-        if (markstate == MarkStateBit::NOT_ALLOCATED ||
-            regionType != RegionEnum::TINY && markstate2 == MarkStateBit::NOT_ALLOCATED) {
-            std::clog << "Why free not allocated area??" << std::endl;
-            throw std::exception();
-        }
-#endif
         bool recently_assigned;
         while (true) {
             size_t c_allocated_offset = allocated_offset.load();
@@ -78,8 +69,8 @@ void GCRegion::free(void* addr, size_t size) {
         }
         if (!recently_assigned)
             bitmap->mark(addr, size, MarkStateBit::REMAPPED);
-        std::clog << "free(addr,size) triggered in GCRegion" << std::endl;
-    } else std::clog << "Free address out of range." << std::endl;
+    } else
+        std::clog << "Free address out of range." << std::endl;
 }
 
 float GCRegion::getFragmentRatio() const {
@@ -223,9 +214,9 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
 }
 
 void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllocator* memoryAllocator) {
-    if (!inside_region(object_addr, object_size)) {
-        std::clog << "The relocating object does not in current region!" << std::endl;
-        throw std::exception();
+    if (isFreed() || !inside_region(object_addr, object_size)) {
+        std::clog << "The relocating object does not in current region." << std::endl;
+        // throw std::exception();
         return;
     }
     {
@@ -236,21 +227,19 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
     auto new_addr = memoryAllocator->allocate(object_size);
     void* new_object_addr = new_addr.first;
     std::shared_ptr<GCRegion>& new_region = new_addr.second;
-    ::memcpy(new_object_addr, object_addr, object_size);
-    {
+    if (!this->isFreed()) {
+        ::memcpy(new_object_addr, object_addr, object_size);
         // 如果在转移过程中，有应用线程访问了旧地址上的原对象并产生了写入怎么办？参考shenandoah解决方案
         std::unique_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
         if (!forwarding_table.contains(object_addr)) {
             forwarding_table.emplace(object_addr, new_addr);
-            //std::clog << "Forwarding " << object_addr << " to " << new_object_addr << std::endl;
-        } else {
-            // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
-            lock.unlock();
-            std::clog << "Cancelling relocation due to someone beats us for " << object_addr << std::endl;
-            new_region->free(new_object_addr, object_size);
-            // memoryAllocator->free(new_addr.first, object_size, new_addr.second);
+            // std::clog << "Forwarding " << object_addr << " to " << new_object_addr << std::endl;
+            return;
         }
     }
+    // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
+    std::clog << "Withdrawing relocation due to someone beats us for " << object_addr << std::endl;
+    new_region->free(new_object_addr, object_size);
 }
 
 bool GCRegion::canFree() const {

@@ -28,13 +28,8 @@ private:
     void selfHeal() {
         auto healed = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get());
         if (healed.first != nullptr) {
-            std::clog << "Healing GCPtr(" << this << ", " << MarkStateUtil::toString(getInlineMarkState()) <<
-                      ") from " << obj << " to " << healed.first << std::endl;
             this->obj = static_cast<T*>(healed.first);
             this->region = healed.second;
-        } else {
-            std::clog << "Healing non-forwarding GCPtr(" << this << ", " << MarkStateUtil::toString(getInlineMarkState())
-                      << "): " << obj << std::endl;
         }
         this->setInlineMarkState(MarkState::REMAPPED);
     }

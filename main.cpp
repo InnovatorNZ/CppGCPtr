@@ -69,7 +69,7 @@ int main() {
     Sleep(500);
 
     for (int i = 0; i < n; i++) {
-        auto start_time = chrono::high_resolution_clock::now();
+        auto start_time = chrono::steady_clock::now();
         GCPtr<MyObject> obj2;
         {
             GCPtr<MyObject> obj1 = gc::make_root<MyObject>();
@@ -129,13 +129,15 @@ int main() {
                 obj9 = temp_obj;
             if (rand() % 11 == 0)
                 aobj[rand() % arr_size] = temp_obj;
-            temp_obj->f = 711.53;
+            temp_obj->f = 6294.83;
             temp_obj->addH();
+            int r = rand() % arr_size;
+            if (aobj[r] != nullptr) aobj[r]->b = 7.17;
         }
 
-        auto end_time = chrono::high_resolution_clock::now();
-        long long duration = chrono::duration_cast<chrono::microseconds>(end_time - start_time).count();
-        cout << "User thread duration: " << duration << " us" << endl;
+        auto end_time = chrono::steady_clock::now();
+        long long duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time).count();
+        cout << "User thread duration: " << duration << " ms" << endl;
         time_ += duration;
 
 #if TRIGGER_GC

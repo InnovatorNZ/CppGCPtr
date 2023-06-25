@@ -53,6 +53,7 @@ GCMemoryAllocator::tryAllocateFromExistingRegion(size_t size, std::deque<std::sh
     std::shared_lock<std::shared_mutex> lock(regionQueMtx);
     for (int i = regionQue.size() - 1; i >= 0; i--) {
         std::shared_ptr<GCRegion>& region = regionQue[i];
+        if (GCPhase::duringGC() && region->needEvacuate()) continue;
         void* addr = region->allocate(size);
         if (addr != nullptr) return std::make_pair(addr, region);
     }
