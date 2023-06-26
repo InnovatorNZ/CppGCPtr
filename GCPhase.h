@@ -21,7 +21,9 @@ public:
 
     static std::string getGCPhaseString();
 
-    static MarkState getCurrentMarkState();
+    static MarkState getCurrentMarkState() {
+        return currentMarkState;
+    }
 
     static MarkStateBit getCurrentMarkStateBit();
 

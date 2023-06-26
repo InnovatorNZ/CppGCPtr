@@ -261,25 +261,33 @@ void GCWorker::beginMark() {
     if (GCPhase::getGCPhase() == eGCPhase::NONE) {
         GCPhase::SwitchToNextPhase();   // concurrent mark
         auto start_time = std::chrono::high_resolution_clock::now();
+        this->root_object_snapshot.clear();
         this->root_ptr_snapshot.clear();
         {
             std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex);
-            for (auto& it : root_set) {
-                if (it->getVoidPtr() != nullptr)
-                    this->root_ptr_snapshot.push_back(it);
+            if (!useBitmap && !useInlineMarkstate) {
+                for (auto& it : root_set) {
+                    void* ptr = it->getVoidPtr();
+                    if (ptr != nullptr)
+                        this->root_ptr_snapshot.push_back(ptr);
+                }
+            } else {
+                for (auto& it : root_set) {
+                    this->mark_root(it);
+                }
             }
         }
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-        std::clog << "copy root_set duration: " << std::dec << duration.count() << " us" << std::endl;
-        // TODO: 此处有概率触发内存访问异常，这是由于gcptr可能已经析构，而gc线程仍然试图访问指向已析构对象的指针
+        std::clog << "Root set lock duration: " << std::dec << duration.count() << " us" << std::endl;
+
         if (!useBitmap && !useInlineMarkstate) {
-            for (GCPtrBase* gcptr : this->root_ptr_snapshot) {
-                this->mark(gcptr->getVoidPtr());
+            for (void* ptr : this->root_ptr_snapshot) {
+                this->mark(ptr);
             }
         } else {
-            for (GCPtrBase* gcptr : this->root_ptr_snapshot) {
-                this->mark_v2(gcptr);
+            for (const ObjectInfo& objectInfo : this->root_object_snapshot) {
+                this->mark_v2(objectInfo);
             }
         }
     } else {

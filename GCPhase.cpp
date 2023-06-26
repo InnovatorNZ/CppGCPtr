@@ -31,10 +31,6 @@ void GCPhase::SwitchToNextPhase() {
     std::clog << "GCPhase switch to " << getGCPhaseString() << std::endl;
 }
 
-MarkState GCPhase::getCurrentMarkState() {
-    return currentMarkState;
-}
-
 MarkStateBit GCPhase::getCurrentMarkStateBit() {
     switch (currentMarkState) {
         case MarkState::M0:
