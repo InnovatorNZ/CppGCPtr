@@ -9,8 +9,8 @@ GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
 
 GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport, bool useInlineMarkState,
-                   bool useInternalMemoryManager, bool enableRelocation) :
-        stop_(false), ready_(false), enableConcurrentMark(concurrent),
+                   bool useInternalMemoryManager, bool enableRelocation, bool enableParallel) :
+        stop_(false), ready_(false), enableConcurrentMark(concurrent), enableParallelGC(enableParallel),
         enableRelocation(enableRelocation), enableDestructorSupport(enableDestructorSupport) {
     this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
     if (useBitmap) this->enableDestructorSupport = false;     // TODO: bitmap暂不支持销毁时调用析构函数
@@ -24,6 +24,14 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport
     this->poolCount = std::thread::hardware_concurrency();
     this->satb_queue_pool.resize(poolCount);
     this->satb_queue_pool_mutex = std::make_unique<std::mutex[]>(poolCount);
+    if (enableParallel) {
+        gcthread_cnt = 4;
+        threadPool = std::make_unique<ThreadPoolExecutor>(gcthread_cnt, gcthread_cnt, 0,
+                                                          std::make_unique<ArrayBlockingQueue<std::function<void()>>>(4),
+                                                          ThreadPoolExecutor::CallerRunsPolicy);
+    } else {
+        gcthread_cnt = 0;
+    }
     if (concurrent) {
         this->gc_thread = std::make_unique<std::thread>(&GCWorker::GCThreadLoop, this);
     } else {
@@ -286,8 +294,20 @@ void GCWorker::beginMark() {
                 this->mark(ptr);
             }
         } else {
-            for (const ObjectInfo& objectInfo : this->root_object_snapshot) {
-                this->mark_v2(objectInfo);
+            if (!enableParallelGC) {
+                for (const ObjectInfo& objectInfo : this->root_object_snapshot) {
+                    this->mark_v2(objectInfo);
+                }
+            } else {
+                int snum = root_object_snapshot.size() / gcthread_cnt;
+                for (int i = 0; i < gcthread_cnt; i++) {
+                    threadPool->execute([this, i, snum] {
+                        for (int j = i * snum; j < (i + 1) * snum; j++) {
+                            this->mark_v2(root_object_snapshot[j]);
+                        }
+                    });
+                }
+                threadPool->waitForTaskComplete();
             }
         }
     } else {

@@ -16,6 +16,8 @@
 #include "GCUtil.h"
 #include "ObjectInfo.h"
 #include "PhaseEnum.h"
+#include "CppExecutor/ThreadPoolExecutor.h"
+#include "CppExecutor/ArrayBlockingQueue.h"
 
 class GCStatus {
 public:
@@ -45,14 +47,16 @@ private:
     std::condition_variable condition;
     std::unique_ptr<std::thread> gc_thread;
     std::unique_ptr<GCMemoryAllocator> memoryAllocator;
-    bool enableConcurrentMark, useBitmap, useInlineMarkstate, enableRelocation, enableDestructorSupport;
+    std::unique_ptr<ThreadPoolExecutor> threadPool;
+    int gcthread_cnt;
+    bool enableConcurrentMark, enableParallelGC, useBitmap, useInlineMarkstate, enableRelocation, enableDestructorSupport;
     volatile bool stop_, ready_;
 
     GCWorker();
 
     GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport = true,
              bool useInlineMarkState = true, bool useInternalMemoryManager = false,
-             bool enableRelocation = false);
+             bool enableRelocation = false, bool enableParallel = false);
 
     void mark(void*);
 
