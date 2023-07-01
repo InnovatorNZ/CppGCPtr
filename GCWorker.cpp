@@ -299,10 +299,11 @@ void GCWorker::beginMark() {
                     this->mark_v2(objectInfo);
                 }
             } else {
-                int snum = root_object_snapshot.size() / gcthread_cnt;
                 for (int i = 0; i < gcthread_cnt; i++) {
-                    threadPool->execute([this, i, snum] {
-                        for (int j = i * snum; j < (i + 1) * snum; j++) {
+                    threadPool->execute([this, i] {
+                        size_t startIndex, endIndex;
+                        getParallelIndex(i, root_object_snapshot, startIndex, endIndex);
+                        for (size_t j = startIndex; j < endIndex; j++) {
                             this->mark_v2(root_object_snapshot[j]);
                         }
                     });
@@ -319,15 +320,41 @@ void GCWorker::triggerSATBMark() {
     if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
         GCPhase::SwitchToNextPhase();   // remark
         if (!useBitmap) {
-            for (auto object_addr : satb_queue) {
-                mark(object_addr);
+            if (enableParallelGC) {
+                for (int i = 0; i < gcthread_cnt; i++) {
+                    threadPool->execute([this, i] {
+                        size_t startIndex, endIndex;
+                        getParallelIndex(i, satb_queue, startIndex, endIndex);
+                        for (size_t j = startIndex; j < endIndex; j++) {
+                            this->mark(satb_queue[j]);
+                        }
+                    });
+                }
+                threadPool->waitForTaskComplete();
+            } else {
+                for (auto object_addr : satb_queue) {
+                    mark(object_addr);
+                }
             }
             satb_queue.clear();
         } else {
-            // TODO: 可按i并行化
             for (int i = 0; i < poolCount; i++) {
-                for (auto& object_info : satb_queue_pool[i]) {
-                    mark_v2(object_info);
+                if (satb_queue_pool[i].empty()) continue;
+                if (enableParallelGC) {
+                    for (int tid = 0; tid < gcthread_cnt; tid++) {
+                        threadPool->execute([this, i, tid] {
+                            size_t startIndex, endIndex;
+                            getParallelIndex(tid, satb_queue_pool[i], startIndex, endIndex);
+                            for (size_t j = startIndex; j < endIndex; j++) {
+                                this->mark_v2(satb_queue_pool[i][j]);
+                            }
+                        });
+                    }
+                    threadPool->waitForTaskComplete();
+                } else {
+                    for (auto& objectInfo : satb_queue_pool[i]) {
+                        this->mark_v2(objectInfo);
+                    }
                 }
                 satb_queue_pool[i].clear();
             }

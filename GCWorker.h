@@ -80,6 +80,16 @@ private:
 
     void callDestructor(void*, bool remove_after_call = false);
 
+    template<typename U>
+    void getParallelIndex(int tid, const std::vector<U>& vec, size_t& startIndex, size_t& endIndex) {
+        size_t snum = vec.size() / gcthread_cnt;
+        startIndex = tid * snum;
+        if (tid == gcthread_cnt - 1)
+            endIndex = vec.size();
+        else
+            endIndex = (tid + 1) * snum;
+    }
+
 public:
     GCWorker(const GCWorker&) = delete;
 
