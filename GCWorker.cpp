@@ -12,7 +12,6 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport
                    bool useInternalMemoryManager, bool enableRelocation, bool enableParallel) :
         stop_(false), ready_(false), enableConcurrentMark(concurrent), enableParallelGC(enableParallel),
         enableRelocation(enableRelocation), enableDestructorSupport(enableDestructorSupport) {
-    this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
     if (useBitmap) this->enableDestructorSupport = false;     // TODO: bitmap暂不支持销毁时调用析构函数
     if (enableRelocation) {
         this->useBitmap = true;
@@ -27,12 +26,16 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport
     if (enableParallel) {
         this->gcthread_cnt = 4;
         this->threadPool = std::make_unique<ThreadPoolExecutor>(gcthread_cnt, gcthread_cnt, 0,
-                                                                std::make_unique<ArrayBlockingQueue<std::function<void()>>>(4),
+                                                                std::make_unique<ArrayBlockingQueue<std::function<void()>>>(128),
                                                                 ThreadPoolExecutor::CallerRunsPolicy);
     } else {
         this->gcthread_cnt = 0;
         this->threadPool = nullptr;
     }
+    if (enableParallel)
+        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager, true, gcthread_cnt, threadPool.get());
+    else
+        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
     if (concurrent) {
         this->gc_thread = std::make_unique<std::thread>(&GCWorker::GCThreadLoop, this);
     } else {
@@ -464,6 +467,7 @@ namespace gc {
 
     void init(bool concurrent, bool useBitmap, bool enableRelocation, bool enableParallelGC,
               bool enableDestructorSupport, bool useInlineMarkState, bool useInternalMemoryManager) {
-        GCWorker::init(concurrent, useBitmap, enableDestructorSupport, useInlineMarkState, useInternalMemoryManager, enableRelocation, enableParallelGC);
+        GCWorker::init(concurrent, useBitmap, enableDestructorSupport, useInlineMarkState, useInternalMemoryManager, enableRelocation,
+                       enableParallelGC);
     }
 }

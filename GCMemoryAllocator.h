@@ -13,15 +13,18 @@
 #include "GCRegion.h"
 #include "GCMemoryManager.h"
 #include "ConcurrentLinkedList.h"
-
+#include "CppExecutor/ThreadPoolExecutor.h"
 
 class GCMemoryAllocator : public IMemoryAllocator {
 private:
     static const size_t INITIAL_SINGLE_SIZE;
     static const bool useConcurrentLinkedList;
     bool enableInternalMemoryManager;
+    bool enableParallelClear;
+    unsigned int gcThreadCount;
     unsigned int poolCount;
     std::vector<GCMemoryManager> memoryPools;
+    ThreadPoolExecutor* threadPool;
     // 能否使用无锁链表管理region？ TODO: 似乎使用链表管理region会导致多线程优化较为困难
 // #if USE_CONCURRENT_LINKEDLIST
     std::unique_ptr<ConcurrentLinkedList<std::shared_ptr<GCRegion>>[]> smallRegionLists;
@@ -67,9 +70,8 @@ private:
     int getPoolIdx() const;
 
 public:
-    GCMemoryAllocator();
-
-    explicit GCMemoryAllocator(bool useInternalMemoryManager);
+    GCMemoryAllocator(bool useInternalMemoryManager = false, bool enableParallelClear = false,
+                      int gcThreadCount = 0, ThreadPoolExecutor* = nullptr);
 
     std::pair<void*, std::shared_ptr<GCRegion>> allocate(size_t size) override;
 

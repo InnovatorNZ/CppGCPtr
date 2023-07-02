@@ -3,11 +3,12 @@
 const size_t GCMemoryAllocator::INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
 const bool GCMemoryAllocator::useConcurrentLinkedList = false;
 
-GCMemoryAllocator::GCMemoryAllocator() : GCMemoryAllocator(false) {
-}
-
-GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager) {
+GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableParallelClear,
+                                     int gcThreadCount, ThreadPoolExecutor* gcThreadPool) {
     this->enableInternalMemoryManager = useInternalMemoryManager;
+    this->enableParallelClear = enableParallelClear;
+    this->gcThreadCount = gcThreadCount;
+    this->threadPool = gcThreadPool;
     this->poolCount = std::thread::hardware_concurrency();
     if (useInternalMemoryManager) {
         size_t initialSize = INITIAL_SINGLE_SIZE * poolCount;
@@ -196,7 +197,7 @@ void* GCMemoryAllocator::allocate_from_freelist(size_t size) {
         if (address != nullptr) return address;
     }
     do {
-        size_t malloc_size = std::max(INITIAL_SINGLE_SIZE, size);
+        size_t malloc_size = max(INITIAL_SINGLE_SIZE, size);
         void* new_memory = malloc(malloc_size);
         memoryPools[pool_idx].free(new_memory, malloc_size);
         address = memoryPools[pool_idx].allocate(size);
@@ -252,9 +253,22 @@ void GCMemoryAllocator::triggerRelocation() {
         std::cerr << "Wrong phase, should in sweeping phase to trigger relocation." << std::endl;
         return;
     }
-    // TODO: 可按i并行化
-    for (int i = 0; i < evacuationQue.size(); i++) {
-        evacuationQue[i]->triggerRelocation(this);
+    if (enableParallelClear) {
+        size_t snum = evacuationQue.size() / gcThreadCount;
+        for (int tid = 0; tid < gcThreadCount; tid++) {
+            threadPool->execute([this, tid, snum] {
+                size_t startIndex = tid * snum;
+                size_t endIndex = (tid == gcThreadCount - 1) ? evacuationQue.size() : (tid + 1) * snum;
+                for (size_t j = startIndex; j < endIndex; j++) {
+                    evacuationQue[j]->triggerRelocation(this);
+                }
+            });
+        }
+        threadPool->waitForTaskComplete();
+    } else {
+        for (int i = 0; i < evacuationQue.size(); i++) {
+            evacuationQue[i]->triggerRelocation(this);
+        }
     }
 
     if (useConcurrentLinkedList) {
@@ -286,7 +300,7 @@ void GCMemoryAllocator::SelectRelocationSet() {
 void GCMemoryAllocator::selectRelocationSet(std::deque<std::shared_ptr<GCRegion>>& regionQue,
                                             std::shared_mutex& regionQueMtx) {
     std::unique_lock<std::shared_mutex> lock(regionQueMtx);
-    for (auto it = regionQue.begin(); it != regionQue.end(); ) {
+    for (auto it = regionQue.begin(); it != regionQue.end();) {
         std::shared_ptr<GCRegion>& region = *it;
         if (!region->isEvacuated() && region->needEvacuate()) {
             region->setEvacuated();
@@ -313,10 +327,26 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
 void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
     {
         std::shared_lock<std::shared_mutex> lock(regionQueMtx);
-        for (auto& region : regionQue) {
-            if (region->canFree()) {
-                region->free();
+        if (!enableParallelClear) {
+            for (auto& region : regionQue) {
+                if (region->canFree()) {
+                    region->free();
+                }
             }
+        } else {
+            size_t snum = regionQue.size() / gcThreadCount;
+            for (int tid = 0; tid < gcThreadCount; tid++) {
+                threadPool->execute([this, tid, snum, &regionQue] {
+                    size_t startIndex = tid * snum;
+                    size_t endIndex = (tid == gcThreadCount - 1) ? regionQue.size() : (tid + 1) * snum;
+                    for (size_t j = startIndex; j < endIndex; j++) {
+                        if (regionQue[j]->canFree()) {
+                            regionQue[j]->free();
+                        }
+                    }
+                });
+            }
+            threadPool->waitForTaskComplete();
         }
     }
     {
@@ -361,8 +391,23 @@ void GCMemoryAllocator::resetLiveSize() {
         {
             for (int i = 0; i < poolCount; i++) {
                 std::shared_lock<std::shared_mutex> lock(smallRegionQueMtxs[i]);
-                for (auto& region : smallRegionQues[i]) {
-                    region->resetLiveSize();
+                if (smallRegionQues[i].empty()) continue;
+                if (!enableParallelClear) {
+                    for (auto& region : smallRegionQues[i]) {
+                        region->resetLiveSize();
+                    }
+                } else {
+                    size_t snum = smallRegionQues[i].size() / gcThreadCount;
+                    for (int tid = 0; tid < gcThreadCount; tid++) {
+                        threadPool->execute([this, i, tid, snum] {
+                            size_t startIndex = tid * snum;
+                            size_t endIndex = (tid == gcThreadCount - 1) ? smallRegionQues[i].size() : (tid + 1) * snum;
+                            for (size_t j = startIndex; j < endIndex; j++) {
+                                smallRegionQues[i][j]->resetLiveSize();
+                            }
+                        });
+                    }
+                    threadPool->waitForTaskComplete();
                 }
             }
         }
