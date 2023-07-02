@@ -1,5 +1,9 @@
 #pragma once
 
+#define _COMPILE_UNITTEST 0
+
+#if _COMPILE_UNITTEST
+
 #include "GCMemoryAllocator.h"
 
 class MemoryAllocatorTest {
@@ -7,7 +11,6 @@ private:
     GCMemoryAllocator memoryAllocator;
 public:
     void test() {
-#if 0
         using namespace std;
         const int size = 22000;
         GCPhase::SwitchToNextPhase();
@@ -33,6 +36,7 @@ public:
             }
             last = object1;
         }
-#endif
     }
 };
+
+#endif

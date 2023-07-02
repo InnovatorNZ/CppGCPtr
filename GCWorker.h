@@ -151,7 +151,8 @@ namespace gc {
     void triggerGC();
 
     void init(bool concurrent, bool useBitmap,
-              bool enableRelocation = false, bool enableDestructorSupport = false, bool useInlineMarkState = false,
+              bool enableRelocation = false, bool enableParallelGC = false,
+              bool enableDestructorSupport = false, bool useInlineMarkState = false,
               bool useInternalMemoryManager = false);
 }
 

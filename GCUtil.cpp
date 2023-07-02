@@ -13,7 +13,7 @@ bool GCUtil::is_stack_pointer(void* ptr) {
 #endif
 }
 
-void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
+void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs, ThreadPoolExecutor* gcPool) {
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (hSnapshot) {
         THREADENTRY32 threadEntry;
@@ -21,22 +21,24 @@ void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs) {
         if (Thread32First(hSnapshot, &threadEntry)) {
             do {
                 if (threadEntry.dwSize >= FIELD_OFFSET(THREADENTRY32, th32OwnerProcessID) + sizeof(threadEntry.th32OwnerProcessID)) {
-                    if (threadEntry.th32OwnerProcessID == GetCurrentProcessId() && threadEntry.th32ThreadID != GetCurrentThreadId()) {
+                    if (threadEntry.th32OwnerProcessID == GetCurrentProcessId() &&
+                        threadEntry.th32ThreadID != GetCurrentThreadId() &&
+                        (gcPool == nullptr || !gcPool->insidePool(threadEntry.th32ThreadID))) {
                         HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, threadEntry.th32ThreadID);
                         if (hThread) {
                             DWORD dwExitCode = 0;
                             if (GetExitCodeThread(hThread, &dwExitCode) && dwExitCode == STILL_ACTIVE) {
                                 DWORD status = SuspendThread(hThread);
                                 if (status != -1) {
-                                    //std::clog << "Thread 0x" << std::hex << threadEntry.th32ThreadID << " suspended" << std::endl;
+                                    // std::clog << "Thread 0x" << std::hex << threadEntry.th32ThreadID << " suspended" << std::endl;
                                     suspendedThreadIDs.push_back(threadEntry.th32ThreadID);
                                 } else {
                                     LPVOID lpMsgBuf;
                                     DWORD dw = GetLastError();
                                     FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-                                                  dw, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPTSTR) &lpMsgBuf, 0, NULL);
+                                                  dw, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPTSTR)&lpMsgBuf, 0, NULL);
                                     printf("Error: Thread ID: 0x%x suspend failure, error message: %ws", threadEntry.th32ThreadID,
-                                           (LPCTSTR) lpMsgBuf);
+                                           (LPCTSTR)lpMsgBuf);
                                 }
                             }
                             CloseHandle(hThread);
@@ -69,13 +71,13 @@ void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
     }
 }
 
-void GCUtil::stop_the_world(IReadWriteLock* stwLock) {
+void GCUtil::stop_the_world(IReadWriteLock* stwLock, ThreadPoolExecutor* gcPool) {
     stwLock->lockWrite(true);
-    GCUtil::suspend_user_threads(_suspendedThreadIDs);
+    GCUtil::suspend_user_threads(_suspendedThreadIDs, gcPool);
     stwLock->unlockWrite();
 }
 
-void GCUtil::resume_the_world(IReadWriteLock* stwLock) {
+void GCUtil::resume_the_world() {
     GCUtil::resume_user_threads(_suspendedThreadIDs);
     _suspendedThreadIDs.clear();
 }

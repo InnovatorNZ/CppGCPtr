@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <TlHelp32.h>
 #include "IReadWriteLock.h"
+#include "CppExecutor/ThreadPoolExecutor.h"
 
 #if 0
 
@@ -59,14 +60,14 @@ class GCUtil {
 private:
     static std::vector<DWORD> _suspendedThreadIDs;
 
-    static void suspend_user_threads(std::vector<DWORD>&);
+    static void suspend_user_threads(std::vector<DWORD>&, ThreadPoolExecutor*);
 
     static void resume_user_threads(const std::vector<DWORD>&);
 
 public:
-    static void stop_the_world(IReadWriteLock*);
+    static void stop_the_world(IReadWriteLock*, ThreadPoolExecutor* gcPool = nullptr);
 
-    static void resume_the_world(IReadWriteLock*);
+    static void resume_the_world();
 
     static bool is_stack_pointer(void* ptr);
 };

@@ -53,19 +53,13 @@ public:
 GCPtr<MyObject> obj3;
 
 int main() {
-#define UNITTEST 0
-#if UNITTEST
-    MemoryAllocatorTest test;
-    test.test();
-#else
 #define TRIGGER_GC 1
     using namespace std;
-    bool enableRelocation = true;
     cout << "Size of MyObject: " << sizeof(MyObject) << endl;
     cout << "Ready to start..." << endl;
     const int n = 25;
     long long time_ = 0;
-    gc::init(true, true, enableRelocation);
+    gc::init(true, true, true, true);
     Sleep(500);
 
     for (int i = 0; i < n; i++) {
@@ -148,7 +142,6 @@ int main() {
         // Sleep(100);
 #endif
     }
-    cout << "Average user thread duration: " << (double) time_ / (double) n << " us" << endl;
-#endif
+    cout << "Average user thread duration: " << (double)time_ / (double)n << " us" << endl;
     return 0;
 }

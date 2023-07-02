@@ -25,12 +25,13 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport
     this->satb_queue_pool.resize(poolCount);
     this->satb_queue_pool_mutex = std::make_unique<std::mutex[]>(poolCount);
     if (enableParallel) {
-        gcthread_cnt = 4;
-        threadPool = std::make_unique<ThreadPoolExecutor>(gcthread_cnt, gcthread_cnt, 0,
-                                                          std::make_unique<ArrayBlockingQueue<std::function<void()>>>(4),
-                                                          ThreadPoolExecutor::CallerRunsPolicy);
+        this->gcthread_cnt = 4;
+        this->threadPool = std::make_unique<ThreadPoolExecutor>(gcthread_cnt, gcthread_cnt, 0,
+                                                                std::make_unique<ArrayBlockingQueue<std::function<void()>>>(4),
+                                                                ThreadPoolExecutor::CallerRunsPolicy);
     } else {
-        gcthread_cnt = 0;
+        this->gcthread_cnt = 0;
+        this->threadPool = nullptr;
     }
     if (concurrent) {
         this->gc_thread = std::make_unique<std::thread>(&GCWorker::GCThreadLoop, this);
@@ -173,19 +174,22 @@ void GCWorker::GCThreadLoop() {
     while (true) {
         {
             std::unique_lock<std::mutex> lock(this->thread_mutex);
-            condition.wait(lock, [this] { return ready_; });  //TODO: 仅限调试期间注释本行
+            condition.wait(lock, [this] { return ready_; });
             ready_ = false;
         }
         if (stop_) break;
         GCWorker::getWorker()->beginMark();
-        GCUtil::stop_the_world(GCPhase::getSTWLock());
+        if (enableParallelGC)
+            GCUtil::stop_the_world(GCPhase::getSTWLock(), threadPool.get());
+        else
+            GCUtil::stop_the_world(GCPhase::getSTWLock());
         auto start_time = std::chrono::high_resolution_clock::now();
         GCWorker::getWorker()->triggerSATBMark();
         GCWorker::getWorker()->selectRelocationSet();
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
         std::clog << "Stop-the-world duration: " << std::dec << duration.count() << " us" << std::endl;
-        GCUtil::resume_the_world(GCPhase::getSTWLock());
+        GCUtil::resume_the_world();
         GCWorker::getWorker()->beginSweep();
         GCWorker::getWorker()->endGC();
     }
@@ -458,8 +462,8 @@ namespace gc {
         GCWorker::getWorker()->triggerGC();
     }
 
-    void init(bool concurrent, bool useBitmap, bool enableRelocation, bool enableDestructorSupport, bool useInlineMarkState,
-              bool useInternalMemoryManager) {
-        GCWorker::init(concurrent, useBitmap, enableDestructorSupport, useInlineMarkState, useInternalMemoryManager, enableRelocation);
+    void init(bool concurrent, bool useBitmap, bool enableRelocation, bool enableParallelGC,
+              bool enableDestructorSupport, bool useInlineMarkState, bool useInternalMemoryManager) {
+        GCWorker::init(concurrent, useBitmap, enableDestructorSupport, useInlineMarkState, useInternalMemoryManager, enableRelocation, enableParallelGC);
     }
 }
