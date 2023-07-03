@@ -264,7 +264,7 @@ void GCMemoryAllocator::triggerRelocation() {
                 }
             });
         }
-        threadPool->waitForTaskComplete();
+        threadPool->waitForTaskComplete(gcThreadCount);
     } else {
         for (int i = 0; i < evacuationQue.size(); i++) {
             evacuationQue[i]->triggerRelocation(this);
@@ -346,7 +346,7 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
                     }
                 });
             }
-            threadPool->waitForTaskComplete();
+            threadPool->waitForTaskComplete(gcThreadCount);
         }
     }
     {
@@ -381,7 +381,7 @@ void GCMemoryAllocator::resetLiveSize() {
                 iterator->current()->resetLiveSize();
             }
         }
-        for (auto regionList : {&mediumRegionList, &tinyRegionList}) {
+        for (auto regionList : { &mediumRegionList, &tinyRegionList }) {
             auto iterator = regionList->getIterator();
             while (iterator->MoveNext()) {
                 iterator->current()->resetLiveSize();
@@ -407,7 +407,7 @@ void GCMemoryAllocator::resetLiveSize() {
                             }
                         });
                     }
-                    threadPool->waitForTaskComplete();
+                    threadPool->waitForTaskComplete(gcThreadCount);
                 }
             }
         }

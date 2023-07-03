@@ -142,6 +142,6 @@ int main() {
         // Sleep(100);
 #endif
     }
-    cout << "Average user thread duration: " << (double)time_ / (double)n << " us" << endl;
+    cout << "Average user thread duration: " << (double)time_ / (double)n << " ms" << endl;
     return 0;
 }

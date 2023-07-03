@@ -48,7 +48,7 @@ private:
     std::unique_ptr<std::thread> gc_thread;
     std::unique_ptr<GCMemoryAllocator> memoryAllocator;
     std::unique_ptr<ThreadPoolExecutor> threadPool;
-    int gcthread_cnt;
+    int gcThreadCount;
     bool enableConcurrentMark, enableParallelGC, useBitmap, useInlineMarkstate, enableRelocation, enableDestructorSupport;
     volatile bool stop_, ready_;
 
@@ -82,9 +82,9 @@ private:
 
     template<typename U>
     void getParallelIndex(int tid, const std::vector<U>& vec, size_t& startIndex, size_t& endIndex) {
-        size_t snum = vec.size() / gcthread_cnt;
+        size_t snum = vec.size() / gcThreadCount;
         startIndex = tid * snum;
-        if (tid == gcthread_cnt - 1)
+        if (tid == gcThreadCount - 1)
             endIndex = vec.size();
         else
             endIndex = (tid + 1) * snum;

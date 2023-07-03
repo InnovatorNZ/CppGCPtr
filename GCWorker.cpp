@@ -24,16 +24,16 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport
     this->satb_queue_pool.resize(poolCount);
     this->satb_queue_pool_mutex = std::make_unique<std::mutex[]>(poolCount);
     if (enableParallel) {
-        this->gcthread_cnt = 4;
-        this->threadPool = std::make_unique<ThreadPoolExecutor>(gcthread_cnt, gcthread_cnt, 0,
-                                                                std::make_unique<ArrayBlockingQueue<std::function<void()>>>(128),
-                                                                ThreadPoolExecutor::CallerRunsPolicy);
+        this->gcThreadCount = 4;
+        this->threadPool = std::make_unique<ThreadPoolExecutor>(gcThreadCount, gcThreadCount, 0,
+                                                                std::make_unique<ArrayBlockingQueue<std::function<void()>>>(4),
+                                                                ThreadPoolExecutor::AbortPolicy);
     } else {
-        this->gcthread_cnt = 0;
+        this->gcThreadCount = 0;
         this->threadPool = nullptr;
     }
     if (enableParallel)
-        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager, true, gcthread_cnt, threadPool.get());
+        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager, true, gcThreadCount, threadPool.get());
     else
         this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
     if (concurrent) {
@@ -306,7 +306,7 @@ void GCWorker::beginMark() {
                     this->mark_v2(objectInfo);
                 }
             } else {
-                for (int i = 0; i < gcthread_cnt; i++) {
+                for (int i = 0; i < gcThreadCount; i++) {
                     threadPool->execute([this, i] {
                         size_t startIndex, endIndex;
                         getParallelIndex(i, root_object_snapshot, startIndex, endIndex);
@@ -315,7 +315,7 @@ void GCWorker::beginMark() {
                         }
                     });
                 }
-                threadPool->waitForTaskComplete();
+                threadPool->waitForTaskComplete(gcThreadCount);
             }
         }
     } else {
@@ -328,7 +328,7 @@ void GCWorker::triggerSATBMark() {
         GCPhase::SwitchToNextPhase();   // remark
         if (!useBitmap) {
             if (enableParallelGC) {
-                for (int i = 0; i < gcthread_cnt; i++) {
+                for (int i = 0; i < gcThreadCount; i++) {
                     threadPool->execute([this, i] {
                         size_t startIndex, endIndex;
                         getParallelIndex(i, satb_queue, startIndex, endIndex);
@@ -337,7 +337,7 @@ void GCWorker::triggerSATBMark() {
                         }
                     });
                 }
-                threadPool->waitForTaskComplete();
+                threadPool->waitForTaskComplete(gcThreadCount);
             } else {
                 for (auto object_addr : satb_queue) {
                     mark(object_addr);
@@ -348,7 +348,7 @@ void GCWorker::triggerSATBMark() {
             for (int i = 0; i < poolCount; i++) {
                 if (satb_queue_pool[i].empty()) continue;
                 if (enableParallelGC) {
-                    for (int tid = 0; tid < gcthread_cnt; tid++) {
+                    for (int tid = 0; tid < gcThreadCount; tid++) {
                         threadPool->execute([this, i, tid] {
                             size_t startIndex, endIndex;
                             getParallelIndex(tid, satb_queue_pool[i], startIndex, endIndex);
@@ -357,7 +357,7 @@ void GCWorker::triggerSATBMark() {
                             }
                         });
                     }
-                    threadPool->waitForTaskComplete();
+                    threadPool->waitForTaskComplete(gcThreadCount);
                 } else {
                     for (auto& objectInfo : satb_queue_pool[i]) {
                         this->mark_v2(objectInfo);
