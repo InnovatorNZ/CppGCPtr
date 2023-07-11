@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
+#include <random>
 #include "IMemoryAllocator.h"
 #include "GCRegion.h"
 #include "GCMemoryManager.h"
@@ -18,9 +19,10 @@
 class GCMemoryAllocator : public IMemoryAllocator {
 private:
     static const size_t INITIAL_SINGLE_SIZE;
-    static const bool useConcurrentLinkedList;
+    static constexpr bool useConcurrentLinkedList = false;
     bool enableInternalMemoryManager;
     bool enableParallelClear;
+    bool enableReclaim;
     unsigned int gcThreadCount;
     unsigned int poolCount;
     std::vector<GCMemoryManager> memoryPools;
@@ -70,7 +72,7 @@ private:
     int getPoolIdx() const;
 
 public:
-    GCMemoryAllocator(bool useInternalMemoryManager = false, bool enableParallelClear = false,
+    GCMemoryAllocator(bool useInternalMemoryManager = false, bool enableParallelClear = false, bool enableReclaim = false,
                       int gcThreadCount = 0, ThreadPoolExecutor* = nullptr);
 
     std::pair<void*, std::shared_ptr<GCRegion>> allocate(size_t size) override;

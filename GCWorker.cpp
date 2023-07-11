@@ -9,9 +9,9 @@ GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
 
 GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport, bool useInlineMarkState,
-                   bool useInternalMemoryManager, bool enableRelocation, bool enableParallel) :
+                   bool useInternalMemoryManager, bool enableRelocation, bool enableParallel, bool enableReclaim) :
         stop_(false), ready_(false), enableConcurrentMark(concurrent), enableParallelGC(enableParallel),
-        enableRelocation(enableRelocation), enableDestructorSupport(enableDestructorSupport) {
+        enableRelocation(enableRelocation), enableDestructorSupport(enableDestructorSupport), enableReclaim(enableReclaim) {
     if (useBitmap) this->enableDestructorSupport = false;     // TODO: bitmap暂不支持销毁时调用析构函数
     if (enableRelocation) {
         this->useBitmap = true;
@@ -33,9 +33,9 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport
         this->threadPool = nullptr;
     }
     if (enableParallel)
-        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager, true, gcThreadCount, threadPool.get());
+        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager, true, enableReclaim, gcThreadCount, threadPool.get());
     else
-        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
+        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager, false, enableReclaim);
     if (concurrent) {
         this->gc_thread = std::make_unique<std::thread>(&GCWorker::GCThreadLoop, this);
     } else {
@@ -457,6 +457,10 @@ void GCWorker::printMap() const {
         cout << ptr << " ";
     }
     cout << "}" << endl;
+}
+
+void GCWorker::freeUnusedReclaim() {
+    // TODO: ...
 }
 
 

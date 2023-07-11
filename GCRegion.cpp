@@ -179,14 +179,17 @@ void GCRegion::clearUnmarked() {
     if (allFreeFlag == 0) allFreeFlag = 1;
 }
 
-void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
+void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator, bool reclaim) {
     if (regionType == RegionEnum::LARGE) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
     evacuated = true;
     if (this->canFree()) {      // 已经没有存活对象了
-        this->free();
+        if (reclaim)
+            this->reclaim();
+        else
+            this->free();
         return;
     }
     auto bitMapIterator = bitmap->getIterator();
@@ -206,7 +209,10 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
             else throw std::exception();    // 多线程情况下可能会误判
         }
     }
-    this->free();
+    if (reclaim)
+        this->reclaim();
+    else
+        this->free();
 }
 
 void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllocator* memoryAllocator) {
@@ -260,6 +266,12 @@ void GCRegion::free() {
     allocated_offset = 0;
     ::free(startAddress);
     startAddress = nullptr;
+}
+
+void GCRegion::reclaim() {
+    memset(this->bitmap.get(), 0, allocated_offset);
+    allocated_offset = 0;
+    evacuated = false;
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCRegion::queryForwardingTable(void* ptr) {

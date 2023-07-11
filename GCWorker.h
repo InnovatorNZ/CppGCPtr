@@ -49,14 +49,15 @@ private:
     std::unique_ptr<GCMemoryAllocator> memoryAllocator;
     std::unique_ptr<ThreadPoolExecutor> threadPool;
     int gcThreadCount;
-    bool enableConcurrentMark, enableParallelGC, useBitmap, useInlineMarkstate, enableRelocation, enableDestructorSupport;
+    bool enableConcurrentMark, enableParallelGC, useBitmap, useInlineMarkstate,
+        enableRelocation, enableDestructorSupport, enableReclaim;
     volatile bool stop_, ready_;
 
     GCWorker();
 
     GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport = true,
              bool useInlineMarkState = true, bool useInternalMemoryManager = false,
-             bool enableRelocation = false, bool enableParallel = false);
+             bool enableRelocation = false, bool enableParallel = false, bool enableReclaim = false);
 
     void mark(void*);
 
@@ -144,6 +145,10 @@ public:
     bool bitmapEnabled() const { return useBitmap; }
 
     bool relocationEnabled() const { return enableRelocation; }
+
+    bool reclaimEnabled() const { return enableReclaim; }
+
+    void freeUnusedReclaim();
 };
 
 

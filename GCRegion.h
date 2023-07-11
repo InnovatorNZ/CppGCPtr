@@ -73,6 +73,8 @@ public:
 
     void* getStartAddr() const { return startAddress; }
 
+    RegionEnum getRegionType() const { return regionType; }
+
     void* allocate(size_t size) override;
 
     void free(void* addr, size_t size) override;
@@ -101,13 +103,15 @@ public:
 
     void resetLiveSize() { live_size = 0; }
 
-    void triggerRelocation(IMemoryAllocator*);
+    void triggerRelocation(IMemoryAllocator*, bool reclaim = false);
 
     void relocateObject(void*, size_t, IMemoryAllocator*);
 
     std::pair<void*, std::shared_ptr<GCRegion>> queryForwardingTable(void*);
 
     bool inside_region(void*, size_t = 0) const;
+
+    void reclaim();
 
     // TODO: 要不要加个reclaim，重新利用已被释放的region？
 };
