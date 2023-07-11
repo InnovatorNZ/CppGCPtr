@@ -69,6 +69,8 @@ public:
     BitMapIterator getIterator() const;
 
     unsigned int alignUpSize(unsigned int) const;
+
+    void clear();
 };
 
 

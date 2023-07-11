@@ -57,7 +57,7 @@ private:
 
     GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport = true,
              bool useInlineMarkState = true, bool useInternalMemoryManager = false,
-             bool enableRelocation = false, bool enableParallel = false, bool enableReclaim = false);
+             bool enableRelocation = false, bool enableParallel = false, bool enableReclaim = true);
 
     void mark(void*);
 

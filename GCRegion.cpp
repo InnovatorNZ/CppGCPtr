@@ -204,6 +204,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator, bool reclaim
             // 非存活对象统一标记为REMAPPED；之所以不能标记为NOT_ALLOCATED是因为仍然需要size信息遍历bitmap
             bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
         } else if (markState == MarkStateBit::NOT_ALLOCATED) {
+            // TODO: 改用p_offset（allocated_offset）作为break的判断依据
             if (bitMapIterator.getCurrentOffset() >= allocated_offset) break;
             else if (regionType == RegionEnum::TINY);
             else throw std::exception();    // 多线程情况下可能会误判
@@ -269,7 +270,8 @@ void GCRegion::free() {
 }
 
 void GCRegion::reclaim() {
-    memset(this->bitmap.get(), 0, allocated_offset);
+    //memset(this->bitmap.get(), 0, allocated_offset);
+    bitmap->clear();
     allocated_offset = 0;
     evacuated = false;
 }

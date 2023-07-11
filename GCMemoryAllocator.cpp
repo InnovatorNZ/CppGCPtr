@@ -260,20 +260,19 @@ void GCMemoryAllocator::triggerRelocation() {
                 size_t startIndex = tid * snum;
                 size_t endIndex = (tid == gcThreadCount - 1) ? evacuationQue.size() : (tid + 1) * snum;
                 for (size_t j = startIndex; j < endIndex; j++) {
-                    evacuationQue[j]->triggerRelocation(this);
+                    evacuationQue[j]->triggerRelocation(this, enableReclaim);
                 }
             });
         }
         threadPool->waitForTaskComplete(gcThreadCount);
     } else {
         for (int i = 0; i < evacuationQue.size(); i++) {
-            evacuationQue[i]->triggerRelocation(this);
+            evacuationQue[i]->triggerRelocation(this, enableReclaim);
         }
     }
 
     if (enableReclaim) {
-        // TODO: reclaim
-        // 小region按每个pooIdx的数量成正比的概率分配
+        // 小region按每poolIdx的数量成正比的概率分配
         std::vector<int> small_que_sizes;
         for (int i = 0; i < poolCount; i++) {
             if constexpr (!useConcurrentLinkedList) {

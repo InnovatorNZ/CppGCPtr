@@ -112,8 +112,6 @@ public:
     bool inside_region(void*, size_t = 0) const;
 
     void reclaim();
-
-    // TODO: 要不要加个reclaim，重新利用已被释放的region？
 };
 
 
