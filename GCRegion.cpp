@@ -84,24 +84,6 @@ float GCRegion::getFreeRatio() const {
     return (float) (1.0 - (double) allocated_offset / (double) total_size);
 }
 
-GCRegion::GCRegion(GCRegion&& other) : regionType(other.regionType), startAddress(other.startAddress),
-                                       total_size(other.total_size), bitmap(std::move(other.bitmap)),
-                                       largeRegionMarkState(other.largeRegionMarkState),
-                                       allFreeFlag(other.allFreeFlag) {
-    std::unique_lock lock(other.region_mtx);
-    this->allocated_offset.store(other.allocated_offset.load());
-    this->live_size.store(other.live_size.load());
-    this->evacuated.store(other.evacuated.load());
-    other.startAddress = nullptr;
-    other.total_size = 0;
-    other.allocated_offset = 0;
-}
-
-bool GCRegion::operator==(const GCRegion& other) const {
-    return this->startAddress == other.startAddress && this->regionType == other.regionType
-           && this->total_size == other.total_size;
-}
-
 void GCRegion::mark(void* object_addr, size_t object_size) {
     if (regionType == RegionEnum::LARGE) {
         this->largeRegionMarkState = GCPhase::getCurrentMarkStateBit();
@@ -179,17 +161,13 @@ void GCRegion::clearUnmarked() {
     if (allFreeFlag == 0) allFreeFlag = 1;
 }
 
-void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator, bool reclaim) {
+void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
     if (regionType == RegionEnum::LARGE) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
     evacuated = true;
     if (this->canFree()) {      // 已经没有存活对象了
-        if (reclaim)
-            this->reclaim();
-        else
-            this->free();
         return;
     }
     auto bitMapIterator = bitmap->getIterator();
@@ -207,10 +185,6 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator, bool reclaim
             throw std::exception();    // 多线程情况下会误判吗？按理说是不应该在region被转移的过程中继续分配对象的
         }
     }
-    if (reclaim)
-        this->reclaim();
-    else
-        this->free();
 }
 
 void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllocator* memoryAllocator) {
@@ -270,8 +244,21 @@ void GCRegion::reclaim() {
     // memset(this->bitmap.get(), 0, allocated_offset);
     // bitmap->clear();
     allFreeFlag = 0;
+    largeRegionMarkState = MarkStateBit::REMAPPED;
     allocated_offset = 0;
+    live_size = 0;
     evacuated = false;
+}
+
+GCRegion::GCRegion(GCRegion&& other) noexcept :
+        regionType(other.regionType), startAddress(other.startAddress), total_size(other.total_size),
+        bitmap(std::move(other.bitmap)), largeRegionMarkState(other.largeRegionMarkState), allFreeFlag(other.allFreeFlag) {
+    this->allocated_offset.store(other.allocated_offset.load());
+    this->live_size.store(other.live_size.load());
+    this->evacuated.store(other.evacuated.load());
+    other.startAddress = nullptr;
+    other.total_size = 0;
+    other.allocated_offset = 0;
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCRegion::queryForwardingTable(void* ptr) {

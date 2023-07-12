@@ -260,14 +260,14 @@ void GCMemoryAllocator::triggerRelocation() {
                 size_t startIndex = tid * snum;
                 size_t endIndex = (tid == gcThreadCount - 1) ? evacuationQue.size() : (tid + 1) * snum;
                 for (size_t j = startIndex; j < endIndex; j++) {
-                    evacuationQue[j]->triggerRelocation(this, enableReclaim);
+                    evacuationQue[j]->triggerRelocation(this);
                 }
             });
         }
         threadPool->waitForTaskComplete(gcThreadCount);
     } else {
         for (int i = 0; i < evacuationQue.size(); i++) {
-            evacuationQue[i]->triggerRelocation(this, enableReclaim);
+            evacuationQue[i]->triggerRelocation(this);
         }
     }
 
@@ -286,35 +286,57 @@ void GCMemoryAllocator::triggerRelocation() {
         std::discrete_distribution dist(small_que_sizes.begin(), small_que_sizes.end());
 
         for (auto& region : evacuationQue) {
+            std::shared_ptr<GCRegion> inherit_region =
+                std::make_shared<GCRegion>(
+                    std::move(*region.get()));
+            inherit_region->reclaim();
             switch (region->getRegionType()) {
                 case RegionEnum::SMALL: {
                     int poolIdx = dist(gen);
                     if constexpr (!useConcurrentLinkedList) {
                         std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[poolIdx]);
-                        smallRegionQues[poolIdx].emplace_back(region);
+                        smallRegionQues[poolIdx].emplace_back(inherit_region);
                     } else {
-                        smallRegionLists[poolIdx].push_head(region);
+                        smallRegionLists[poolIdx].push_head(inherit_region);
                     }
                 }
                     break;
                 case RegionEnum::MEDIUM: {
                     if constexpr (!useConcurrentLinkedList) {
                         std::unique_lock<std::shared_mutex> lock(mediumRegionQueMtx);
-                        mediumRegionQue.emplace_back(region);
+                        mediumRegionQue.emplace_back(inherit_region);
                     } else {
-                        mediumRegionList.push_head(region);
+                        mediumRegionList.push_head(inherit_region);
                     }
                 }
                     break;
                 case RegionEnum::TINY: {
                     if constexpr (!useConcurrentLinkedList) {
                         std::unique_lock<std::shared_mutex> lock(tinyRegionQueMtx);
-                        tinyRegionQue.emplace_back(region);
+                        tinyRegionQue.emplace_back(inherit_region);
                     } else {
-                        tinyRegionList.push_head(region);
+                        tinyRegionList.push_head(inherit_region);
                     }
                 }
                     break;
+            }
+        }
+    } else {
+        if (enableParallelClear) {
+            size_t snum = evacuationQue.size() / gcThreadCount;
+            for (int tid = 0; tid < gcThreadCount; tid++) {
+                threadPool->execute([this, tid, snum] {
+                    size_t startIndex = tid * snum;
+                    size_t endIndex = (tid == gcThreadCount - 1) ? evacuationQue.size() : (tid + 1) * snum;
+                    for (size_t j = startIndex; j < endIndex; j++) {
+                        evacuationQue[j]->free();
+                    }
+                });
+            }
+            threadPool->waitForTaskComplete(gcThreadCount);
+        } else {
+            for (auto& region : evacuationQue) {
+                region->free();
             }
         }
     }

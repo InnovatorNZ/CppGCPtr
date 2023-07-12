@@ -45,7 +45,6 @@ private:
     RegionEnum regionType;
     MarkStateBit largeRegionMarkState;      // only used in large region
     std::unique_ptr<GCBitMap> bitmap;
-    std::mutex region_mtx;
     std::unordered_map<void*, std::pair<void*, std::shared_ptr<GCRegion>>> forwarding_table;
     std::shared_mutex forwarding_table_mutex;
     short allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
@@ -65,9 +64,7 @@ public:
 
     GCRegion(const GCRegion&) = delete;
 
-    GCRegion(GCRegion&&);
-
-    bool operator==(const GCRegion&) const;
+    GCRegion(GCRegion&&) noexcept;
 
     size_t getTotalSize() const { return total_size; }
 
@@ -103,7 +100,7 @@ public:
 
     void resetLiveSize() { live_size = 0; }
 
-    void triggerRelocation(IMemoryAllocator*, bool reclaim = false);
+    void triggerRelocation(IMemoryAllocator*);
 
     void relocateObject(void*, size_t, IMemoryAllocator*);
 
