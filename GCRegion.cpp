@@ -40,10 +40,10 @@ void* GCRegion::allocate(size_t size) {
         }
     }
     if (GCPhase::duringGC()) {
-        if (bitmap->mark(object_addr, size, GCPhase::getCurrentMarkStateBit()))
-            live_size += size;
+        bitmap->mark(object_addr, size, GCPhase::getCurrentMarkStateBit(), true);
+        live_size += size;
     } else {
-        bitmap->mark(object_addr, size, MarkStateBit::REMAPPED);
+        bitmap->mark(object_addr, size, MarkStateBit::REMAPPED, true);
     }
     return object_addr;
 }
@@ -193,7 +193,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator, bool reclaim
         return;
     }
     auto bitMapIterator = bitmap->getIterator();
-    while (bitMapIterator.MoveNext()) {
+    while (bitMapIterator.MoveNext() && bitMapIterator.getCurrentOffset() < allocated_offset) {
         GCBitMap::BitStatus bitStatus = bitMapIterator.current();
         MarkStateBit& markState = bitStatus.markState;
         void* object_addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
@@ -203,11 +203,8 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator, bool reclaim
         } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
             // 非存活对象统一标记为REMAPPED；之所以不能标记为NOT_ALLOCATED是因为仍然需要size信息遍历bitmap
             bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
-        } else if (markState == MarkStateBit::NOT_ALLOCATED) {
-            // TODO: 改用p_offset（allocated_offset）作为break的判断依据
-            if (bitMapIterator.getCurrentOffset() >= allocated_offset) break;
-            else if (regionType == RegionEnum::TINY);
-            else throw std::exception();    // 多线程情况下可能会误判
+        } else if (markState == MarkStateBit::NOT_ALLOCATED && regionType != RegionEnum::TINY) {
+            throw std::exception();    // 多线程情况下会误判吗？按理说是不应该在region被转移的过程中继续分配对象的
         }
     }
     if (reclaim)
@@ -270,8 +267,9 @@ void GCRegion::free() {
 }
 
 void GCRegion::reclaim() {
-    //memset(this->bitmap.get(), 0, allocated_offset);
-    bitmap->clear();
+    // memset(this->bitmap.get(), 0, allocated_offset);
+    // bitmap->clear();
+    allFreeFlag = 0;
     allocated_offset = 0;
     evacuated = false;
 }

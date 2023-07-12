@@ -1,8 +1,7 @@
 #include "GCBitMap.h"
 
 GCBitMap::GCBitMap(void* region_start_addr, size_t region_size, bool mark_obj_size, int region_to_bitmap_ratio) :
-        region_start_addr(region_start_addr), region_to_bitmap_ratio(region_to_bitmap_ratio),
-        mark_obj_size(mark_obj_size), mark_high_bit(false) {
+        region_start_addr(region_start_addr), region_to_bitmap_ratio(region_to_bitmap_ratio), mark_obj_size(mark_obj_size) {
     int bitmap_size_ = ceil((double)region_size / (double)region_to_bitmap_ratio * SINGLE_OBJECT_MARKBIT / 8);
     this->bitmap_size = bitmap_size_;
     this->bitmap_arr = std::make_unique<std::atomic<unsigned char>[]>(bitmap_size_);
@@ -27,7 +26,7 @@ GCBitMap::GCBitMap(GCBitMap&& other) noexcept: region_to_bitmap_ratio(other.regi
     other.region_start_addr = nullptr;
 }
 
-bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit state) {
+bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit state, bool overwrite) {
     if (bitmap_arr == nullptr) return false;
     object_size = alignUpSize(object_size);
     int offset = static_cast<int>(reinterpret_cast<char*>(object_addr) - reinterpret_cast<char*>(region_start_addr));
@@ -46,10 +45,12 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
         unsigned char reserve_mask = ~(3 << offset_bit);
         while (true) {
             unsigned char c_value = bitmap_arr[offset_byte].load();
-            unsigned char c_markstate = c_value >> offset_bit & 3;
-            if (c_markstate == ch_state) {  // someone beats us
-                std::clog << "Bitmap marking found someone beats us at " << object_addr << std::endl;
-                return false;
+            if (!overwrite) {
+                unsigned char c_markstate = c_value >> offset_bit & 3;
+                if (c_markstate == ch_state) {
+                    std::clog << "Bitmap found already marked at " << object_addr << std::endl;
+                    return false;
+                }
             }
             unsigned char other_value = c_value & reserve_mask;
             unsigned char final_result = other_value | ch_state << offset_bit;
@@ -59,8 +60,7 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
         }
         // 对象大小嵌入位图中
         if (mark_obj_size) {
-            unsigned int ori_obj_size = *reinterpret_cast<unsigned int*>(bitmap_arr.get() + offset_byte + 1);
-            if (ori_obj_size == 0) {
+            auto mark_obj_size_func = [this, offset_byte, object_size] {
                 unsigned char s0 = object_size & 0xff;
                 unsigned char s1 = object_size >> 8 & 0xff;
                 unsigned char s2 = object_size >> 16 & 0xff;
@@ -69,8 +69,16 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
                 bitmap_arr[offset_byte + 2] = s1;
                 bitmap_arr[offset_byte + 3] = s2;
                 bitmap_arr[offset_byte + 4] = s3;
-            } else if (ori_obj_size != object_size) {
-                std::clog << "Different object size found in bitmap! original: " << ori_obj_size << ", target: " << object_size << std::endl;
+            };
+            if (!overwrite) {
+                unsigned int ori_obj_size = *reinterpret_cast<unsigned int*>(bitmap_arr.get() + offset_byte + 1);
+                if (ori_obj_size != 0 && ori_obj_size != object_size) {
+                    std::clog << "Different object size found in bitmap! original: " << ori_obj_size << ", target: " << object_size << std::endl;
+                } else {
+                    mark_obj_size_func();
+                }
+            } else {
+                mark_obj_size_func();
             }
         }
     }
@@ -119,7 +127,9 @@ unsigned int GCBitMap::alignUpSize(unsigned int size) const {
 }
 
 void GCBitMap::clear() {
-    // ::memset(this->bitmap_arr.get(), 0, sizeof(/*...*/));
+    // 非必要不使用此函数
+    throw std::logic_error("Deprecated of GCBitmap::clear()");
+    // memset(this->bitmap_arr.get(), 0, sizeof(...));
     BitMapIterator iterator = getIterator();
     while (iterator.MoveNext()) {
         BitStatus bitstatus = iterator.current();
