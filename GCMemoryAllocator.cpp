@@ -2,11 +2,10 @@
 
 const size_t GCMemoryAllocator::INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
 
-GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableParallelClear, bool enableReclaim,
+GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableParallelClear,
                                      int gcThreadCount, ThreadPoolExecutor* gcThreadPool) {
     this->enableInternalMemoryManager = useInternalMemoryManager;
     this->enableParallelClear = enableParallelClear;
-    this->enableReclaim = enableReclaim;
     this->gcThreadCount = gcThreadCount;
     this->threadPool = gcThreadPool;
     this->poolCount = std::thread::hardware_concurrency();
@@ -248,7 +247,7 @@ void GCMemoryAllocator::triggerClear() {
     }
 }
 
-void GCMemoryAllocator::triggerRelocation() {
+void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
     if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
         std::cerr << "Wrong phase, should in sweeping phase to trigger relocation." << std::endl;
         return;
@@ -287,8 +286,7 @@ void GCMemoryAllocator::triggerRelocation() {
 
         for (auto& region : evacuationQue) {
             std::shared_ptr<GCRegion> inherit_region =
-                std::make_shared<GCRegion>(
-                    std::move(*region.get()));
+                std::make_shared<GCRegion>(std::move(*region));
             inherit_region->reclaim();
             switch (region->getRegionType()) {
                 case RegionEnum::SMALL: {

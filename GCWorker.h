@@ -57,7 +57,7 @@ private:
 
     GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport = true,
              bool useInlineMarkState = true, bool useInternalMemoryManager = false,
-             bool enableRelocation = false, bool enableParallel = false, bool enableReclaim = true);
+             bool enableRelocation = false, bool enableParallel = false, bool enableReclaim = false);
 
     void mark(void*);
 
@@ -158,7 +158,7 @@ namespace gc {
     void init(bool concurrent, bool useBitmap,
               bool enableRelocation = false, bool enableParallelGC = false,
               bool enableDestructorSupport = false, bool useInlineMarkState = false,
-              bool useInternalMemoryManager = false);
+              bool enableReclaim = false, bool useInternalMemoryManager = false);
 }
 
 #endif //CPPGCPTR_GCWORKER_H

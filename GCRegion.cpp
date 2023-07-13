@@ -241,8 +241,6 @@ void GCRegion::free() {
 }
 
 void GCRegion::reclaim() {
-    // memset(this->bitmap.get(), 0, allocated_offset);
-    // bitmap->clear();
     allFreeFlag = 0;
     largeRegionMarkState = MarkStateBit::REMAPPED;
     allocated_offset = 0;

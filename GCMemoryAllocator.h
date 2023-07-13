@@ -22,7 +22,6 @@ private:
     static constexpr bool useConcurrentLinkedList = false;
     bool enableInternalMemoryManager;
     bool enableParallelClear;
-    bool enableReclaim;
     unsigned int gcThreadCount;
     unsigned int poolCount;
     std::vector<GCMemoryManager> memoryPools;
@@ -72,7 +71,7 @@ private:
     int getPoolIdx() const;
 
 public:
-    GCMemoryAllocator(bool useInternalMemoryManager = false, bool enableParallelClear = false, bool enableReclaim = false,
+    GCMemoryAllocator(bool useInternalMemoryManager = false, bool enableParallelClear = false,
                       int gcThreadCount = 0, ThreadPoolExecutor* = nullptr);
 
     std::pair<void*, std::shared_ptr<GCRegion>> allocate(size_t size) override;
@@ -81,7 +80,7 @@ public:
 
     void SelectRelocationSet();
 
-    void triggerRelocation();
+    void triggerRelocation(bool enableReclaim = false);
 
     void resetLiveSize();
 };

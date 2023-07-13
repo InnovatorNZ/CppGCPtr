@@ -33,9 +33,9 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport
         this->threadPool = nullptr;
     }
     if (enableParallel)
-        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager, true, enableReclaim, gcThreadCount, threadPool.get());
+        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager, true, gcThreadCount, threadPool.get());
     else
-        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager, false, enableReclaim);
+        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
     if (concurrent) {
         this->gc_thread = std::make_unique<std::thread>(&GCWorker::GCThreadLoop, this);
     } else {
@@ -398,7 +398,7 @@ void GCWorker::beginSweep() {
             }
         } else {
             if (enableRelocation)
-                memoryAllocator->triggerRelocation();
+                memoryAllocator->triggerRelocation(enableReclaim);
             else
                 memoryAllocator->triggerClear();
         }
@@ -470,8 +470,8 @@ namespace gc {
     }
 
     void init(bool concurrent, bool useBitmap, bool enableRelocation, bool enableParallelGC,
-              bool enableDestructorSupport, bool useInlineMarkState, bool useInternalMemoryManager) {
+              bool enableDestructorSupport, bool useInlineMarkState, bool enableReclaim, bool useInternalMemoryManager) {
         GCWorker::init(concurrent, useBitmap, enableDestructorSupport, useInlineMarkState, useInternalMemoryManager, enableRelocation,
-                       enableParallelGC);
+                       enableParallelGC, enableReclaim);
     }
 }

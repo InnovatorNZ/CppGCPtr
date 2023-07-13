@@ -126,20 +126,6 @@ unsigned int GCBitMap::alignUpSize(unsigned int size) const {
     return size;
 }
 
-void GCBitMap::clear() {
-    // 非必要不使用此函数
-    throw std::logic_error("Deprecated of GCBitmap::clear()");
-    // memset(this->bitmap_arr.get(), 0, sizeof(...));
-    BitMapIterator iterator = getIterator();
-    while (iterator.MoveNext()) {
-        BitStatus bitstatus = iterator.current();
-        if (bitstatus.markState == MarkStateBit::NOT_ALLOCATED)
-            break;
-        void* c_addr = (char*)region_start_addr + iterator.getCurrentOffset();
-        this->mark(c_addr, 0, MarkStateBit::NOT_ALLOCATED);
-    }
-}
-
 void GCBitMap::addr_to_bit(void* addr, int& offset_byte, int& offset_bit) const {
     int offset = static_cast<int>(reinterpret_cast<char*>(addr) - reinterpret_cast<char*>(region_start_addr));
     offset = offset * SINGLE_OBJECT_MARKBIT / region_to_bitmap_ratio;
