@@ -4,15 +4,18 @@ GCBitMap::GCBitMap(void* region_start_addr, size_t region_size, bool mark_obj_si
         region_start_addr(region_start_addr), region_to_bitmap_ratio(region_to_bitmap_ratio), mark_obj_size(mark_obj_size) {
     int bitmap_size_ = ceil((double)region_size / (double)region_to_bitmap_ratio * SINGLE_OBJECT_MARKBIT / 8);
     this->bitmap_size = bitmap_size_;
-    this->bitmap_arr = std::make_unique<std::atomic<unsigned char>[]>(bitmap_size_);
+    this->bitmap_arr = static_cast<std::atomic<unsigned char>*>(::malloc(bitmap_size_ * sizeof(std::atomic<unsigned char>)));
 }
 
-GCBitMap::~GCBitMap() = default;
+GCBitMap::~GCBitMap() {
+    ::free(this->bitmap_arr);
+    this->bitmap_arr = nullptr;
+}
 
 GCBitMap::GCBitMap(const GCBitMap& other) : region_to_bitmap_ratio(other.region_to_bitmap_ratio), mark_obj_size(other.mark_obj_size) {
     this->bitmap_size = other.bitmap_size;
     this->region_start_addr = other.region_start_addr;
-    this->bitmap_arr = std::make_unique<std::atomic<unsigned char>[]>(bitmap_size);
+    this->bitmap_arr = static_cast<std::atomic<unsigned char>*>(::malloc(bitmap_size * sizeof(std::atomic<unsigned char>)));
     for (int i = 0; i < bitmap_size; i++)
         this->bitmap_arr[i].store(other.bitmap_arr[i].load());
 }
@@ -71,7 +74,7 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
                 bitmap_arr[offset_byte + 4] = s3;
             };
             if (!overwrite) {
-                unsigned int ori_obj_size = *reinterpret_cast<unsigned int*>(bitmap_arr.get() + offset_byte + 1);
+                unsigned int ori_obj_size = *reinterpret_cast<unsigned int*>(bitmap_arr + offset_byte + 1);
                 if (ori_obj_size != 0 && ori_obj_size != object_size) {
                     std::clog << "Different object size found in bitmap! original: " << ori_obj_size << ", target: " << object_size << std::endl;
                 } else {

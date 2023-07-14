@@ -21,7 +21,7 @@ private:
     bool mark_obj_size;                     // 是否在位图中标记对象大小
     const bool mark_high_bit = false;       // 是否在位图中标记高位
     void* region_start_addr;
-    std::unique_ptr<std::atomic<unsigned char>[]> bitmap_arr;
+    std::atomic<unsigned char>* bitmap_arr;
 #if USE_SINGLE_OBJECT_MAP
     std::unordered_set<void*> single_size_set;      // 存放size<=1byte的对象，由于其无法在bitmap占用头尾标识
     std::mutex single_size_set_mtx;
