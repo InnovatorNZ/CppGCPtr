@@ -204,6 +204,12 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         std::shared_ptr<GCRegion>& new_region = smallReclaimQues[pool_idx].back();
                         if (smallAllocatingRegions[pool_idx].compare_exchange_weak(region, new_region)) {
                             smallReclaimQues[pool_idx].pop_back();
+                            if constexpr (!useConcurrentLinkedList) {
+                                std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[pool_idx]);
+                                smallRegionQues[pool_idx].emplace_back(new_region);
+                            } else {
+                                smallRegionLists[pool_idx].push_head(new_region);
+                            }
                         }
                         continue;
                     }
@@ -420,12 +426,6 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
                     {
                         std::unique_lock<std::mutex> lock(smallReclaimMtxs[poolIdx]);
                         smallReclaimQues[poolIdx].push_back(inherit_region);
-                    }
-                    if constexpr (!useConcurrentLinkedList) {
-                        std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[poolIdx]);
-                        smallRegionQues[poolIdx].emplace_back(inherit_region);
-                    } else {
-                        smallRegionLists[poolIdx].push_head(inherit_region);
                     }
                 }
                     break;
