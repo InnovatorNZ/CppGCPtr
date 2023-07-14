@@ -38,157 +38,48 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate(size_t s
     }
 }
 
-std::pair<void*, std::shared_ptr<GCRegion>>
-GCMemoryAllocator::tryAllocateFromExistingRegion(size_t size, ConcurrentLinkedList<std::shared_ptr<GCRegion>>& regionList) {
-    auto iterator = regionList.getRemovableIterator();
-    while (iterator->MoveNext()) {
-        std::shared_ptr<GCRegion> region = iterator->current();
-        void* addr = region->allocate(size);
-        if (addr != nullptr) return std::make_pair(addr, region);
-    }
-    return std::make_pair(nullptr, nullptr);
-}
-
-std::pair<void*, std::shared_ptr<GCRegion>>
-GCMemoryAllocator::tryAllocateFromExistingRegion(size_t size, std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
-    std::shared_lock<std::shared_mutex> lock(regionQueMtx);
-    for (int i = regionQue.size() - 1; i >= 0; i--) {
-        std::shared_ptr<GCRegion>& region = regionQue[i];
-        if (GCPhase::duringMarking() && region->needEvacuate()) continue;
-        void* addr = region->allocate(size);
-        if (addr != nullptr) return std::make_pair(addr, region);
-    }
-    return std::make_pair(nullptr, nullptr);
-}
-
-void GCMemoryAllocator::allocate_new_region(RegionEnum regionType) {
-    size_t regionSize;
-    switch (regionType) {
-        case RegionEnum::SMALL:
-            regionSize = GCRegion::SMALL_REGION_SIZE;
-            break;
-        case RegionEnum::MEDIUM:
-            regionSize = GCRegion::MEDIUM_REGION_SIZE;
-            break;
-        case RegionEnum::TINY:
-            regionSize = GCRegion::TINY_REGION_SIZE;
-            break;
-        default:
-            regionSize = 0;
-            break;
-    }
-    allocate_new_region(regionType, regionSize);
-}
-
-void GCMemoryAllocator::allocate_new_region(RegionEnum regionType, size_t regionSize) {
-    // 为啥不能直接调用操作系统的malloc获取region的内存？为啥还要搞个全局freelist？
-    void* new_region_memory = this->allocate_new_memory(regionSize);
-    std::shared_ptr<GCRegion> region_ptr = std::make_shared<GCRegion>(regionType, new_region_memory, regionSize);
-
-    switch (regionType) {
-        case RegionEnum::SMALL: {
-            int pool_idx = getPoolIdx();
-            if constexpr (useConcurrentLinkedList) {
-                smallRegionLists[pool_idx].push_head(region_ptr);
-            } else {
-                std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[pool_idx]);
-                smallRegionQues[pool_idx].emplace_back(region_ptr);
-            }
-        }
-            break;
-        case RegionEnum::MEDIUM:
-            if constexpr (useConcurrentLinkedList) {
-                mediumRegionList.push_head(region_ptr);
-            } else {
-                std::unique_lock<std::shared_mutex> lock(mediumRegionQueMtx);
-                mediumRegionQue.emplace_back(region_ptr);
-            }
-            break;
-        case RegionEnum::TINY:
-            if constexpr (useConcurrentLinkedList) {
-                tinyRegionList.push_head(region_ptr);
-            } else {
-                std::unique_lock<std::shared_mutex> lock(tinyRegionQueMtx);
-                tinyRegionQue.emplace_back(region_ptr);
-            }
-            break;
-        case RegionEnum::LARGE:
-            if constexpr (useConcurrentLinkedList) {
-                largeRegionList.push_head(region_ptr);
-            } else {
-                std::unique_lock<std::shared_mutex> lock(largeRegionQueMtx);
-                largeRegionQue.emplace_back(region_ptr);
-            }
-            break;
-    }
-}
-
 std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType) {
     if (size == 0) return std::make_pair(nullptr, nullptr);
     while (true) {
         // 从已有region中寻找空闲区域
         std::shared_ptr<GCRegion> region;
-        if constexpr (useConcurrentLinkedList) {
-            throw std::invalid_argument("allocate_from_region() is not implemented yet for concurrent linked list");
-#if 0
-            switch (regionType) {
-                case RegionEnum::SMALL:
-                    ret = this->tryAllocateFromExistingRegion(size, this->smallRegionLists[getPoolIdx()]);
-                    if (ret.first != nullptr) return ret;
-                    for (int i = 0; i < poolCount; i++) {
-                        ret = this->tryAllocateFromExistingRegion(size, this->smallRegionLists[i]);
-                        if (ret.first != nullptr) return ret;
-                    }
-                    break;
-                case RegionEnum::MEDIUM:
-                    ret = this->tryAllocateFromExistingRegion(size, this->mediumRegionList);
-                    break;
-                case RegionEnum::TINY:
-                    ret = this->tryAllocateFromExistingRegion(size, this->tinyRegionList);
-                    break;
-                case RegionEnum::LARGE:
-                    // 分配Large的时候不会从已有region里找，直接分配新的一块region
-                    break;
-            }
-#endif
-        } else {
-            switch (regionType) {
-                case RegionEnum::SMALL: {
-                    // 尝试从线程所属pool拿
-                    int pool_idx = getPoolIdx();
-                    region = this->smallAllocatingRegions[pool_idx].load();
-                    if (region != nullptr) {
-                        void* addr = region->allocate(size);
-                        if (addr != nullptr) return std::make_pair(addr, region);
-                    }
-                    // 当前线程的pool没有，尝试从别的线程的拿
-                    for (int i = 0; i < poolCount; i++) {
-                        std::shared_ptr<GCRegion> region_ = this->smallAllocatingRegions[i].load();
-                        if (region_ != nullptr) {
-                            void* addr = region_->allocate(size);
-                            if (addr != nullptr) return std::make_pair(addr, region_);
-                        }
+
+        switch (regionType) {
+            case RegionEnum::SMALL: {
+                // 尝试从线程所属pool拿
+                int pool_idx = getPoolIdx();
+                region = this->smallAllocatingRegions[pool_idx].load();
+                if (region != nullptr) {
+                    void* addr = region->allocate(size);
+                    if (addr != nullptr) return std::make_pair(addr, region);
+                }
+                // 当前线程的pool没有，尝试从别的线程的拿
+                for (int i = 0; i < poolCount; i++) {
+                    std::shared_ptr<GCRegion> region_ = this->smallAllocatingRegions[i].load();
+                    if (region_ != nullptr) {
+                        void* addr = region_->allocate(size);
+                        if (addr != nullptr) return std::make_pair(addr, region_);
                     }
                 }
-                    break;
-                case RegionEnum::MEDIUM:
-                    region = this->mediumAllocatingRegion.load();
-                    if (region != nullptr) {
-                        void* addr = region->allocate(size);
-                        if (addr != nullptr) return std::make_pair(addr, region);
-                    }
-                    break;
-                case RegionEnum::TINY:
-                    region = this->tinyAllocatingRegion.load();
-                    if (region != nullptr) {
-                        void* addr = region->allocate(size);
-                        if (addr != nullptr) return std::make_pair(addr, region);
-                    }
-                    break;
-                case RegionEnum::LARGE:
-                    // 分配Large的时候不会从已有region里找，直接分配新的一块region
-                    break;
             }
+                break;
+            case RegionEnum::MEDIUM:
+                region = this->mediumAllocatingRegion.load();
+                if (region != nullptr) {
+                    void* addr = region->allocate(size);
+                    if (addr != nullptr) return std::make_pair(addr, region);
+                }
+                break;
+            case RegionEnum::TINY:
+                region = this->tinyAllocatingRegion.load();
+                if (region != nullptr) {
+                    void* addr = region->allocate(size);
+                    if (addr != nullptr) return std::make_pair(addr, region);
+                }
+                break;
+            case RegionEnum::LARGE:
+                // 分配Large的时候不会从已有region里找，直接分配新的一块region
+                break;
         }
 
         // 当前region不够，尝试分配新region
@@ -222,7 +113,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         smallRegionQues[pool_idx].emplace_back(new_region);
                     }
                 } else {
-                    std::clog << "Undo allocating due to someone beats us." << std::endl;
+                    std::clog << "Undo allocating new region as someone beats us." << std::endl;
                     new_region->free();
                 }
             }

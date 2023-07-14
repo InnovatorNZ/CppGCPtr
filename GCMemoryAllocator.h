@@ -49,14 +49,6 @@ private:
 
     std::pair<void*, std::shared_ptr<GCRegion>> allocate_from_region(size_t size, RegionEnum regionType);
 
-    std::pair<void*, std::shared_ptr<GCRegion>> tryAllocateFromExistingRegion(size_t, ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
-
-    std::pair<void*, std::shared_ptr<GCRegion>> tryAllocateFromExistingRegion(size_t, std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
-
-    void allocate_new_region(RegionEnum regionType);
-
-    void allocate_new_region(RegionEnum regionType, size_t regionSize);
-
     void* allocate_new_memory(size_t size);
 
     void* allocate_from_freelist(size_t size);
