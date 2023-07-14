@@ -17,6 +17,9 @@ GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableP
             this->memoryPools.emplace_back(c_address, INITIAL_SINGLE_SIZE);
         }
     }
+    this->smallAllocatingRegions = std::make_unique<std::atomic<std::shared_ptr<GCRegion>>[]>(poolCount);
+    this->smallReclaimQues.resize(poolCount);
+    this->smallReclaimMtxs = std::make_unique<std::mutex[]>(poolCount);
     if constexpr (useConcurrentLinkedList) {
         this->smallRegionLists = std::make_unique<ConcurrentLinkedList<std::shared_ptr<GCRegion>>[]>(poolCount);
     } else {
@@ -126,8 +129,11 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
     if (size == 0) return std::make_pair(nullptr, nullptr);
     while (true) {
         // 从已有region中寻找空闲区域
-        std::pair<void*, std::shared_ptr<GCRegion>> ret{nullptr, nullptr};
+        // std::pair<void*, std::shared_ptr<GCRegion>> ret{nullptr, nullptr};
+        std::shared_ptr<GCRegion> region;
         if constexpr (useConcurrentLinkedList) {
+            throw std::invalid_argument("allocate_from_region() is not implemented yet for concurrent linked list");
+#if 0
             switch (regionType) {
                 case RegionEnum::SMALL:
                     ret = this->tryAllocateFromExistingRegion(size, this->smallRegionLists[getPoolIdx()]);
@@ -147,35 +153,155 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                     // 分配Large的时候不会从已有region里找，直接分配新的一块region
                     break;
             }
+#endif
         } else {
             switch (regionType) {
                 case RegionEnum::SMALL: {
+                    // 尝试从线程所属pool拿
                     int pool_idx = getPoolIdx();
-                    ret = this->tryAllocateFromExistingRegion(size, smallRegionQues[pool_idx], smallRegionQueMtxs[pool_idx]);
-                    if (ret.first != nullptr) return ret;
+                    region = this->smallAllocatingRegions[pool_idx].load();
+                    if (region != nullptr) {
+                        void* addr = region->allocate(size);
+                        if (addr != nullptr) return std::make_pair(addr, region);
+                    }
+                    // 当前线程的pool没有，尝试从别的线程的拿
                     for (int i = 0; i < poolCount; i++) {
-                        ret = this->tryAllocateFromExistingRegion(size, this->smallRegionQues[i], this->smallRegionQueMtxs[i]);
-                        if (ret.first != nullptr) return ret;
+                        std::shared_ptr<GCRegion> region_ = this->smallAllocatingRegions[i].load();
+                        if (region_ != nullptr) {
+                            void* addr = region_->allocate(size);
+                            if (addr != nullptr) return std::make_pair(addr, region_);
+                        }
                     }
                 }
                     break;
                 case RegionEnum::MEDIUM:
-                    ret = this->tryAllocateFromExistingRegion(size, this->mediumRegionQue, this->mediumRegionQueMtx);
+                    region = this->mediumAllocatingRegion.load();
+                    if (region != nullptr) {
+                        void* addr = region->allocate(size);
+                        if (addr != nullptr) return std::make_pair(addr, region);
+                    }
                     break;
                 case RegionEnum::TINY:
-                    ret = this->tryAllocateFromExistingRegion(size, this->tinyRegionQue, this->tinyRegionQueMtx);
+                    region = this->tinyAllocatingRegion.load();
+                    if (region != nullptr) {
+                        void* addr = region->allocate(size);
+                        if (addr != nullptr) return std::make_pair(addr, region);
+                    }
                     break;
                 case RegionEnum::LARGE:
                     // 分配Large的时候不会从已有region里找，直接分配新的一块region
                     break;
             }
         }
-        if (ret.first != nullptr) return ret;
-        // 所有region都不够，分配新region
-        if (regionType == RegionEnum::LARGE)
-            this->allocate_new_region(regionType, size);
-        else
-            this->allocate_new_region(regionType);
+
+        // 所有region都不够，尝试从reclaim队列中取一个可用的并安装上去
+        if (regionType != RegionEnum::LARGE) {
+            switch (regionType) {
+                case RegionEnum::SMALL: {
+                    int pool_idx = getPoolIdx();
+                    std::unique_lock<std::mutex> lock(smallReclaimMtxs[pool_idx]);
+                    if (!smallReclaimQues[pool_idx].empty()) {
+                        std::shared_ptr<GCRegion>& new_region = smallReclaimQues[pool_idx].back();
+                        if (smallAllocatingRegions[pool_idx].compare_exchange_weak(region, new_region)) {
+                            smallReclaimQues[pool_idx].pop_back();
+                        }
+                        continue;
+                    }
+                }
+                    break;
+                case RegionEnum::MEDIUM: {
+                    std::unique_lock<std::mutex> lock(mediumReclaimMtx);
+                    if (!mediumReclaimQue.empty()) {
+                        std::shared_ptr<GCRegion>& new_region = mediumReclaimQue.back();
+                        if (mediumAllocatingRegion.compare_exchange_weak(region, new_region)) {
+                            mediumReclaimQue.pop_back();
+                        }
+                        continue;
+                    }
+                }
+                    break;
+                case RegionEnum::TINY: {
+                    std::unique_lock<std::mutex> lock(tinyReclaimMtx);
+                    if (!tinyReclaimQue.empty()) {
+                        std::shared_ptr<GCRegion>& new_region = tinyReclaimQue.back();
+                        if (tinyAllocatingRegion.compare_exchange_weak(region, new_region)) {
+                            tinyReclaimQue.pop_back();
+                        }
+                        continue;
+                    }
+                }
+                    break;
+            }
+        }
+
+        // 分配新region
+        size_t regionSize;
+        switch (regionType) {
+            case RegionEnum::SMALL:
+                regionSize = GCRegion::SMALL_REGION_SIZE;
+                break;
+            case RegionEnum::MEDIUM:
+                regionSize = GCRegion::MEDIUM_REGION_SIZE;
+                break;
+            case RegionEnum::TINY:
+                regionSize = GCRegion::TINY_REGION_SIZE;
+                break;
+            default:
+                regionSize = size;
+                break;
+        }
+
+        void* new_region_memory = this->allocate_new_memory(regionSize);
+        std::shared_ptr<GCRegion> new_region = std::make_shared<GCRegion>(regionType, new_region_memory, regionSize);
+
+        switch (regionType) {
+            case RegionEnum::SMALL: {
+                int pool_idx = getPoolIdx();
+                if (!smallAllocatingRegions[pool_idx].compare_exchange_weak(region, new_region)) {
+                    std::unique_lock<std::mutex> lock(smallReclaimMtxs[pool_idx]);
+                    smallReclaimQues[pool_idx].push_back(new_region);
+                }
+                if constexpr (useConcurrentLinkedList) {
+                    smallRegionLists[pool_idx].push_head(new_region);
+                } else {
+                    std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[pool_idx]);
+                    smallRegionQues[pool_idx].emplace_back(new_region);
+                }
+            }
+                break;
+            case RegionEnum::MEDIUM:
+                if (!mediumAllocatingRegion.compare_exchange_weak(region, new_region)) {
+                    std::unique_lock<std::mutex> lock(mediumReclaimMtx);
+                    mediumReclaimQue.push_back(new_region);
+                }
+                if constexpr (useConcurrentLinkedList) {
+                    mediumRegionList.push_head(new_region);
+                } else {
+                    std::unique_lock<std::shared_mutex> lock(mediumRegionQueMtx);
+                    mediumRegionQue.emplace_back(new_region);
+                }
+                break;
+            case RegionEnum::TINY:
+                if (!tinyAllocatingRegion.compare_exchange_weak(region, new_region)) {
+                    std::unique_lock<std::mutex> lock(tinyReclaimMtx);
+                    tinyReclaimQue.push_back(new_region);
+                }
+                if constexpr (useConcurrentLinkedList) {
+                    tinyRegionList.push_head(new_region);
+                } else {
+                    std::unique_lock<std::shared_mutex> lock(tinyRegionQueMtx);
+                    tinyRegionQue.emplace_back(new_region);
+                }
+                break;
+            case RegionEnum::LARGE:
+                if constexpr (useConcurrentLinkedList) {
+                    largeRegionList.push_head(new_region);
+                } else {
+                    std::unique_lock<std::shared_mutex> lock(largeRegionQueMtx);
+                    largeRegionQue.emplace_back(new_region);
+                }
+                break;
+        }
     }
 }
 
@@ -276,7 +402,7 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
         for (int i = 0; i < poolCount; i++) {
             if constexpr (!useConcurrentLinkedList) {
                 small_que_sizes.push_back(smallRegionQues[i].size());
-            } else {        // todo: size of concurrentlinkedlist
+            } else {
                 small_que_sizes.push_back(1);
             }
         }
@@ -286,11 +412,15 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
 
         for (auto& region : evacuationQue) {
             std::shared_ptr<GCRegion> inherit_region =
-                std::make_shared<GCRegion>(std::move(*region));
+                    std::make_shared<GCRegion>(std::move(*region));
             inherit_region->reclaim();
             switch (region->getRegionType()) {
                 case RegionEnum::SMALL: {
                     int poolIdx = dist(gen);
+                    {
+                        std::unique_lock<std::mutex> lock(smallReclaimMtxs[poolIdx]);
+                        smallReclaimQues[poolIdx].push_back(inherit_region);
+                    }
                     if constexpr (!useConcurrentLinkedList) {
                         std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[poolIdx]);
                         smallRegionQues[poolIdx].emplace_back(inherit_region);
@@ -300,6 +430,10 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
                 }
                     break;
                 case RegionEnum::MEDIUM: {
+                    {
+                        std::unique_lock<std::mutex> lock(mediumReclaimMtx);
+                        mediumReclaimQue.push_back(inherit_region);
+                    }
                     if constexpr (!useConcurrentLinkedList) {
                         std::unique_lock<std::shared_mutex> lock(mediumRegionQueMtx);
                         mediumRegionQue.emplace_back(inherit_region);
@@ -309,6 +443,10 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
                 }
                     break;
                 case RegionEnum::TINY: {
+                    {
+                        std::unique_lock<std::mutex> lock(tinyReclaimMtx);
+                        tinyReclaimQue.push_back(inherit_region);
+                    }
                     if constexpr (!useConcurrentLinkedList) {
                         std::unique_lock<std::shared_mutex> lock(tinyRegionQueMtx);
                         tinyRegionQue.emplace_back(inherit_region);
@@ -449,7 +587,7 @@ void GCMemoryAllocator::resetLiveSize() {
                 iterator->current()->resetLiveSize();
             }
         }
-        for (auto regionList : { &mediumRegionList, &tinyRegionList }) {
+        for (auto regionList : {&mediumRegionList, &tinyRegionList}) {
             auto iterator = regionList->getIterator();
             while (iterator->MoveNext()) {
                 iterator->current()->resetLiveSize();
