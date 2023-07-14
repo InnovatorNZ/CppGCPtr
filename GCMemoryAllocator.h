@@ -45,15 +45,7 @@ private:
     std::unique_ptr<std::atomic<std::shared_ptr<GCRegion>>[]> smallAllocatingRegions;
     std::atomic<std::shared_ptr<GCRegion>> mediumAllocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> tinyAllocatingRegion;
-    std::vector<std::vector<std::shared_ptr<GCRegion>>> smallReclaimQues;
-    std::vector<std::shared_ptr<GCRegion>> mediumReclaimQue;
-    std::vector<std::shared_ptr<GCRegion>> tinyReclaimQue;
-    std::unique_ptr<std::mutex[]> smallReclaimMtxs;
-    std::mutex mediumReclaimMtx;
-    std::mutex tinyReclaimMtx;
     std::vector<std::shared_ptr<GCRegion>> evacuationQue;
-    // std::map<void*, std::shared_ptr<GCRegion>> regionMap;
-    // std::shared_mutex regionMapMtx;
 
     std::pair<void*, std::shared_ptr<GCRegion>> allocate_from_region(size_t size, RegionEnum regionType);
 

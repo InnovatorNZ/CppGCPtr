@@ -59,7 +59,7 @@ int main() {
     cout << "Ready to start..." << endl;
     const int n = 25;
     long long time_ = 0;
-    gc::init(true, true, true, true, false, true, true);
+    gc::init(true, true, true, true, false, true, false);
     Sleep(500);
 
     for (int i = 0; i < n; i++) {
