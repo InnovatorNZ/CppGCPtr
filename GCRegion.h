@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include "GCBitMap.h"
 #include "GCPhase.h"
+#include "GCStatus.h"
+#include "GCRegionalHashMap.h"
 #include "PhaseEnum.h"
 #include "IAllocatable.h"
 #include "IMemoryAllocator.h"
@@ -36,6 +38,7 @@ public:
     static const size_t SMALL_REGION_SIZE;
     static const size_t MEDIUM_OBJECT_THRESHOLD;
     static const size_t MEDIUM_REGION_SIZE;
+    static constexpr bool use_regional_hashmap = false;
 private:
     void* startAddress;
     size_t total_size;
@@ -44,16 +47,13 @@ private:
     std::atomic<size_t> live_size;
     RegionEnum regionType;
     MarkStateBit largeRegionMarkState;      // only used in large region
-    std::unique_ptr<GCBitMap> bitmap;
+    std::unique_ptr<GCBitMap> bitmap;                   // bitmap
+    std::unordered_map<void*, GCStatus> object_map;     // regional hashmap
+    std::shared_mutex object_map_mtx;
     std::unordered_map<void*, std::pair<void*, std::shared_ptr<GCRegion>>> forwarding_table;
     std::shared_mutex forwarding_table_mutex;
     short allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
     std::atomic<bool> evacuated;
-
-#if USE_REGINOAL_HASHMAP
-    std::unordered_map<void*, GCStatus> object_map;
-    std::mutex object_map_mtx;
-#endif
 
 public:
     struct GCRegionHash {
@@ -78,7 +78,7 @@ public:
 
     void mark(void* object_addr, size_t object_size);
 
-    bool marked(void* object_addr) const;
+    bool marked(void* object_addr);
 
     float getFragmentRatio() const;
 

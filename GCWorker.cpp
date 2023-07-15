@@ -2,9 +2,6 @@
 
 std::unique_ptr<GCWorker> GCWorker::instance = nullptr;
 
-GCStatus::GCStatus(MarkState _markState, size_t _objectSize) : markState(_markState), objectSize(_objectSize) {
-}
-
 GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
 

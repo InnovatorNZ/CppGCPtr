@@ -149,6 +149,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                     std::unique_lock<std::shared_mutex> lock(largeRegionQueMtx);
                     largeRegionQue.emplace_back(new_region);
                 }
+                return std::make_pair(new_region_memory, new_region);
                 break;
         }
     }

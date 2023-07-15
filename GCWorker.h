@@ -15,17 +15,10 @@
 #include "GCMemoryAllocator.h"
 #include "GCUtil.h"
 #include "ObjectInfo.h"
+#include "GCStatus.h"
 #include "PhaseEnum.h"
 #include "CppExecutor/ThreadPoolExecutor.h"
 #include "CppExecutor/ArrayBlockingQueue.h"
-
-class GCStatus {
-public:
-    MarkState markState;
-    size_t objectSize;
-
-    GCStatus(MarkState _markState, size_t _objectSize);
-};
 
 class GCWorker {
 private:
@@ -50,7 +43,7 @@ private:
     std::unique_ptr<ThreadPoolExecutor> threadPool;
     int gcThreadCount;
     bool enableConcurrentMark, enableParallelGC, useBitmap, useInlineMarkstate,
-        enableRelocation, enableDestructorSupport, enableReclaim;
+            enableRelocation, enableDestructorSupport, enableReclaim;
     volatile bool stop_, ready_;
 
     GCWorker();

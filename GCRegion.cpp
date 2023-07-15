@@ -10,17 +10,19 @@ const size_t GCRegion::MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
 GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size) :
         regionType(regionType), startAddress(startAddress), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
         total_size(total_size), allocated_offset(0), live_size(0), allFreeFlag(0), evacuated(false) {
-    switch (regionType) {
-        case RegionEnum::SMALL:
-        case RegionEnum::MEDIUM:
-            bitmap = std::make_unique<GCBitMap>(startAddress, total_size);
-            break;
-        case RegionEnum::TINY:
-            bitmap = std::make_unique<GCBitMap>(startAddress, total_size, false);
-            break;
-        default:
-            bitmap = nullptr;
-            break;
+    if constexpr (!use_regional_hashmap) {
+        switch (regionType) {
+            case RegionEnum::SMALL:
+            case RegionEnum::MEDIUM:
+                bitmap = std::make_unique<GCBitMap>(startAddress, total_size);
+                break;
+            case RegionEnum::TINY:
+                bitmap = std::make_unique<GCBitMap>(startAddress, total_size, false);
+                break;
+            default:
+                bitmap = nullptr;
+                break;
+        }
     }
 }
 
@@ -40,10 +42,20 @@ void* GCRegion::allocate(size_t size) {
         }
     }
     if (GCPhase::duringGC()) {
-        bitmap->mark(object_addr, size, GCPhase::getCurrentMarkStateBit(), true);
+        if constexpr (use_regional_hashmap) {
+            std::unique_lock<std::shared_mutex> lock(object_map_mtx);
+            object_map.emplace(object_addr, GCStatus{ GCPhase::getCurrentMarkState(), size });
+        } else {
+            bitmap->mark(object_addr, size, GCPhase::getCurrentMarkStateBit(), true);
+        }
         live_size += size;
     } else {
-        bitmap->mark(object_addr, size, MarkStateBit::REMAPPED, true);
+        if constexpr (use_regional_hashmap) {   // todo: 有可能这里不需要
+            std::unique_lock<std::shared_mutex> lock(object_map_mtx);
+            object_map.emplace(object_addr, GCStatus{ MarkState::REMAPPED, size });
+        } else {
+            bitmap->mark(object_addr, size, MarkStateBit::REMAPPED, true);
+        }
     }
     return object_addr;
 }
@@ -67,8 +79,16 @@ void GCRegion::free(void* addr, size_t size) {
                 break;
             }
         }
-        if (!recently_assigned)
-            bitmap->mark(addr, size, MarkStateBit::REMAPPED);
+        if (!recently_assigned) {
+            if constexpr (use_regional_hashmap) {
+                std::shared_lock<std::shared_mutex> lock(object_map_mtx);
+                auto it = object_map.find(addr);
+                if (it != object_map.end())
+                    it->second.markState = MarkState::REMAPPED;
+            } else {
+                bitmap->mark(addr, size, MarkStateBit::REMAPPED);
+            }
+        }
     } else
         std::clog << "Free address out of range." << std::endl;
 }
@@ -88,16 +108,44 @@ void GCRegion::mark(void* object_addr, size_t object_size) {
     if (regionType == RegionEnum::LARGE) {
         this->largeRegionMarkState = GCPhase::getCurrentMarkStateBit();
     } else {
-        if (bitmap->mark(object_addr, object_size, GCPhase::getCurrentMarkStateBit()))
+        if constexpr (use_regional_hashmap) {
+            MarkState c_markstate = GCPhase::getCurrentMarkState();
+            std::shared_lock<std::shared_mutex> r_lock(object_map_mtx);
+            auto it = object_map.find(object_addr);
+            if (it == object_map.end()) {
+                // 读锁升级为写锁，添加进object_map的条目
+                // 尽管该过程非原子，但只要保证标记过了即可，live_size重复统计问题不大
+                r_lock.unlock();
+                std::unique_lock<std::shared_mutex> w_lock(object_map_mtx);
+                object_map.emplace(object_addr, GCStatus{ c_markstate, object_size });
+            } else if (it->second.markState == c_markstate) {   // 标记过了
+                return;
+            } else {
+                it->second.markState = c_markstate;
+            }
             live_size += object_size;
+        } else {
+            if (bitmap->mark(object_addr, object_size, GCPhase::getCurrentMarkStateBit()))
+                live_size += object_size;
+        }
     }
 }
 
-bool GCRegion::marked(void* object_addr) const {
-    if (regionType == RegionEnum::LARGE)
+bool GCRegion::marked(void* object_addr) {
+    if (regionType == RegionEnum::LARGE) {
         return largeRegionMarkState == GCPhase::getCurrentMarkStateBit();
-    else
-        return bitmap->getMarkState(object_addr) == GCPhase::getCurrentMarkStateBit();
+    } else {
+        if constexpr (use_regional_hashmap) {
+            std::shared_lock<std::shared_mutex> lock(object_map_mtx);
+            auto it = object_map.find(object_addr);
+            if (it == object_map.end())
+                return false;
+            else
+                return it->second.markState == GCPhase::getCurrentMarkState();
+        } else {
+            return bitmap->getMarkState(object_addr) == GCPhase::getCurrentMarkStateBit();
+        }
+    }
 }
 
 void GCRegion::clearUnmarked() {
