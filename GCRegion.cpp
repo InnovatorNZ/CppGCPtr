@@ -10,18 +10,19 @@ const size_t GCRegion::MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
 GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size) :
         regionType(regionType), startAddress(startAddress), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
         total_size(total_size), allocated_offset(0), live_size(0), allFreeFlag(0), evacuated(false) {
-    if constexpr (!use_regional_hashmap) {
-        switch (regionType) {
-            case RegionEnum::SMALL:
-            case RegionEnum::MEDIUM:
-                bitmap = std::make_unique<GCBitMap>(startAddress, total_size);
-                break;
-            case RegionEnum::TINY:
-                bitmap = std::make_unique<GCBitMap>(startAddress, total_size, false);
-                break;
-            default:
-                bitmap = nullptr;
-                break;
+    if (regionType != RegionEnum::LARGE) {
+        if constexpr (!use_regional_hashmap) {
+            switch (regionType) {
+                case RegionEnum::SMALL:
+                case RegionEnum::MEDIUM:
+                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size);
+                    break;
+                case RegionEnum::TINY:
+                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size, false);
+                    break;
+            }
+        } else {
+            regionalHashMap = std::make_unique<GCRegionalHashMap>();
         }
     }
 }
@@ -43,16 +44,14 @@ void* GCRegion::allocate(size_t size) {
     }
     if (GCPhase::duringGC()) {
         if constexpr (use_regional_hashmap) {
-            std::unique_lock<std::shared_mutex> lock(object_map_mtx);
-            object_map.emplace(object_addr, GCStatus{ GCPhase::getCurrentMarkState(), size });
+            regionalHashMap->mark(object_addr, size, GCPhase::getCurrentMarkState(), true);
         } else {
             bitmap->mark(object_addr, size, GCPhase::getCurrentMarkStateBit(), true);
         }
         live_size += size;
     } else {
-        if constexpr (use_regional_hashmap) {   // todo: 有可能这里不需要
-            std::unique_lock<std::shared_mutex> lock(object_map_mtx);
-            object_map.emplace(object_addr, GCStatus{ MarkState::REMAPPED, size });
+        if constexpr (use_regional_hashmap) {
+            // regionalHashMap->mark(object_addr, size, MarkState::REMAPPED, true);     // 有可能这里不需要
         } else {
             bitmap->mark(object_addr, size, MarkStateBit::REMAPPED, true);
         }
@@ -81,10 +80,7 @@ void GCRegion::free(void* addr, size_t size) {
         }
         if (!recently_assigned) {
             if constexpr (use_regional_hashmap) {
-                std::shared_lock<std::shared_mutex> lock(object_map_mtx);
-                auto it = object_map.find(addr);
-                if (it != object_map.end())
-                    it->second.markState = MarkState::REMAPPED;
+                regionalHashMap->mark(addr, size, MarkState::REMAPPED, false, false);
             } else {
                 bitmap->mark(addr, size, MarkStateBit::REMAPPED);
             }
@@ -109,21 +105,8 @@ void GCRegion::mark(void* object_addr, size_t object_size) {
         this->largeRegionMarkState = GCPhase::getCurrentMarkStateBit();
     } else {
         if constexpr (use_regional_hashmap) {
-            MarkState c_markstate = GCPhase::getCurrentMarkState();
-            std::shared_lock<std::shared_mutex> r_lock(object_map_mtx);
-            auto it = object_map.find(object_addr);
-            if (it == object_map.end()) {
-                // 读锁升级为写锁，添加进object_map的条目
-                // 尽管该过程非原子，但只要保证标记过了即可，live_size重复统计问题不大
-                r_lock.unlock();
-                std::unique_lock<std::shared_mutex> w_lock(object_map_mtx);
-                object_map.emplace(object_addr, GCStatus{ c_markstate, object_size });
-            } else if (it->second.markState == c_markstate) {   // 标记过了
-                return;
-            } else {
-                it->second.markState = c_markstate;
-            }
-            live_size += object_size;
+            if (regionalHashMap->mark(object_addr, object_size, GCPhase::getCurrentMarkState()))
+                live_size += object_size;
         } else {
             if (bitmap->mark(object_addr, object_size, GCPhase::getCurrentMarkStateBit()))
                 live_size += object_size;
@@ -136,12 +119,7 @@ bool GCRegion::marked(void* object_addr) {
         return largeRegionMarkState == GCPhase::getCurrentMarkStateBit();
     } else {
         if constexpr (use_regional_hashmap) {
-            std::shared_lock<std::shared_mutex> lock(object_map_mtx);
-            auto it = object_map.find(object_addr);
-            if (it == object_map.end())
-                return false;
-            else
-                return it->second.markState == GCPhase::getCurrentMarkState();
+            return regionalHashMap->getMarkState(object_addr) == GCPhase::getCurrentMarkState();
         } else {
             return bitmap->getMarkState(object_addr) == GCPhase::getCurrentMarkStateBit();
         }
@@ -158,52 +136,33 @@ void GCRegion::clearUnmarked() {
         return;
     }
     allFreeFlag = 0;
-    auto bitMapIterator = bitmap->getIterator();
-    // int last_offset = 0; MarkStateBit lastMarkState = MarkStateBit::NOT_ALLOCATED;
-    while (bitMapIterator.MoveNext()) {
-        GCBitMap::BitStatus bitStatus = bitMapIterator.current();
-        MarkStateBit& markState = bitStatus.markState;
-        // 有必要搞single_size_set吗？？不能把single_size的放到单独的region里去？答：有道理（
-        void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
-        if (GCPhase::isLiveObject(markState)) {
-#if 0
-            if (regionType == RegionEnum::TINY) {
-                live_objects.emplace_back(addr, TINY_OBJECT_THRESHOLD);
-            } else {
-                live_objects.emplace_back(addr, bitStatus.objectSize);
-#if 0
-                if (lastMarkState == MarkStateBit::NOT_ALLOCATED) {     // 迭代中首次
-                    lastMarkState = markState;
-                    last_offset = bitMapIterator.getCurrentOffset();
-                } else if (lastMarkState == markState) {    // 迭代中第二次
-                    int c_offset = bitMapIterator.getCurrentOffset();
-                    int object_size = c_offset - last_offset + 1;
-                    void* object_addr = reinterpret_cast<char*>(startAddress) + last_offset;
-                    this->free(object_addr, object_size);
-                    lastMarkState = MarkStateBit::NOT_ALLOCATED;
-                    last_offset = c_offset;
-                } else {
-                    std::cerr << "Uncorrect mark found in bitmap! current: " <<
-                        MarkStateUtil::toString(markState) << ", last: " << MarkStateUtil::toString(lastMarkState);
-                    auto last_markstate_recheck = bitmap->getMarkState((char*)startAddress + last_offset);
-                    auto current_markstate_recheck = bitmap->getMarkState((char*)startAddress + bitMapIterator.getCurrentOffset());
-                    std::cerr << ". Rechecked current: " << MarkStateUtil::toString(current_markstate_recheck) <<
-                        ", rechecked last: " << MarkStateUtil::toString(last_markstate_recheck);
-                    std::cerr << ". offset delta: " << bitMapIterator.getCurrentOffset() - last_offset << std::endl;
-                    throw std::exception();
-                }
-#endif
+    if constexpr (use_regional_hashmap) {
+        auto regionalMapIterator = regionalHashMap->getIterator();
+        while (regionalMapIterator.MoveNext()) {
+            GCStatus gcStatus = regionalMapIterator.current();
+            const MarkState& markState = gcStatus.markState;
+            if (GCPhase::isLiveObject(markState)) {
+                allFreeFlag = -1;
+            } else if (GCPhase::needSweep(markState) && markState != MarkState::REMAPPED) {
+                // 非存活对象统一标记为REMAPPED（或者从hashmap中删除也可以），不然会导致markState经过两轮回收后重复
+                regionalMapIterator.setCurrentMarkState(MarkState::REMAPPED);
             }
-#endif
-            allFreeFlag = -1;
-        } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
-            // 非存活对象统一标记为REMAPPED
-            // 之所以不能标记为NOT_ALLOCATED是因为仍然需要size信息遍历bitmap
-            bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
-        } else if (markState == MarkStateBit::NOT_ALLOCATED) {
-            if (bitMapIterator.getCurrentOffset() >= allocated_offset) break;
-            else if (regionType == RegionEnum::TINY);
-            else throw std::exception();    // 多线程情况下可能会误判
+        }
+    } else {
+        auto bitMapIterator = bitmap->getIterator();
+        while (bitMapIterator.MoveNext() && bitMapIterator.getCurrentOffset() < allocated_offset) {
+            GCBitMap::BitStatus bitStatus = bitMapIterator.current();
+            MarkStateBit& markState = bitStatus.markState;
+            void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
+            if (GCPhase::isLiveObject(markState)) {
+                allFreeFlag = -1;
+            } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
+                // 非存活对象统一标记为REMAPPED（不能标记为NOT_ALLOCATED），因为仍然需要size信息遍历bitmap，并避免markState重复
+                bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
+            } else if (markState == MarkStateBit::NOT_ALLOCATED && regionType != RegionEnum::TINY) {
+                // break;
+                throw std::exception();    // 多线程情况下可能会误判
+            }
         }
     }
     if (allFreeFlag == 0) allFreeFlag = 1;
@@ -218,19 +177,35 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
     if (this->canFree()) {      // 已经没有存活对象了
         return;
     }
-    auto bitMapIterator = bitmap->getIterator();
-    while (bitMapIterator.MoveNext() && bitMapIterator.getCurrentOffset() < allocated_offset) {
-        GCBitMap::BitStatus bitStatus = bitMapIterator.current();
-        MarkStateBit& markState = bitStatus.markState;
-        void* object_addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
-        if (GCPhase::isLiveObject(markState)) {     // 筛选出存活对象并转移
-            unsigned int object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : bitStatus.objectSize;
-            this->relocateObject(object_addr, object_size, memoryAllocator);
-        } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
-            // 非存活对象统一标记为REMAPPED；之所以不能标记为NOT_ALLOCATED是因为仍然需要size信息遍历bitmap
-            bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
-        } else if (markState == MarkStateBit::NOT_ALLOCATED && regionType != RegionEnum::TINY) {
-            throw std::exception();    // 多线程情况下会误判吗？按理说是不应该在region被转移的过程中继续分配对象的
+    if constexpr (use_regional_hashmap) {
+        auto regionalMapIterator = regionalHashMap->getIterator();
+        while (regionalMapIterator.MoveNext()) {
+            GCStatus gcStatus = regionalMapIterator.current();
+            const MarkState& markState = gcStatus.markState;
+            void* object_addr = regionalMapIterator.getCurrentAddress();
+            if (GCPhase::isLiveObject(markState)) {
+                size_t object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : gcStatus.objectSize;
+                this->relocateObject(object_addr, object_size, memoryAllocator);
+            } else if (GCPhase::needSweep(markState) && markState != MarkState::REMAPPED) {
+                // TODO: 好像有bug：对于未触发relocate的region内并且熬过两轮垃圾回收的对象由于markState相同，会导致应该死亡的对象被复制
+                // regionalHashMap->mark(object_addr, gcStatus.objectSize, MarkState::REMAPPED);
+            }
+        }
+    } else {
+        auto bitMapIterator = bitmap->getIterator();
+        while (bitMapIterator.MoveNext() && bitMapIterator.getCurrentOffset() < allocated_offset) {
+            GCBitMap::BitStatus bitStatus = bitMapIterator.current();
+            MarkStateBit& markState = bitStatus.markState;
+            void* object_addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
+            if (GCPhase::isLiveObject(markState)) {     // 筛选出存活对象并转移
+                unsigned int object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : bitStatus.objectSize;
+                this->relocateObject(object_addr, object_size, memoryAllocator);
+            } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
+                // 非存活对象统一标记为REMAPPED；之所以不能标记为NOT_ALLOCATED是因为仍然需要size信息遍历bitmap
+                // bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
+            } else if (markState == MarkStateBit::NOT_ALLOCATED && regionType != RegionEnum::TINY) {
+                throw std::exception();    // 多线程情况下会误判吗？按理说是不应该在region被转移的过程中继续分配对象的
+            }
         }
     }
 }
@@ -282,6 +257,7 @@ void GCRegion::free() {
     // 释放整个region，只保留转发表
     evacuated = true;
     bitmap = nullptr;
+    regionalHashMap = nullptr;
     total_size = 0;
     allocated_offset = 0;
     ::free(startAddress);
@@ -291,14 +267,17 @@ void GCRegion::free() {
 void GCRegion::reclaim() {
     allFreeFlag = 0;
     largeRegionMarkState = MarkStateBit::REMAPPED;
+    if constexpr (use_regional_hashmap)
+        regionalHashMap->clear();
     allocated_offset = 0;
     live_size = 0;
     evacuated = false;
 }
 
-GCRegion::GCRegion(GCRegion&& other) noexcept :
+GCRegion::GCRegion(GCRegion&& other) noexcept:
         regionType(other.regionType), startAddress(other.startAddress), total_size(other.total_size),
-        bitmap(std::move(other.bitmap)), largeRegionMarkState(other.largeRegionMarkState), allFreeFlag(other.allFreeFlag) {
+        bitmap(std::move(other.bitmap)), regionalHashMap(std::move(other.regionalHashMap)),
+        largeRegionMarkState(other.largeRegionMarkState), allFreeFlag(other.allFreeFlag) {
     this->allocated_offset.store(other.allocated_offset.load());
     this->live_size.store(other.live_size.load());
     this->evacuated.store(other.evacuated.load());
@@ -315,8 +294,8 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCRegion::queryForwardingTable(void*
 }
 
 bool GCRegion::inside_region(void* addr, size_t size) const {
-    return (char*)addr >= (char*)startAddress
-        && (char*)addr + size <= (char*)startAddress + allocated_offset;
+    return (char*) addr >= (char*) startAddress
+           && (char*) addr + size <= (char*) startAddress + allocated_offset;
 }
 
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {

@@ -18,6 +18,9 @@ public:
     class RegionalHashMapIterator : public Iterator<GCStatus> {
     private:
         GCRegionalHashMap& regionalHashmap;
+        decltype(object_map)::iterator it;
+        bool iterate_begun;
+
     public:
         explicit RegionalHashMapIterator(GCRegionalHashMap&);
 
@@ -26,13 +29,22 @@ public:
         GCStatus current() const override;
 
         bool MoveNext() override;
+
+        void* getCurrentAddress() const;
+
+        void setCurrentMarkState(MarkState);
     };
 
-    bool mark(void* object_addr, size_t object_size, MarkState markState, bool overwrite = false);
+    GCRegionalHashMap();
+
+    bool mark(void* object_addr, size_t object_size, MarkState markState,
+              bool overwrite = false, bool emplace_if_not_exist = true);
 
     std::optional<MarkState> getMarkState(void* object_addr);
 
-    RegionalHashMapIterator getIterator() const;
+    RegionalHashMapIterator getIterator();
+
+    void clear();
 };
 
 

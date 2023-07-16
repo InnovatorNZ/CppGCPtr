@@ -74,6 +74,10 @@ bool GCPhase::isLiveObject(MarkStateBit markState) {
     return markState == getCurrentMarkStateBit();
 }
 
+bool GCPhase::isLiveObject(MarkState markState) {
+    return markState == getCurrentMarkState();
+}
+
 std::string GCPhase::getGCPhaseString() {
     switch (gcPhase) {
         case eGCPhase::NONE:

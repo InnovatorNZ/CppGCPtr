@@ -31,6 +31,7 @@ public:
 
 class GCRegion : public IAllocatable {
     friend class MemoryAllocatorTest;
+
 public:
     static const size_t TINY_OBJECT_THRESHOLD;
     static const size_t TINY_REGION_SIZE;
@@ -38,7 +39,7 @@ public:
     static const size_t SMALL_REGION_SIZE;
     static const size_t MEDIUM_OBJECT_THRESHOLD;
     static const size_t MEDIUM_REGION_SIZE;
-    static constexpr bool use_regional_hashmap = false;
+    static constexpr bool use_regional_hashmap = true;
 private:
     void* startAddress;
     size_t total_size;
@@ -47,9 +48,8 @@ private:
     std::atomic<size_t> live_size;
     RegionEnum regionType;
     MarkStateBit largeRegionMarkState;      // only used in large region
-    std::unique_ptr<GCBitMap> bitmap;                   // bitmap
-    std::unordered_map<void*, GCStatus> object_map;     // regional hashmap
-    std::shared_mutex object_map_mtx;
+    std::unique_ptr<GCBitMap> bitmap;                       // bitmap
+    std::unique_ptr<GCRegionalHashMap> regionalHashMap;     // regional hash map
     std::unordered_map<void*, std::pair<void*, std::shared_ptr<GCRegion>>> forwarding_table;
     std::shared_mutex forwarding_table_mutex;
     short allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region

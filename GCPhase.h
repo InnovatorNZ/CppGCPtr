@@ -37,6 +37,8 @@ public:
 
     static bool isLiveObject(MarkStateBit);
 
+    static bool isLiveObject(MarkState);
+
     static bool duringGC() {
         return gcPhase != eGCPhase::NONE;
     }
