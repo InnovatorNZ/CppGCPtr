@@ -32,7 +32,7 @@ void* GCRegion::allocate(size_t size) {
     void* object_addr = nullptr;
     if (regionType == RegionEnum::TINY)
         size = TINY_OBJECT_THRESHOLD;
-    else if (regionType != RegionEnum::LARGE)
+    else if (regionType != RegionEnum::LARGE && !use_regional_hashmap)
         size = bitmap->alignUpSize(size);
     while (true) {
         size_t p_offset = allocated_offset;

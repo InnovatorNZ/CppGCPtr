@@ -63,28 +63,25 @@ GCStatus GCRegionalHashMap::RegionalHashMapIterator::current() const {
 }
 
 bool GCRegionalHashMap::RegionalHashMapIterator::MoveNext() {
-    if (it == nullptr) {
-        if (!iterate_begun) {
-            regionalHashmap.map_mutex_.lock_shared();
-            iterate_begun = true;
-        }
-        if (regionalHashmap.object_map.empty())
-            return false;
+    if (!iterate_begun) {
+        regionalHashmap.map_mutex_.lock_shared();
+        iterate_begun = true;
         it = regionalHashmap.object_map.begin();
-    } else if (it == regionalHashmap.object_map.end()) {
-        return false;
     } else {
         ++it;
     }
-    return true;
+    if (it == regionalHashmap.object_map.end())
+        return false;
+    else
+        return true;
 }
 
 void* GCRegionalHashMap::RegionalHashMapIterator::getCurrentAddress() const {
-    if (it == nullptr) return nullptr;
+    if (it == regionalHashmap.object_map.end()) return nullptr;
     return it->first;
 }
 
 void GCRegionalHashMap::RegionalHashMapIterator::setCurrentMarkState(MarkState markState) {
-    if (it == nullptr) return;
+    if (it == regionalHashmap.object_map.end()) return;
     it->second.markState = markState;
 }
