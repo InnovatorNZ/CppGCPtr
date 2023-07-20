@@ -481,8 +481,12 @@ void GCWorker::printMap() const {
     cout << "}" << endl;
 }
 
-void GCWorker::freeUnusedReclaim() {
-    // TODO: ...
+bool GCWorker::is_root(void* gcptr_addr) {
+    if (useBitmap) {
+        return memoryAllocator->inside_allocated_regions(gcptr_addr);
+    } else {
+        return GCUtil::is_stack_pointer(gcptr_addr);
+    }
 }
 
 

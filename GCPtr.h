@@ -41,9 +41,13 @@ public:
     explicit GCPtr(T* obj) : GCPtr(obj, false) {
     }
 
-    GCPtr(T* obj, bool is_root) : is_root(is_root), obj_size(sizeof(*obj)) {
+#if 0
+    GCPtr(T* obj, bool is_root) : obj_size(sizeof(*obj)) {
         GCPhase::EnterCriticalSection();
         this->obj = obj;
+        if (!is_root && GCWorker::getWorker()->is_root(this))
+            is_root = true;
+        this->is_root = is_root;
         GCWorker::getWorker()->registerObject(obj, sizeof(*obj));
         if (GCWorker::getWorker()->destructorEnabled())
             GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
@@ -52,12 +56,16 @@ public:
         }
         GCPhase::LeaveCriticalSection();
     }
+#endif
 
-    GCPtr(T* obj, bool is_root, const std::shared_ptr<GCRegion>& region) :
-            is_root(is_root), obj_size(sizeof(*obj)) {
+    GCPtr(T* obj, bool is_root, const std::shared_ptr<GCRegion>& region = nullptr) :
+            obj_size(sizeof(*obj)) {
         GCPhase::EnterCriticalSection();
         this->obj = obj;
         this->region = region;
+        if (!is_root && GCWorker::getWorker()->is_root(this))
+            is_root = true;
+        this->is_root = is_root;
         if (GCWorker::getWorker()->destructorEnabled())
             GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
         if (is_root) {

@@ -9,7 +9,8 @@ bool GCUtil::is_stack_pointer(void* ptr) {
     return low <= reinterpret_cast<ULONG_PTR>(ptr) && reinterpret_cast<ULONG_PTR>(ptr) < high; // 判断指针是否在栈区范围内
 #else
     // TODO: POSIX is_stack_pointer()
-    return false;
+    // 不确定的一律返回true
+    return true;
 #endif
 }
 

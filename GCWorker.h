@@ -139,9 +139,7 @@ public:
 
     bool relocationEnabled() const { return enableRelocation; }
 
-    bool reclaimEnabled() const { return enableReclaim; }
-
-    void freeUnusedReclaim();
+    bool is_root(void* gcptr_addr);
 };
 
 
