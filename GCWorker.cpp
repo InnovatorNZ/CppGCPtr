@@ -271,6 +271,31 @@ void GCWorker::registerDestructor(void* object_addr, const std::function<void()>
 
 void GCWorker::beginMark() {
     if (GCPhase::getGCPhase() == eGCPhase::NONE) {
+        {
+            // 将缓冲区中的内容添加回regionMap
+            for (int i=0; i<poolCount; i++) {
+                std::unique_lock<std::mutex> lock(regionMapBufMtx0[i]);
+                if (regionMapBuffer0[i].empty()) continue;
+                {
+                    std::unique_lock <std::shared_mutex> lock(regionMapMtx);
+                    for (GCRegion *region: regionMapBuffer0[i]) {
+                        regionMap.emplace(region->getStartAddr(), region);
+                    }
+                }
+                regionMapBuffer0[i].clear();
+            }
+            for (int i=0; i<poolCount; i++) {
+                std::unique_lock<std::mutex> lock(regionMapBufMtx1[i]);
+                if (regionMapBuffer1[i].empty()) continue;
+                {
+                    std::unique_lock <std::shared_mutex> lock(regionMapMtx);
+                    for (GCRegion *region: regionMapBuffer1[i]) {
+                        regionMap.emplace(region->getStartAddr(), region);
+                    }
+                }
+                regionMapBuffer1[i].clear();
+            }
+        }
         GCPhase::SwitchToNextPhase();   // concurrent mark
         auto start_time = std::chrono::high_resolution_clock::now();
         this->root_object_snapshot.clear();

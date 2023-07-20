@@ -24,6 +24,10 @@ GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableP
         this->smallRegionQues = std::make_unique<std::deque<std::shared_ptr<GCRegion>>[]>(poolCount);
         this->smallRegionQueMtxs = std::make_unique<std::shared_mutex[]>(poolCount);
     }
+    this->regionMapBuffer0.resize(poolCount);
+    this->regionMapBuffer1.resize(poolCount);
+    this->regionMapBufMtx0 = std::make_unique<std::mutex[]>(poolCount);
+    this->regionMapBufMtx1 = std::make_unique<std::mutex[]>(poolCount);
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate(size_t size) {
@@ -119,6 +123,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         // 若获取region红黑树的锁失败，则将新region放入缓冲区内，在GC开始的时候再添加进红黑树
                         // 在此期间所有在新区域中的对象由于不在管理区域内会被误判定为gc root，不过问题不大
                         while (true) {
+                            std::clog << "Acquire regionMap mutex failed, adding to buffer vector" << std::endl;
                             if (regionMapBufMtx0[pool_idx].try_lock()) {
                                 regionMapBuffer0.push_back(new_region.get());
                                 regionMapBufMtx0[pool_idx].unlock();
@@ -376,6 +381,7 @@ void GCMemoryAllocator::selectRelocationSet(std::deque<std::shared_ptr<GCRegion>
         if (!region->isEvacuated() && region->needEvacuate()) {
             region->setEvacuated();
             this->evacuationQue.emplace_back(region);
+            regionMap.erase(region->getStartAddr());
             it = regionQue.erase(it);
         } else {
             it++;
@@ -391,6 +397,7 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
             region->setEvacuated();
             this->evacuationQue.emplace_back(region);
             iterator->remove();
+            regionMap.erase(region->getStartAddr());
         }
     }
 }
@@ -494,6 +501,26 @@ void GCMemoryAllocator::resetLiveSize() {
                 region->resetLiveSize();
             }
         }
+    }
+}
+
+GCRegion* GCMemoryAllocator::queryRegionMap(void* object_addr) {
+    std::shared_lock<std::shared_mutex> lock(this->regionMapMtx);
+    auto it = regionMap.upper_bound(object_addr);
+    if (it == regionMap.begin()) {
+        return nullptr;
+    } else {
+        --it;
+        return it->second.get();
+    }
+}
+
+bool GCMemoryAllocator::inside_allocated_regions(void* object_addr) {
+    GCRegion* region = queryRegionMap(object_addr);
+    if (region == nullptr) {
+        return false;
+    } else {
+        return region->inside_region(object_addr);
     }
 }
 
