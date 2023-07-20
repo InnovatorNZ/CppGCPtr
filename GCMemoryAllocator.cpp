@@ -125,11 +125,11 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         while (true) {
                             std::clog << "Acquire regionMap mutex failed, adding to buffer vector" << std::endl;
                             if (regionMapBufMtx0[pool_idx].try_lock()) {
-                                regionMapBuffer0.push_back(new_region.get());
+                                regionMapBuffer0[pool_idx].push_back(new_region.get());
                                 regionMapBufMtx0[pool_idx].unlock();
                                 break;
                             } else if (regionMapBufMtx1[pool_idx].try_lock()) {
-                                regionMapBuffer1.push_back(new_region.get());
+                                regionMapBuffer1[pool_idx].push_back(new_region.get());
                                 regionMapBufMtx1[pool_idx].unlock();
                                 break;
                             }
@@ -511,7 +511,7 @@ GCRegion* GCMemoryAllocator::queryRegionMap(void* object_addr) {
         return nullptr;
     } else {
         --it;
-        return it->second.get();
+        return it->second;
     }
 }
 
@@ -521,6 +521,32 @@ bool GCMemoryAllocator::inside_allocated_regions(void* object_addr) {
         return false;
     } else {
         return region->inside_region(object_addr);
+    }
+}
+
+void GCMemoryAllocator::flushRegionMapBuffer() {
+    // 将缓冲区中的内容添加回regionMap
+    for (int i = 0; i < poolCount; i++) {
+        std::unique_lock<std::mutex> lock(regionMapBufMtx0[i]);
+        if (regionMapBuffer0[i].empty()) continue;
+        {
+            std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
+            for (GCRegion* region : regionMapBuffer0[i]) {
+                regionMap.emplace(region->getStartAddr(), region);
+            }
+        }
+        regionMapBuffer0[i].clear();
+    }
+    for (int i = 0; i < poolCount; i++) {
+        std::unique_lock<std::mutex> lock(regionMapBufMtx1[i]);
+        if (regionMapBuffer1[i].empty()) continue;
+        {
+            std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
+            for (GCRegion* region : regionMapBuffer1[i]) {
+                regionMap.emplace(region->getStartAddr(), region);
+            }
+        }
+        regionMapBuffer1[i].clear();
     }
 }
 

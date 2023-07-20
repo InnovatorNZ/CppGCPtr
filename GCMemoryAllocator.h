@@ -85,6 +85,8 @@ public:
     void resetLiveSize();
 
     bool inside_allocated_regions(void*);
+
+    void flushRegionMapBuffer();
 };
 
 
