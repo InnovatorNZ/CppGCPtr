@@ -46,6 +46,10 @@ private:
     std::atomic<std::shared_ptr<GCRegion>> mediumAllocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> tinyAllocatingRegion;
     std::vector<std::shared_ptr<GCRegion>> evacuationQue;
+    std::map<void*, GCRegion*> regionMap;
+    std::shared_mutex regionMapMtx;
+    std::vector<std::vector<GCRegion*>> regionMapBuffer0, regionMapBuffer1;
+    std::unique_ptr<std::mutex[]> regionMapBufMtx0, regionMapBufMtx1;
 
     std::pair<void*, std::shared_ptr<GCRegion>> allocate_from_region(size_t size, RegionEnum regionType);
 

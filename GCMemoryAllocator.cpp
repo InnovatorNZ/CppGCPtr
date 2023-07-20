@@ -105,12 +105,30 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
         switch (regionType) {
             case RegionEnum::SMALL: {
                 int pool_idx = getPoolIdx();
-                if (smallAllocatingRegions[pool_idx].compare_exchange_weak(region, new_region)) {
+                if (smallAllocatingRegions[pool_idx].compare_exchange_strong(region, new_region)) {
                     if constexpr (useConcurrentLinkedList) {
                         smallRegionLists[pool_idx].push_head(new_region);
                     } else {
                         std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[pool_idx]);
                         smallRegionQues[pool_idx].emplace_back(new_region);
+                    }
+                    if (regionMapMtx.try_lock()) {
+                        regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                        regionMapMtx.unlock();
+                    } else {
+                        // 若获取region红黑树的锁失败，则将新region放入缓冲区内，在GC开始的时候再添加进红黑树
+                        // 在此期间所有在新区域中的对象由于不在管理区域内会被误判定为gc root，不过问题不大
+                        while (true) {
+                            if (regionMapBufMtx0[pool_idx].try_lock()) {
+                                regionMapBuffer0.push_back(new_region.get());
+                                regionMapBufMtx0[pool_idx].unlock();
+                                break;
+                            } else if (regionMapBufMtx1[pool_idx].try_lock()) {
+                                regionMapBuffer1.push_back(new_region.get());
+                                regionMapBufMtx1[pool_idx].unlock();
+                                break;
+                            }
+                        }
                     }
                 } else {
                     std::clog << "Undo allocating new region as someone beats us." << std::endl;
@@ -119,7 +137,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
             }
                 break;
             case RegionEnum::MEDIUM:
-                if (mediumAllocatingRegion.compare_exchange_weak(region, new_region)) {
+                if (mediumAllocatingRegion.compare_exchange_strong(region, new_region)) {
                     if constexpr (useConcurrentLinkedList) {
                         mediumRegionList.push_head(new_region);
                     } else {
@@ -131,7 +149,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                 }
                 break;
             case RegionEnum::TINY:
-                if (tinyAllocatingRegion.compare_exchange_weak(region, new_region)) {
+                if (tinyAllocatingRegion.compare_exchange_strong(region, new_region)) {
                     if constexpr (useConcurrentLinkedList) {
                         tinyRegionList.push_head(new_region);
                     } else {
