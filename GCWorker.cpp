@@ -5,18 +5,28 @@ std::unique_ptr<GCWorker> GCWorker::instance = nullptr;
 GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
 
-GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport, bool useInlineMarkState,
-                   bool useInternalMemoryManager, bool enableRelocation, bool enableParallel, bool enableReclaim) :
-        stop_(false), ready_(false), enableConcurrentMark(concurrent), enableParallelGC(enableParallel),
-        enableRelocation(enableRelocation), enableDestructorSupport(enableDestructorSupport), enableReclaim(enableReclaim) {
-    if (useBitmap) this->enableDestructorSupport = false;     // TODO: bitmap暂不支持销毁时调用析构函数
-    if (enableRelocation) {
-        this->useBitmap = true;
-        this->useInlineMarkstate = true;
-    } else {
-        this->useBitmap = useBitmap;
-        this->useInlineMarkstate = useInlineMarkState;
+GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestructorSupport, bool useInlineMarkState,
+                   bool useSecondaryMemoryManager, bool enableRelocation, bool enableParallel, bool enableReclaim) :
+        stop_(false), ready_(false), enableConcurrentMark(concurrent), enableMemoryAllocator(enableMemoryAllocator) {
+    if (enableReclaim || useSecondaryMemoryManager) {
+        // TODO: 重利用和空闲列表二级内存分配器尚未实现
+        throw std::logic_error("Reclaim and secondary memory manager is not prepared yet. Please contact developer");
     }
+    if (!enableMemoryAllocator) {
+        enableParallel = false;             // 必须启用内存分配器以支持并行垃圾回收
+        enableRelocation = false;           // 必须启用内存分配器以支持移动式回收
+        useSecondaryMemoryManager = false;
+        enableReclaim = false;
+    } else {
+        enableDestructorSupport = false;    // TODO: 内存分配器暂不支持调用析构函数
+    }
+    this->enableParallelGC = enableParallel;
+    this->enableRelocation = enableRelocation;
+    this->enableDestructorSupport = enableDestructorSupport;
+    this->enableReclaim = enableReclaim;
+    if (enableRelocation) useInlineMarkstate = true;
+    this->useInlineMarkstate = useInlineMarkState;
+
     this->poolCount = std::thread::hardware_concurrency();
     this->satb_queue_pool.resize(poolCount);
     this->satb_queue_pool_mutex = std::make_unique<std::mutex[]>(poolCount);
@@ -29,10 +39,12 @@ GCWorker::GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport
         this->gcThreadCount = 0;
         this->threadPool = nullptr;
     }
-    if (enableParallel)
-        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager, true, gcThreadCount, threadPool.get());
-    else
-        this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useInternalMemoryManager);
+    if (enableMemoryAllocator) {
+        if (enableParallel)
+            this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useSecondaryMemoryManager, true, gcThreadCount, threadPool.get());
+        else
+            this->memoryAllocator = std::make_unique<GCMemoryAllocator>(useSecondaryMemoryManager);
+    }
     if (concurrent) {
         this->gc_thread = std::make_unique<std::thread>(&GCWorker::GCThreadLoop, this);
     } else {
@@ -111,7 +123,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
     GCRegion* region = objectInfo.region;
     MarkState c_markstate = GCPhase::getCurrentMarkState();
 
-    if (!useBitmap) {
+    if (!enableMemoryAllocator) {
         std::shared_lock<std::shared_mutex> read_lock(this->object_map_mutex);
         auto it = object_map.find(object_addr);
         if (it == object_map.end()) {
@@ -222,12 +234,12 @@ void GCWorker::triggerGC() {
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::allocate(size_t size) {
-    if (!useBitmap) return std::make_pair(nullptr, nullptr);
+    if (!enableMemoryAllocator) return std::make_pair(nullptr, nullptr);
     return memoryAllocator->allocate(size);
 }
 
 void GCWorker::registerObject(void* object_addr, size_t object_size) {
-    if (useBitmap)   // 启用bitmap的情况下会在region内分配的时候自动在bitmap内打上标记，无需再次标记
+    if (enableMemoryAllocator)   // 启用bitmap的情况下会在region内分配的时候自动在bitmap内打上标记，无需再次标记
         return;
 
     std::unique_lock<std::shared_mutex> write_lock(this->object_map_mutex);
@@ -253,7 +265,7 @@ void GCWorker::addSATB(void* object_addr) {
 }
 
 void GCWorker::addSATB(const ObjectInfo& objectInfo) {
-    if (!useBitmap) {
+    if (!enableMemoryAllocator) {
         std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
         satb_queue.push_back(objectInfo.object_addr);
     } else {
@@ -271,7 +283,7 @@ void GCWorker::registerDestructor(void* object_addr, const std::function<void()>
 
 void GCWorker::beginMark() {
     if (GCPhase::getGCPhase() == eGCPhase::NONE) {
-        if (useBitmap)
+        if (enableMemoryAllocator)
             memoryAllocator->flushRegionMapBuffer();
         GCPhase::SwitchToNextPhase();   // concurrent mark
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -279,7 +291,7 @@ void GCWorker::beginMark() {
         this->root_ptr_snapshot.clear();
         {
             std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex);
-            if (!useBitmap && !useInlineMarkstate) {
+            if (!enableMemoryAllocator && !useInlineMarkstate) {
                 for (auto& it : root_set) {
                     void* ptr = it->getVoidPtr();
                     if (ptr != nullptr)
@@ -295,7 +307,7 @@ void GCWorker::beginMark() {
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
         std::clog << "Root set lock duration: " << std::dec << duration.count() << " us" << std::endl;
 
-        if (!useBitmap && !useInlineMarkstate) {
+        if (!enableMemoryAllocator && !useInlineMarkstate) {
             for (void* ptr : this->root_ptr_snapshot) {
                 this->mark(ptr);
             }
@@ -325,7 +337,7 @@ void GCWorker::beginMark() {
 void GCWorker::triggerSATBMark() {
     if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
         GCPhase::SwitchToNextPhase();   // remark
-        if (!useBitmap) {
+        if (!enableMemoryAllocator) {
             if (enableParallelGC) {
                 for (int i = 0; i < gcThreadCount; i++) {
                     threadPool->execute([this, i] {
@@ -370,7 +382,7 @@ void GCWorker::triggerSATBMark() {
 }
 
 void GCWorker::selectRelocationSet() {
-    if (!useBitmap || !enableRelocation) return;
+    if (!enableMemoryAllocator || !enableRelocation) return;
     if (GCPhase::getGCPhase() != eGCPhase::REMARK) {
         std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
         return;
@@ -383,7 +395,7 @@ void GCWorker::beginSweep() {
     if (GCPhase::getGCPhase() == eGCPhase::REMARK)
         GCPhase::SwitchToNextPhase();
     if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
-        if (!useBitmap) {
+        if (!enableMemoryAllocator) {
             for (auto it = object_map.begin(); it != object_map.end();) {
                 if (GCPhase::needSweep(it->second.markState)) {
                     void* object_addr = it->first;
@@ -459,7 +471,7 @@ void GCWorker::printMap() const {
 }
 
 bool GCWorker::is_root(void* gcptr_addr) {
-    if (useBitmap) {
+    if (enableMemoryAllocator) {
         return memoryAllocator->inside_allocated_regions(gcptr_addr);
     } else {
         return GCUtil::is_stack_pointer(gcptr_addr);
@@ -472,9 +484,9 @@ namespace gc {
         GCWorker::getWorker()->triggerGC();
     }
 
-    void init(bool concurrent, bool useBitmap, bool enableRelocation, bool enableParallelGC,
-              bool enableDestructorSupport, bool useInlineMarkState, bool enableReclaim, bool useInternalMemoryManager) {
-        GCWorker::init(concurrent, useBitmap, enableDestructorSupport, useInlineMarkState, useInternalMemoryManager, enableRelocation,
+    void init(bool concurrent, bool enableMemoryAllocator, bool enableRelocation, bool enableParallelGC,
+              bool enableDestructorSupport, bool useInlineMarkState, bool enableReclaim, bool useSecondaryMemoryManager) {
+        GCWorker::init(concurrent, enableMemoryAllocator, enableDestructorSupport, useInlineMarkState, useSecondaryMemoryManager, enableRelocation,
                        enableParallelGC, enableReclaim);
     }
 }

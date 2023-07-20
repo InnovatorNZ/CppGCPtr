@@ -35,10 +35,13 @@ private:
     }
 
 public:
-    GCPtr() : obj(nullptr), obj_size(0), is_root(false) {
-    }
-
-    explicit GCPtr(T* obj) : GCPtr(obj, false) {
+    GCPtr() : obj(nullptr), obj_size(0) {
+        if (GCWorker::getWorker()->is_root(this)) {
+            is_root = true;
+            GCWorker::getWorker()->addRoot(this);
+        } else {
+            is_root = false;
+        }
     }
 
 #if 0
@@ -58,7 +61,7 @@ public:
     }
 #endif
 
-    GCPtr(T* obj, bool is_root, const std::shared_ptr<GCRegion>& region = nullptr) :
+    explicit GCPtr(T* obj, const std::shared_ptr<GCRegion>& region = nullptr, bool is_root = false) :
             obj_size(sizeof(*obj)) {
         GCPhase::EnterCriticalSection();
         this->obj = obj;
@@ -102,7 +105,7 @@ public:
 
     ObjectInfo getObjectInfo() override {
         void* obj_addr = this->getVoidPtr();
-        return ObjectInfo{ obj_addr, obj_size, region.get() };
+        return ObjectInfo{obj_addr, obj_size, region.get()};
     }
 
     GCPtr<T>& operator=(const GCPtr<T>& other) {
@@ -199,7 +202,7 @@ namespace gc {
         GCPhase::EnterCriticalSection();
         T* obj = nullptr;
         std::shared_ptr<GCRegion> region = nullptr;
-        if (GCWorker::getWorker()->bitmapEnabled()) {
+        if (GCWorker::getWorker()->memoryAllocatorEnabled()) {
             auto pair = GCWorker::getWorker()->allocate(sizeof(T));
             obj = static_cast<T*>(pair.first);
             region = pair.second;
@@ -210,10 +213,7 @@ namespace gc {
         GCPhase::LeaveCriticalSection();
 
         if (obj == nullptr) throw std::exception();
-        if (region == nullptr)
-            return GCPtr<T>(obj);
-        else
-            return GCPtr<T>(obj, false, region);
+        return GCPtr<T>(obj, region);
     }
 
     template<class T, class... Args>
@@ -221,7 +221,7 @@ namespace gc {
         GCPhase::EnterCriticalSection();
         T* obj = nullptr;
         std::shared_ptr<GCRegion> region = nullptr;
-        if (GCWorker::getWorker()->bitmapEnabled()) {
+        if (GCWorker::getWorker()->memoryAllocatorEnabled()) {
             auto pair = GCWorker::getWorker()->allocate(sizeof(T));
             obj = static_cast<T*>(pair.first);
             region = pair.second;
@@ -232,10 +232,7 @@ namespace gc {
         GCPhase::LeaveCriticalSection();
 
         if (obj == nullptr) throw std::exception();
-        if (region == nullptr)
-            return GCPtr<T>(obj, true);
-        else
-            return GCPtr<T>(obj, true, region);
+        return GCPtr<T>(obj, region, true);
     }
 
 #ifdef OLD_MAKEGC

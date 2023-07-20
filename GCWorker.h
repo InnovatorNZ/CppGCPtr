@@ -42,14 +42,14 @@ private:
     std::unique_ptr<GCMemoryAllocator> memoryAllocator;
     std::unique_ptr<ThreadPoolExecutor> threadPool;
     int gcThreadCount;
-    bool enableConcurrentMark, enableParallelGC, useBitmap, useInlineMarkstate,
+    bool enableConcurrentMark, enableParallelGC, enableMemoryAllocator, useInlineMarkstate,
             enableRelocation, enableDestructorSupport, enableReclaim;
     volatile bool stop_, ready_;
 
     GCWorker();
 
-    GCWorker(bool concurrent, bool useBitmap, bool enableDestructorSupport = true,
-             bool useInlineMarkState = true, bool useInternalMemoryManager = false,
+    GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestructorSupport = true,
+             bool useInlineMarkState = true, bool useSecondaryMemoryManager = false,
              bool enableRelocation = false, bool enableParallel = false, bool enableReclaim = false);
 
     void mark(void*);
@@ -135,7 +135,7 @@ public:
 
     bool destructorEnabled() const { return enableDestructorSupport; }
 
-    bool bitmapEnabled() const { return useBitmap; }
+    bool memoryAllocatorEnabled() const { return enableMemoryAllocator; }
 
     bool relocationEnabled() const { return enableRelocation; }
 
@@ -146,10 +146,10 @@ public:
 namespace gc {
     void triggerGC();
 
-    void init(bool concurrent, bool useBitmap,
+    void init(bool concurrent, bool enableMemoryAllocator,
               bool enableRelocation = false, bool enableParallelGC = false,
               bool enableDestructorSupport = false, bool useInlineMarkState = false,
-              bool enableReclaim = false, bool useInternalMemoryManager = false);
+              bool enableReclaim = false, bool useSecondaryMemoryManager = false);
 }
 
 #endif //CPPGCPTR_GCWORKER_H
