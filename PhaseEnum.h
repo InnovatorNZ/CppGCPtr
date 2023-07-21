@@ -34,6 +34,8 @@ public:
                 return MarkState::M0;
             case MarkState::REMAPPED:
                 return MarkState::M0;
+            default:
+                throw std::exception();
         }
     }
 

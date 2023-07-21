@@ -4,3 +4,4 @@ cmake-build*/
 out/
 build/
 .vscode/
+CppGCPtr.exe

@@ -39,6 +39,8 @@ MarkStateBit GCPhase::getCurrentMarkStateBit() {
             return MarkStateBit::M1;
         case MarkState::REMAPPED:
             return MarkStateBit::REMAPPED;
+        default:
+            throw std::exception();
     }
 }
 
