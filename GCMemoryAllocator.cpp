@@ -1,5 +1,8 @@
 #include "GCMemoryAllocator.h"
 
+#define max(a, b)            (((a) > (b)) ? (a) : (b))
+#define min(a, b)            (((a) < (b)) ? (a) : (b))
+
 const size_t GCMemoryAllocator::INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
 
 GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableParallelClear,
@@ -195,7 +198,7 @@ void* GCMemoryAllocator::allocate_from_freelist(size_t size) {
         if (address != nullptr) return address;
     }
     do {
-        size_t malloc_size = std::max(INITIAL_SINGLE_SIZE, size);
+        size_t malloc_size = max(INITIAL_SINGLE_SIZE, size);
         void* new_memory = malloc(malloc_size);
         memoryPools[pool_idx].free(new_memory, malloc_size);
         address = memoryPools[pool_idx].allocate(size);
