@@ -114,13 +114,17 @@ public:
             if (this->obj != nullptr && this->obj != other.obj && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
                 GCWorker::getWorker()->addSATB(this->getObjectInfo());
             }
+            this->setInlineMarkState(other.getInlineMarkState());
             this->obj.store(other.obj.load());
             this->obj_size = other.obj_size;
             this->region = other.region;
-            this->setInlineMarkState(other.getInlineMarkState());
-            this->is_root = other.is_root;
-            if (is_root)
+            /*
+             * 赋值运算符重载无需再次判别is_root，有且仅有构造函数需要
+            if (GCWorker::getWorker()->is_root(this)) {
+                this->is_root = true;
                 GCWorker::getWorker()->addRoot(this);
+            }
+            */
             GCPhase::LeaveCriticalSection();
         }
         return *this;
@@ -128,14 +132,14 @@ public:
 
     GCPtr& operator=(std::nullptr_t) {
         if (this->obj != nullptr) {
-            GCPhase::EnterCriticalSection();
             if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
+                GCPhase::EnterCriticalSection();
                 GCWorker::getWorker()->addSATB(this->getObjectInfo());
+                GCPhase::LeaveCriticalSection();
             }
             this->obj = nullptr;
             this->obj_size = 0;
             this->region = nullptr;
-            GCPhase::LeaveCriticalSection();
         }
         return *this;
     }
@@ -148,51 +152,55 @@ public:
         return this->obj == nullptr;
     }
 
-    GCPtr(const GCPtr& other) : is_root(other.is_root), obj_size(other.obj_size) {
+    GCPtr(const GCPtr& other) : obj_size(other.obj_size) {
         GCPhase::EnterCriticalSection();
-        std::clog << "Copy constructor: " << this << std::endl;
+        this->setInlineMarkState(other.getInlineMarkState());
         this->obj.store(other.obj.load());
         this->region = other.region;
-        this->setInlineMarkState(other.getInlineMarkState());
+        this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
         GCPhase::LeaveCriticalSection();
     }
 
-    GCPtr(GCPtr&& other) : is_root(other.is_root), obj_size(other.obj_size) {
+    GCPtr(GCPtr&& other) noexcept : obj_size(other.obj_size) {
         GCPhase::EnterCriticalSection();
-        std::clog << "Move constructor: " << this << std::endl;
+        this->setInlineMarkState(other.getInlineMarkState());
         this->obj.store(other.obj.load());
         this->region = std::move(other.region);
-        this->setInlineMarkState(other.getInlineMarkState());
-        other.obj = nullptr;
-        other.obj_size = 0;
+        this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
+        other.obj = nullptr;
+        other.obj_size = 0;
+        other.setInlineMarkState(MarkState::REMAPPED);
         GCPhase::LeaveCriticalSection();
     }
 
     template<typename U>
-    GCPtr(GCPtr<U>&& other) : obj(other.obj), obj_size(other.obj_size), is_root(other.is_root) {
+    GCPtr(GCPtr<U>&& other) noexcept : obj(other.obj), obj_size(other.obj_size) {
         this->setInlineMarkState(other.getInlineMarkState());
         this->region = std::move(other.region);
-        other.obj = nullptr;
+        this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
+        other.obj = nullptr;
+        other.obj_size = 0;
+        other.setInlineMarkState(MarkState::REMAPPED);
     }
 
     ~GCPtr() override {
-        GCPhase::EnterCriticalSection();
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK && this->obj != nullptr) {
+            GCPhase::EnterCriticalSection();
             GCWorker::getWorker()->addSATB(this->getObjectInfo());
+            GCPhase::LeaveCriticalSection();
         }
         if (is_root) {
             GCWorker::getWorker()->removeRoot(this);
         }
-        GCPhase::LeaveCriticalSection();
     }
 };
 

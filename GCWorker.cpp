@@ -472,7 +472,7 @@ void GCWorker::printMap() const {
 
 bool GCWorker::is_root(void* gcptr_addr) {
     if (enableMemoryAllocator) {
-        return memoryAllocator->inside_allocated_regions(gcptr_addr);
+        return !memoryAllocator->inside_allocated_regions(gcptr_addr);
     } else {
         return GCUtil::is_stack_pointer(gcptr_addr);
     }
