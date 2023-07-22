@@ -50,7 +50,7 @@ public:
     }
 };
 
-GCPtr<MyObject> obj3;
+//GCPtr<MyObject> obj3;
 
 int main() {
 #define TRIGGER_GC 1
@@ -62,11 +62,12 @@ int main() {
     gc::init(true, true, true, true, false, true, false);
     Sleep(500);
 
+    GCPtr<MyObject> obj3;
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::steady_clock::now();
         GCPtr<MyObject> obj2;
         {
-            GCPtr<MyObject> obj1 = gc::make_root<MyObject>();
+            GCPtr<MyObject> obj1 = gc::make_gc<MyObject>();
             obj2 = obj1;
         }
         obj3 = obj2;
@@ -76,14 +77,14 @@ int main() {
             obj3->d->e = gc::make_gc<MyObject>();
             obj3->e = gc::make_gc<MyObject>();
             obj3->e->f = 12.43;
-            GCPtr<MyObject> obj4 = gc::make_root<MyObject>();
-            GCPtr<MyObject> obj5 = gc::make_root<MyObject>();
+            GCPtr<MyObject> obj4 = gc::make_gc<MyObject>();
+            GCPtr<MyObject> obj5 = gc::make_gc<MyObject>();
             //obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
             obj2->setG(gc::make_gc<MyObject>());
         }
-        GCPtr<Base> polyTestVar = gc::make_root<Derived>(3.14);
+        GCPtr<Base> polyTestVar = gc::make_gc<Derived>(3.14);
         for (int j = 0; j <= 100; j++) {
-            GCPtr<Base> polytest2 = gc::make_root<Derived>(2.71828);
+            GCPtr<Base> polytest2 = gc::make_gc<Derived>(2.71828);
         }
 #if 0
         cout << &obj1 << " " << &obj2 << " " << &obj3 << " " << &obj3->d << " " <<
@@ -96,28 +97,28 @@ int main() {
 #endif
         obj3->e->f = 114.514;
 
-        GCPtr<MyObject> obj5 = gc::make_root<MyObject>();
+        GCPtr<MyObject> obj5 = gc::make_gc<MyObject>();
         {
-            GCPtr<MyObject> obj4 = gc::make_root<MyObject>();
+            GCPtr<MyObject> obj4 = gc::make_gc<MyObject>();
         }
 
         // Sleep(200);
         double _f = obj3->e->f;
         obj3 = nullptr;
         obj2 = nullptr;
-        GCPtr<MyObject> obj6 = gc::make_root<MyObject>();
-        GCPtr<MyObject> obj7 = gc::make_root<MyObject>();
+        GCPtr<MyObject> obj6 = gc::make_gc<MyObject>();
+        GCPtr<MyObject> obj7 = gc::make_gc<MyObject>();
         {
-            GCPtr<MyObject> obj8 = gc::make_root<MyObject>();
+            GCPtr<MyObject> obj8 = gc::make_gc<MyObject>();
         }
 
-        GCPtr<MyObject> obj9 = gc::make_root<MyObject>();
+        GCPtr<MyObject> obj9 = gc::make_gc<MyObject>();
         const int arr_size = 256;
         GCPtr<MyObject> aobj[arr_size];
         //GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
         srand(time(0));
         for (int j = 0; j < 100000; j++) {
-            GCPtr<MyObject> temp_obj = gc::make_root<MyObject>();
+            GCPtr<MyObject> temp_obj = gc::make_gc<MyObject>();
             temp_obj->addH();
             if (rand() % 7 == 0)
                 obj9 = temp_obj;

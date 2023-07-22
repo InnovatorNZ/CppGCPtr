@@ -225,7 +225,7 @@ namespace gc {
     }
 
     template<class T, class... Args>
-    GCPtr <T> make_root(Args&& ... args) {
+    GCPtr <T> make_static(Args&& ... args) {
         GCPhase::EnterCriticalSection();
         T* obj = nullptr;
         std::shared_ptr<GCRegion> region = nullptr;
