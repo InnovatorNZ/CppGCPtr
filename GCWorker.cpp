@@ -1,5 +1,10 @@
 #include "GCWorker.h"
 
+std::unique_ptr<GCWorker> GCWorker::instance =
+        std::make_unique<GCWorker>(GCParameter::enableConcurrentGC, GCParameter::enableMemoryAllocator, GCParameter::enableDestructorSupport,
+                                   GCParameter::useInlineMarkState, GCParameter::useSecondaryMemoryManager, GCParameter::enableRelocation,
+                                   GCParameter::enableParallelGC, GCParameter::enableReclaim);
+
 GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
 

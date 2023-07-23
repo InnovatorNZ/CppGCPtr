@@ -1,12 +1,3 @@
-constexpr bool enableConcurrentGC = true;
-constexpr bool enableMemoryAllocator = true;
-constexpr bool enableRelocation = true;
-constexpr bool enableParallelGC = true;
-constexpr bool enableDestructorSupport = false;
-constexpr bool useInlineMarkState = true;
-constexpr bool useSecondaryMemoryManager = false;
-constexpr bool enableReclaim = false;
-
 #include <iostream>
 #include <string>
 #include "GCPtr.h"

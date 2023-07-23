@@ -14,6 +14,7 @@
 #include "GCPtrBase.h"
 #include "GCMemoryAllocator.h"
 #include "GCUtil.h"
+#include "GCParameter.h"
 #include "ObjectInfo.h"
 #include "GCStatus.h"
 #include "PhaseEnum.h"
@@ -22,6 +23,7 @@
 
 class GCWorker {
 private:
+    static std::unique_ptr<GCWorker> instance;
     std::unordered_map<void*, GCStatus> object_map;
     std::shared_mutex object_map_mutex;
     std::unordered_set<GCPtrBase*> root_set;
@@ -42,7 +44,7 @@ private:
     std::unique_ptr<ThreadPoolExecutor> threadPool;
     int gcThreadCount;
     bool enableConcurrentMark, enableParallelGC, enableMemoryAllocator, useInlineMarkstate,
-        enableRelocation, enableDestructorSupport, enableReclaim;
+            enableRelocation, enableDestructorSupport, enableReclaim;
     volatile bool stop_, ready_;
 
     void mark(void*);
@@ -91,6 +93,8 @@ public:
     GCWorker& operator=(const GCWorker&) = delete;
 
     ~GCWorker();
+
+    static GCWorker* getWorker() { return instance.get(); }
 
     void wakeUpGCThread();
 
