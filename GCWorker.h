@@ -94,7 +94,7 @@ public:
 
     ~GCWorker();
 
-    static GCWorker* getWorker() { return instance.get(); }
+    static GCWorker* getWorker();
 
     void wakeUpGCThread();
 

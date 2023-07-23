@@ -1,9 +1,6 @@
 #include "GCWorker.h"
 
-std::unique_ptr<GCWorker> GCWorker::instance =
-        std::make_unique<GCWorker>(GCParameter::enableConcurrentGC, GCParameter::enableMemoryAllocator, GCParameter::enableDestructorSupport,
-                                   GCParameter::useInlineMarkState, GCParameter::useSecondaryMemoryManager, GCParameter::enableRelocation,
-                                   GCParameter::enableParallelGC, GCParameter::enableReclaim);
+std::unique_ptr<GCWorker> GCWorker::instance;
 
 GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
@@ -66,6 +63,21 @@ GCWorker::~GCWorker() {
     condition.notify_all();
     if (gc_thread != nullptr)
         gc_thread->join();
+}
+
+GCWorker* GCWorker::getWorker() {
+    if (instance == nullptr) {
+        static std::mutex singleton_mutex;
+        std::unique_lock<std::mutex> lock(singleton_mutex);
+        if (instance == nullptr) {
+            GCWorker* pGCWorker = new GCWorker
+                    (GCParameter::enableConcurrentGC, GCParameter::enableMemoryAllocator, GCParameter::enableDestructorSupport,
+                     GCParameter::useInlineMarkState, GCParameter::useSecondaryMemoryManager, GCParameter::enableRelocation,
+                     GCParameter::enableParallelGC, GCParameter::enableReclaim);
+            instance = std::unique_ptr<GCWorker>(pGCWorker);
+        }
+    }
+    return instance.get();
 }
 
 void GCWorker::mark(void* object_addr) {
