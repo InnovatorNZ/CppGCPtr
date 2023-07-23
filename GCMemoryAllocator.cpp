@@ -119,27 +119,30 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[pool_idx]);
                         smallRegionQues[pool_idx].emplace_back(new_region);
                     }
-                    // if (regionMapMtx.try_lock()) {
-                    if constexpr (true) {
-                        std::unique_lock<std::shared_mutex> lock(regionMapMtx);
-                        regionMap.emplace(new_region->getStartAddr(), new_region.get());
-                        // regionMapMtx.unlock();
-                    } else {
-                        // 若获取region红黑树的锁失败，则将新region放入缓冲区内，在GC开始的时候再添加进红黑树
-                        // 在此期间所有在新区域中的对象由于不在管理区域内会被误判定为gc root，不过问题不大
-                        // 更新：如果支持调用析构函数的话那是问题不大，但是现在尚未支持，因此非root被释放后其仍然留存在rootset中，产生访问非法内存错误
-                        while (true) {
-                            std::clog << "Acquire regionMap mutex failed, adding to buffer vector" << std::endl;
-                            if (regionMapBufMtx0[pool_idx].try_lock()) {
-                                regionMapBuffer0[pool_idx].push_back(new_region.get());
-                                regionMapBufMtx0[pool_idx].unlock();
-                                break;
-                            } else if (regionMapBufMtx1[pool_idx].try_lock()) {
-                                regionMapBuffer1[pool_idx].push_back(new_region.get());
-                                regionMapBufMtx1[pool_idx].unlock();
-                                break;
+                    if constexpr (enableDestructorSupport) {
+                        if (regionMapMtx.try_lock()) {
+                            regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                            regionMapMtx.unlock();
+                        } else {
+                            // 若获取region红黑树的锁失败，则将新region放入缓冲区内，在GC开始的时候再添加进红黑树
+                            // 在此期间所有在新区域中的对象由于不在管理区域内会被误判定为gc root，不过问题不大
+                            // 更新：如果支持调用析构函数的话那是问题不大，但是现在尚未支持，因此非root被释放后其仍然留存在rootset中，产生访问非法内存错误
+                            while (true) {
+                                std::clog << "Acquire regionMap mutex failed, adding to buffer vector" << std::endl;
+                                if (regionMapBufMtx0[pool_idx].try_lock()) {
+                                    regionMapBuffer0[pool_idx].push_back(new_region.get());
+                                    regionMapBufMtx0[pool_idx].unlock();
+                                    break;
+                                } else if (regionMapBufMtx1[pool_idx].try_lock()) {
+                                    regionMapBuffer1[pool_idx].push_back(new_region.get());
+                                    regionMapBufMtx1[pool_idx].unlock();
+                                    break;
+                                }
                             }
                         }
+                    } else {
+                        std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+                        regionMap.emplace(new_region->getStartAddr(), new_region.get());
                     }
                 } else {
                     std::clog << "Undo allocating new region as someone beats us." << std::endl;

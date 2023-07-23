@@ -1,13 +1,12 @@
 #include "GCWorker.h"
 
-std::unique_ptr<GCWorker> GCWorker::instance = nullptr;
-
 GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
 
 GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestructorSupport, bool useInlineMarkState,
                    bool useSecondaryMemoryManager, bool enableRelocation, bool enableParallel, bool enableReclaim) :
         stop_(false), ready_(false), enableConcurrentMark(concurrent), enableMemoryAllocator(enableMemoryAllocator) {
+    std::clog << "GCWorker()" << std::endl;
     if (enableReclaim || useSecondaryMemoryManager) {
         // TODO: 重利用和空闲列表二级内存分配器尚未实现
         throw std::logic_error("Reclaim and secondary memory manager is not prepared yet. Please contact developer");
@@ -62,15 +61,6 @@ GCWorker::~GCWorker() {
     condition.notify_all();
     if (gc_thread != nullptr)
         gc_thread->join();
-}
-
-GCWorker* GCWorker::getWorker() {
-    if (instance == nullptr) {
-        std::clog << "Not init! Initializing GCWorker with default argument (concurrent disabled, bitmap disabled)" << std::endl;
-        GCWorker* pGCWorker = new GCWorker();
-        instance = std::unique_ptr<GCWorker>(pGCWorker);
-    }
-    return instance.get();
 }
 
 void GCWorker::mark(void* object_addr) {
@@ -190,20 +180,20 @@ void GCWorker::GCThreadLoop() {
             ready_ = false;
         }
         if (stop_) break;
-        GCWorker::getWorker()->beginMark();
+        beginMark();
         if (enableParallelGC)
             GCUtil::stop_the_world(GCPhase::getSTWLock(), threadPool.get());
         else
             GCUtil::stop_the_world(GCPhase::getSTWLock());
         auto start_time = std::chrono::high_resolution_clock::now();
-        GCWorker::getWorker()->triggerSATBMark();
-        GCWorker::getWorker()->selectRelocationSet();
+        triggerSATBMark();
+        selectRelocationSet();
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
         std::clog << "Stop-the-world duration: " << std::dec << duration.count() << " us" << std::endl;
         GCUtil::resume_the_world();
-        GCWorker::getWorker()->beginSweep();
-        GCWorker::getWorker()->endGC();
+        beginSweep();
+        endGC();
     }
     std::cout << "GC thread exited." << std::endl;
 }
@@ -218,17 +208,17 @@ void GCWorker::wakeUpGCThread() {
 
 void GCWorker::triggerGC() {
     if (enableConcurrentMark) {
-        GCWorker::getWorker()->wakeUpGCThread();
+        wakeUpGCThread();
     } else {
         using namespace std;
         cout << "Triggered GC" << endl;
-        GCWorker::getWorker()->printMap();
-        GCWorker::getWorker()->beginMark();
+        printMap();
+        beginMark();
         GCPhase::SwitchToNextPhase();       // skip satb remark
-        GCWorker::getWorker()->printMap();
-        GCWorker::getWorker()->beginSweep();
-        GCWorker::getWorker()->printMap();
-        GCWorker::getWorker()->endGC();
+        printMap();
+        beginSweep();
+        printMap();
+        endGC();
         cout << "End of GC" << endl;
     }
 }
@@ -396,6 +386,7 @@ void GCWorker::beginSweep() {
         GCPhase::SwitchToNextPhase();
     if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
         if (!enableMemoryAllocator) {
+            std::shared_lock<std::shared_mutex> lock(object_map_mutex);
             for (auto it = object_map.begin(); it != object_map.end();) {
                 if (GCPhase::needSweep(it->second.markState)) {
                     void* object_addr = it->first;
@@ -475,18 +466,5 @@ bool GCWorker::is_root(void* gcptr_addr) {
         return !memoryAllocator->inside_allocated_regions(gcptr_addr);
     } else {
         return GCUtil::is_stack_pointer(gcptr_addr);
-    }
-}
-
-
-namespace gc {
-    void triggerGC() {
-        GCWorker::getWorker()->triggerGC();
-    }
-
-    void init(bool concurrent, bool enableMemoryAllocator, bool enableRelocation, bool enableParallelGC,
-              bool enableDestructorSupport, bool useInlineMarkState, bool enableReclaim, bool useSecondaryMemoryManager) {
-        GCWorker::init(concurrent, enableMemoryAllocator, enableDestructorSupport, useInlineMarkState, useSecondaryMemoryManager, enableRelocation,
-                       enableParallelGC, enableReclaim);
     }
 }

@@ -22,7 +22,6 @@
 
 class GCWorker {
 private:
-    static std::unique_ptr<GCWorker> instance;
     std::unordered_map<void*, GCStatus> object_map;
     std::shared_mutex object_map_mutex;
     std::unordered_set<GCPtrBase*> root_set;
@@ -43,14 +42,8 @@ private:
     std::unique_ptr<ThreadPoolExecutor> threadPool;
     int gcThreadCount;
     bool enableConcurrentMark, enableParallelGC, enableMemoryAllocator, useInlineMarkstate,
-            enableRelocation, enableDestructorSupport, enableReclaim;
+        enableRelocation, enableDestructorSupport, enableReclaim;
     volatile bool stop_, ready_;
-
-    GCWorker();
-
-    GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestructorSupport = true,
-             bool useInlineMarkState = true, bool useSecondaryMemoryManager = false,
-             bool enableRelocation = false, bool enableParallel = false, bool enableReclaim = false);
 
     void mark(void*);
 
@@ -85,21 +78,19 @@ private:
     }
 
 public:
+    GCWorker();
+
+    GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestructorSupport = true,
+             bool useInlineMarkState = true, bool useSecondaryMemoryManager = false,
+             bool enableRelocation = false, bool enableParallel = false, bool enableReclaim = false);
+
     GCWorker(const GCWorker&) = delete;
 
-    GCWorker(GCWorker&&) = delete;
+    GCWorker(GCWorker&&) noexcept = delete;
 
     GCWorker& operator=(const GCWorker&) = delete;
 
     ~GCWorker();
-
-    static GCWorker* getWorker();
-
-    template<class... Args>
-    static void init(Args... args) {
-        GCWorker* pGCWorker = new GCWorker(args...);
-        GCWorker::instance = std::unique_ptr<GCWorker>(pGCWorker);
-    }
 
     void wakeUpGCThread();
 
@@ -141,15 +132,5 @@ public:
 
     bool is_root(void* gcptr_addr);
 };
-
-
-namespace gc {
-    void triggerGC();
-
-    void init(bool concurrent, bool enableMemoryAllocator,
-              bool enableRelocation = false, bool enableParallelGC = false,
-              bool enableDestructorSupport = false, bool useInlineMarkState = false,
-              bool enableReclaim = false, bool useSecondaryMemoryManager = false);
-}
 
 #endif //CPPGCPTR_GCWORKER_H

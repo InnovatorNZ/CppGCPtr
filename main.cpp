@@ -1,3 +1,12 @@
+constexpr bool enableConcurrentGC = true;
+constexpr bool enableMemoryAllocator = true;
+constexpr bool enableRelocation = true;
+constexpr bool enableParallelGC = true;
+constexpr bool enableDestructorSupport = false;
+constexpr bool useInlineMarkState = true;
+constexpr bool useSecondaryMemoryManager = false;
+constexpr bool enableReclaim = false;
+
 #include <iostream>
 #include <string>
 #include "GCPtr.h"
@@ -50,19 +59,19 @@ public:
     }
 };
 
-//GCPtr<MyObject> obj3;
+GCPtr<MyObject> obj3;
 
 int main() {
 #define TRIGGER_GC 1
     using namespace std;
     cout << "Size of MyObject: " << sizeof(MyObject) << endl;
+    cout << "Size of GCPtr: " << sizeof(GCPtr<void>) << endl;
     cout << "Ready to start..." << endl;
     const int n = 25;
     long long time_ = 0;
-    gc::init(true, true, true, true, false, true, false);
     Sleep(500);
 
-    GCPtr<MyObject> obj3;
+    //GCPtr<MyObject> obj3;
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::steady_clock::now();
         GCPtr<MyObject> obj2;

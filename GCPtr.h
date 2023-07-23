@@ -8,6 +8,10 @@
 #include "GCPtrBase.h"
 #include "GCWorker.h"
 
+static GCWorker gcWorker_(enableConcurrentGC, enableMemoryAllocator, enableDestructorSupport,
+         useInlineMarkState, useSecondaryMemoryManager, enableRelocation,
+         enableParallelGC, enableReclaim);
+
 template<typename T>
 class GCPtr : public GCPtrBase {
     template<typename U>
@@ -21,12 +25,12 @@ private:
     const int identifier_tail = GCPTR_IDENTIFIER_TAIL;
 
     bool needHeal() const {
-        return this->obj != nullptr && GCWorker::getWorker()->relocationEnabled()
+        return this->obj != nullptr && gcWorker_.relocationEnabled()
                && GCPhase::needSelfHeal(getInlineMarkState());
     }
 
     void selfHeal() {
-        auto healed = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get());
+        auto healed = gcWorker_.getHealedPointer(obj, obj_size, region.get());
         if (healed.first != nullptr) {
             this->obj = static_cast<T*>(healed.first);
             this->region = healed.second;
@@ -36,43 +40,24 @@ private:
 
 public:
     GCPtr() : obj(nullptr), obj_size(0) {
-        if (GCWorker::getWorker()->is_root(this)) {
-            is_root = true;
-            GCWorker::getWorker()->addRoot(this);
-        } else {
-            is_root = false;
-        }
-    }
-
-#if 0
-    GCPtr(T* obj, bool is_root) : obj_size(sizeof(*obj)) {
-        GCPhase::EnterCriticalSection();
-        this->obj = obj;
-        if (!is_root && GCWorker::getWorker()->is_root(this))
-            is_root = true;
-        this->is_root = is_root;
-        GCWorker::getWorker()->registerObject(obj, sizeof(*obj));
-        if (GCWorker::getWorker()->destructorEnabled())
-            GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
+        is_root = gcWorker_.is_root(this);
         if (is_root) {
-            GCWorker::getWorker()->addRoot(this);
+            gcWorker_.addRoot(this);
         }
-        GCPhase::LeaveCriticalSection();
     }
-#endif
 
     explicit GCPtr(T* obj, const std::shared_ptr<GCRegion>& region = nullptr, bool is_root = false) :
             obj_size(sizeof(*obj)) {
         GCPhase::EnterCriticalSection();
         this->obj = obj;
         this->region = region;
-        if (!is_root && GCWorker::getWorker()->is_root(this))
+        if (!is_root && gcWorker_.is_root(this))
             is_root = true;
         this->is_root = is_root;
-        if (GCWorker::getWorker()->destructorEnabled())
-            GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
+        if (gcWorker_.destructorEnabled())
+            gcWorker_.registerDestructor(obj, [obj]() { obj->~T(); });
         if (is_root) {
-            GCWorker::getWorker()->addRoot(this);
+            gcWorker_.addRoot(this);
         }
         GCPhase::LeaveCriticalSection();
     }
@@ -86,7 +71,7 @@ public:
     T* get() const {
         // Calling const get() will disable pointer self-heal, which is not recommend
         if (this->needHeal())
-            return static_cast<T*>(GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get()).first);
+            return static_cast<T*>(gcWorker_.getHealedPointer(obj, obj_size, region.get()).first);
         else
             return obj;
     }
@@ -112,7 +97,7 @@ public:
         if (this != &other) {
             GCPhase::EnterCriticalSection();
             if (this->obj != nullptr && this->obj != other.obj && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
-                GCWorker::getWorker()->addSATB(this->getObjectInfo());
+                gcWorker_.addSATB(this->getObjectInfo());
             }
             this->setInlineMarkState(other.getInlineMarkState());
             this->obj.store(other.obj.load());
@@ -120,9 +105,9 @@ public:
             this->region = other.region;
             /*
              * 赋值运算符重载无需再次判别is_root，有且仅有构造函数需要
-            if (GCWorker::getWorker()->is_root(this)) {
+            if (gcWorker_.is_root(this)) {
                 this->is_root = true;
-                GCWorker::getWorker()->addRoot(this);
+                gcWorker_.addRoot(this);
             }
             */
             GCPhase::LeaveCriticalSection();
@@ -134,7 +119,7 @@ public:
         if (this->obj != nullptr) {
             if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
                 GCPhase::EnterCriticalSection();
-                GCWorker::getWorker()->addSATB(this->getObjectInfo());
+                gcWorker_.addSATB(this->getObjectInfo());
                 GCPhase::LeaveCriticalSection();
             }
             this->obj = nullptr;
@@ -157,9 +142,9 @@ public:
         this->setInlineMarkState(other.getInlineMarkState());
         this->obj.store(other.obj.load());
         this->region = other.region;
-        this->is_root = GCWorker::getWorker()->is_root(this);
+        this->is_root = gcWorker_.is_root(this);
         if (is_root) {
-            GCWorker::getWorker()->addRoot(this);
+            gcWorker_.addRoot(this);
         }
         GCPhase::LeaveCriticalSection();
     }
@@ -169,9 +154,9 @@ public:
         this->setInlineMarkState(other.getInlineMarkState());
         this->obj.store(other.obj.load());
         this->region = std::move(other.region);
-        this->is_root = GCWorker::getWorker()->is_root(this);
+        this->is_root = gcWorker_.is_root(this);
         if (is_root) {
-            GCWorker::getWorker()->addRoot(this);
+            gcWorker_.addRoot(this);
         }
         other.obj = nullptr;
         other.obj_size = 0;
@@ -183,9 +168,9 @@ public:
     GCPtr(GCPtr<U>&& other) noexcept : obj(other.obj), obj_size(other.obj_size) {
         this->setInlineMarkState(other.getInlineMarkState());
         this->region = std::move(other.region);
-        this->is_root = GCWorker::getWorker()->is_root(this);
+        this->is_root = gcWorker_.is_root(this);
         if (is_root) {
-            GCWorker::getWorker()->addRoot(this);
+            gcWorker_.addRoot(this);
         }
         other.obj = nullptr;
         other.obj_size = 0;
@@ -195,11 +180,11 @@ public:
     ~GCPtr() override {
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK && this->obj != nullptr) {
             GCPhase::EnterCriticalSection();
-            GCWorker::getWorker()->addSATB(this->getObjectInfo());
+            gcWorker_.addSATB(this->getObjectInfo());
             GCPhase::LeaveCriticalSection();
         }
         if (is_root) {
-            GCWorker::getWorker()->removeRoot(this);
+            gcWorker_.removeRoot(this);
         }
     }
 };
@@ -210,8 +195,8 @@ namespace gc {
         GCPhase::EnterCriticalSection();
         T* obj = nullptr;
         std::shared_ptr<GCRegion> region = nullptr;
-        if (GCWorker::getWorker()->memoryAllocatorEnabled()) {
-            auto pair = GCWorker::getWorker()->allocate(sizeof(T));
+        if (gcWorker_.memoryAllocatorEnabled()) {
+            auto pair = gcWorker_.allocate(sizeof(T));
             obj = static_cast<T*>(pair.first);
             region = pair.second;
             new(obj) T(std::forward<Args>(args)...);
@@ -229,8 +214,8 @@ namespace gc {
         GCPhase::EnterCriticalSection();
         T* obj = nullptr;
         std::shared_ptr<GCRegion> region = nullptr;
-        if (GCWorker::getWorker()->memoryAllocatorEnabled()) {
-            auto pair = GCWorker::getWorker()->allocate(sizeof(T));
+        if (gcWorker_.memoryAllocatorEnabled()) {
+            auto pair = gcWorker_.allocate(sizeof(T));
             obj = static_cast<T*>(pair.first);
             region = pair.second;
             new(obj) T(std::forward<Args>(args)...);
@@ -241,6 +226,10 @@ namespace gc {
 
         if (obj == nullptr) throw std::exception();
         return GCPtr<T>(obj, region, true);
+    }
+
+    void triggerGC() {
+        gcWorker_.triggerGC();
     }
 
 #ifdef OLD_MAKEGC
