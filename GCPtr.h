@@ -47,6 +47,7 @@ public:
         GCPhase::EnterCriticalSection();
         this->obj = obj;
         this->region = region;
+        GCWorker::getWorker()->registerObject(obj, sizeof(*obj));
         if (!is_root && GCWorker::getWorker()->is_root(this))
             is_root = true;
         this->is_root = is_root;
