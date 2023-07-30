@@ -20,7 +20,6 @@ class GCMemoryAllocator : public IMemoryAllocator {
 private:
     static const size_t INITIAL_SINGLE_SIZE;
     static constexpr bool useConcurrentLinkedList = false;
-    static constexpr bool enableDestructorSupport = false;      // 内存分配器暂不支持调用析构函数
     bool enableInternalMemoryManager;
     bool enableParallelClear;
     unsigned int gcThreadCount;

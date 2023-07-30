@@ -18,8 +18,6 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
         enableRelocation = false;           // 必须启用内存分配器以支持移动式回收
         useSecondaryMemoryManager = false;
         enableReclaim = false;
-    } else {
-        enableDestructorSupport = false;    // TODO: 内存分配器暂不支持调用析构函数
     }
     this->enableParallelGC = enableParallel;
     this->enableRelocation = enableRelocation;
@@ -283,9 +281,13 @@ void GCWorker::addSATB(const ObjectInfo& objectInfo) {
     }
 }
 
-void GCWorker::registerDestructor(void* object_addr, const std::function<void()>& destructor) {
-    std::unique_lock<std::mutex> lock(this->destructor_map_mutex);
-    this->destructor_map.emplace(object_addr, destructor);
+void GCWorker::registerDestructor(void* object_addr, const std::function<void()>& destructor, GCRegion* region) {
+    if (region == nullptr) {
+        std::unique_lock<std::mutex> lock(this->destructor_map_mutex);
+        this->destructor_map.emplace(object_addr, destructor);
+    } else {
+        region->registerDestructor(object_addr, destructor);
+    }
 }
 
 void GCWorker::beginMark() {

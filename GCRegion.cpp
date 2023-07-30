@@ -24,6 +24,10 @@ GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size)
         } else {
             regionalHashMap = std::make_unique<GCRegionalHashMap>();
         }
+        if constexpr (enable_destructor) {
+            destructor_map = std::make_unique<std::unordered_map<void*, std::function<void()>>>();
+            destructor_map->reserve(128);
+        }
     }
 }
 
@@ -146,6 +150,10 @@ void GCRegion::clearUnmarked() {
             } else if (GCPhase::needSweep(markState) && markState != MarkState::REMAPPED) {
                 // 非存活对象统一标记为REMAPPED（或者从hashmap中删除也可以），不然会导致markState经过两轮回收后重复
                 regionalMapIterator.setCurrentMarkState(MarkState::REMAPPED);
+                if constexpr (enable_destructor) {
+                    void* addr = regionalMapIterator.getCurrentAddress();
+                    callDestructor(addr);
+                }
             }
         }
     } else {
@@ -159,6 +167,9 @@ void GCRegion::clearUnmarked() {
             } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
                 // 非存活对象统一标记为REMAPPED（不能标记为NOT_ALLOCATED），因为仍然需要size信息遍历bitmap，并避免markState重复
                 bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
+                if constexpr (enable_destructor) {
+                    callDestructor(addr);
+                }
             } else if (markState == MarkStateBit::NOT_ALLOCATED && regionType != RegionEnum::TINY) {
                 // break;
                 throw std::exception();    // 多线程情况下可能会误判
@@ -189,6 +200,9 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
             } else if (GCPhase::needSweep(markState) && markState != MarkState::REMAPPED) {
                 // TODO: 好像有bug：对于未触发relocate的region内并且熬过两轮垃圾回收的对象由于markState相同，会导致应该死亡的对象被复制
                 // regionalHashMap->mark(object_addr, gcStatus.objectSize, MarkState::REMAPPED);
+                if constexpr (enable_destructor) {
+                    callDestructor(object_addr);
+                }
             }
         }
     } else {
@@ -203,6 +217,9 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
             } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
                 // 非存活对象统一标记为REMAPPED；之所以不能标记为NOT_ALLOCATED是因为仍然需要size信息遍历bitmap
                 // bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
+                if constexpr (enable_destructor) {
+                    callDestructor(object_addr);
+                }
             } else if (markState == MarkStateBit::NOT_ALLOCATED && regionType != RegionEnum::TINY) {
                 throw std::exception();    // 多线程情况下会误判吗？按理说是不应该在region被转移的过程中继续分配对象的
             }
@@ -230,6 +247,13 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
         std::unique_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
         if (!forwarding_table.contains(object_addr)) {
             forwarding_table.emplace(object_addr, new_addr);
+            if constexpr (enable_destructor) {
+                std::shared_lock<std::shared_mutex> lock(destructor_map_mtx);
+                auto it = destructor_map->find(object_addr);
+                if (it != destructor_map->end()) {
+                    new_region->registerDestructor(new_object_addr, it->second);
+                } else std::cerr << "destructor not found!" << std::endl;
+            }
             return;
         }
     }
@@ -258,6 +282,7 @@ void GCRegion::free() {
     evacuated = true;
     bitmap = nullptr;
     regionalHashMap = nullptr;
+    destructor_map = nullptr;
     total_size = 0;
     allocated_offset = 0;
     ::free(startAddress);
@@ -269,6 +294,8 @@ void GCRegion::reclaim() {
     largeRegionMarkState = MarkStateBit::REMAPPED;
     if constexpr (use_regional_hashmap)
         regionalHashMap->clear();
+    if constexpr (enable_destructor)
+        destructor_map->clear();
     allocated_offset = 0;
     live_size = 0;
     evacuated = false;
@@ -291,6 +318,21 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCRegion::queryForwardingTable(void*
     auto it = forwarding_table.find(ptr);
     if (it == forwarding_table.end()) return std::make_pair(nullptr, nullptr);
     else return it->second;
+}
+
+void GCRegion::registerDestructor(void* object_addr, const std::function<void()>& func) {
+    if (destructor_map == nullptr) return;
+    std::unique_lock<std::shared_mutex> lock(destructor_map_mtx);
+    destructor_map->emplace(object_addr, func);
+}
+
+void GCRegion::callDestructor(void* object_addr) {
+    // std::clog << "Calling destructor of " << object_addr << std::endl;
+    std::shared_lock<std::shared_mutex> lock(destructor_map_mtx);
+    auto it = destructor_map->find(object_addr);
+    if (it != destructor_map->end()) {
+        it->second();
+    }
 }
 
 bool GCRegion::inside_region(void* addr, size_t size) const {

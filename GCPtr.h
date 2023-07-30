@@ -51,8 +51,9 @@ public:
         if (!is_root && GCWorker::getWorker()->is_root(this))
             is_root = true;
         this->is_root = is_root;
-        if (GCWorker::getWorker()->destructorEnabled())
-            GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); });
+        if (GCWorker::getWorker()->destructorEnabled()) {
+            GCWorker::getWorker()->registerDestructor(obj, [obj]() { obj->~T(); }, region.get());
+        }
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }

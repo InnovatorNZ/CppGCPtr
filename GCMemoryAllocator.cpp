@@ -119,7 +119,8 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[pool_idx]);
                         smallRegionQues[pool_idx].emplace_back(new_region);
                     }
-                    if constexpr (enableDestructorSupport) {
+                    //if constexpr (GCParameter::enableDestructorSupport) {
+                    if constexpr (false) {
                         if (regionMapMtx.try_lock()) {
                             regionMap.emplace(new_region->getStartAddr(), new_region.get());
                             regionMapMtx.unlock();
@@ -158,6 +159,10 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         std::unique_lock<std::shared_mutex> lock(mediumRegionQueMtx);
                         mediumRegionQue.emplace_back(new_region);
                     }
+                    {
+                        std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+                        regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                    }
                 } else {
                     new_region->free();
                 }
@@ -170,6 +175,10 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         std::unique_lock<std::shared_mutex> lock(tinyRegionQueMtx);
                         tinyRegionQue.emplace_back(new_region);
                     }
+                    {
+                        std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+                        regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                    }
                 } else {
                     new_region->free();
                 }
@@ -181,8 +190,11 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                     std::unique_lock<std::shared_mutex> lock(largeRegionQueMtx);
                     largeRegionQue.emplace_back(new_region);
                 }
+                {
+                    std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+                    regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                }
                 return std::make_pair(new_region_memory, new_region);
-                break;
         }
     }
 }
@@ -439,7 +451,9 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
     {
         std::unique_lock<std::shared_mutex> lock(regionQueMtx);
         for (auto it = regionQue.begin(); it != regionQue.end();) {
-            if (it->get()->canFree()) {
+            GCRegion* region = it->get();
+            if (region->canFree()) {
+                regionMap.erase(region->getStartAddr());
                 it = regionQue.erase(it);
             } else {
                 it++;

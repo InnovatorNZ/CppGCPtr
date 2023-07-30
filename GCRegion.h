@@ -8,10 +8,12 @@
 #include <mutex>
 #include <memory>
 #include <unordered_map>
+#include <functional>
 #include "GCBitMap.h"
+#include "GCRegionalHashMap.h"
 #include "GCPhase.h"
 #include "GCStatus.h"
-#include "GCRegionalHashMap.h"
+#include "GCParameter.h"
 #include "PhaseEnum.h"
 #include "IAllocatable.h"
 #include "IMemoryAllocator.h"
@@ -39,7 +41,8 @@ public:
     static const size_t SMALL_REGION_SIZE;
     static const size_t MEDIUM_OBJECT_THRESHOLD;
     static const size_t MEDIUM_REGION_SIZE;
-    static constexpr bool use_regional_hashmap = true;
+    static constexpr bool use_regional_hashmap = GCParameter::useRegionalHashmap;
+    static constexpr bool enable_destructor = GCParameter::enableDestructorSupport;
 private:
     void* startAddress;
     size_t total_size;
@@ -52,8 +55,17 @@ private:
     std::unique_ptr<GCRegionalHashMap> regionalHashMap;     // regional hash map
     std::unordered_map<void*, std::pair<void*, std::shared_ptr<GCRegion>>> forwarding_table;
     std::shared_mutex forwarding_table_mutex;
+    std::unique_ptr<std::unordered_map<void*, std::function<void()>>> destructor_map;
+    std::shared_mutex destructor_map_mtx;
     short allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
     std::atomic<bool> evacuated;
+
+protected:
+    float getFragmentRatio() const;
+
+    float getFreeRatio() const;
+
+    void callDestructor(void*);
 
 public:
     struct GCRegionHash {
@@ -80,10 +92,6 @@ public:
 
     bool marked(void* object_addr);
 
-    float getFragmentRatio() const;
-
-    float getFreeRatio() const;
-
     void clearUnmarked();
 
     bool canFree() const;
@@ -109,6 +117,8 @@ public:
     bool inside_region(void*, size_t = 0) const;
 
     void reclaim();
+
+    void registerDestructor(void*, const std::function<void()>&);
 };
 
 

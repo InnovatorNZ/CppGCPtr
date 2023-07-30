@@ -112,7 +112,7 @@ public:
 
     void addSATB(const ObjectInfo&);
 
-    void registerDestructor(void* object_addr, const std::function<void()>&);
+    void registerDestructor(void* object_addr, const std::function<void()>&, GCRegion* = nullptr);
 
     void beginMark();
 
