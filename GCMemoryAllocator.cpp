@@ -476,6 +476,10 @@ void GCMemoryAllocator::clearFreeRegion(ConcurrentLinkedList<std::shared_ptr<GCR
         std::shared_ptr<GCRegion> region = iterator->current();
         region->clearUnmarked();
         if (region->canFree()) {
+            {
+                std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
+                regionMap.erase(region->getStartAddr());
+            }
             region->free();
             iterator->remove(region);
         }

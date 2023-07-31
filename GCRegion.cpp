@@ -176,7 +176,7 @@ void GCRegion::clearUnmarked() {
             }
         }
     }
-    if (allFreeFlag == 0) allFreeFlag = 1;
+    // if (allFreeFlag == 0) allFreeFlag = 1;
 }
 
 void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
@@ -266,8 +266,8 @@ bool GCRegion::canFree() const {
         if (GCPhase::needSweep(largeRegionMarkState)) return true;
         else return false;
     } else {
-        if (allFreeFlag == 0 && live_size == 0) return true;
-        else if (allFreeFlag == 1) return true;
+        if (allFreeFlag == -1) return false;
+        else if (allFreeFlag == 0 && live_size == 0) return true;
         else return false;
     }
 }
