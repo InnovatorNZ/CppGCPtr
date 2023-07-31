@@ -57,7 +57,6 @@ private:
     std::shared_mutex forwarding_table_mutex;
     std::unique_ptr<std::unordered_map<void*, std::function<void()>>> destructor_map;
     std::shared_mutex destructor_map_mtx;
-    short allFreeFlag;                        // 0: Unknown, 1: Yes, -1: No, in small, medium, tiny region
     std::atomic<bool> evacuated;
 
 protected:

@@ -9,7 +9,7 @@ const size_t GCRegion::MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
 
 GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size) :
         regionType(regionType), startAddress(startAddress), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
-        total_size(total_size), allocated_offset(0), live_size(0), allFreeFlag(0), evacuated(false) {
+        total_size(total_size), allocated_offset(0), live_size(0), evacuated(false) {
     if (regionType != RegionEnum::LARGE) {
         if constexpr (!use_regional_hashmap) {
             switch (regionType) {
@@ -139,15 +139,12 @@ void GCRegion::clearUnmarked() {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
-    allFreeFlag = 0;
     if constexpr (use_regional_hashmap) {
         auto regionalMapIterator = regionalHashMap->getIterator();
         while (regionalMapIterator.MoveNext()) {
             GCStatus gcStatus = regionalMapIterator.current();
             const MarkState& markState = gcStatus.markState;
-            if (GCPhase::isLiveObject(markState)) {
-                allFreeFlag = -1;
-            } else if (GCPhase::needSweep(markState) && markState != MarkState::REMAPPED) {
+            if (GCPhase::needSweep(markState) && markState != MarkState::REMAPPED) {
                 // 非存活对象统一标记为REMAPPED（或者从hashmap中删除也可以），不然会导致markState经过两轮回收后重复
                 regionalMapIterator.setCurrentMarkState(MarkState::REMAPPED);
                 if constexpr (enable_destructor) {
@@ -162,9 +159,7 @@ void GCRegion::clearUnmarked() {
             GCBitMap::BitStatus bitStatus = bitMapIterator.current();
             MarkStateBit& markState = bitStatus.markState;
             void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
-            if (GCPhase::isLiveObject(markState)) {
-                allFreeFlag = -1;
-            } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
+            if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
                 // 非存活对象统一标记为REMAPPED（不能标记为NOT_ALLOCATED），因为仍然需要size信息遍历bitmap，并避免markState重复
                 bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
                 if constexpr (enable_destructor) {
@@ -176,7 +171,6 @@ void GCRegion::clearUnmarked() {
             }
         }
     }
-    // if (allFreeFlag == 0) allFreeFlag = 1;
 }
 
 void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
@@ -266,9 +260,7 @@ bool GCRegion::canFree() const {
         if (GCPhase::needSweep(largeRegionMarkState)) return true;
         else return false;
     } else {
-        if (allFreeFlag == -1) return false;
-        else if (allFreeFlag == 0 && live_size == 0) return true;
-        else return false;
+        return live_size == 0;
     }
 }
 
@@ -290,7 +282,6 @@ void GCRegion::free() {
 }
 
 void GCRegion::reclaim() {
-    allFreeFlag = 0;
     largeRegionMarkState = MarkStateBit::REMAPPED;
     if constexpr (use_regional_hashmap)
         regionalHashMap->clear();
@@ -304,7 +295,7 @@ void GCRegion::reclaim() {
 GCRegion::GCRegion(GCRegion&& other) noexcept:
         regionType(other.regionType), startAddress(other.startAddress), total_size(other.total_size),
         bitmap(std::move(other.bitmap)), regionalHashMap(std::move(other.regionalHashMap)),
-        largeRegionMarkState(other.largeRegionMarkState), allFreeFlag(other.allFreeFlag) {
+        largeRegionMarkState(other.largeRegionMarkState) {
     this->allocated_offset.store(other.allocated_offset.load());
     this->live_size.store(other.live_size.load());
     this->evacuated.store(other.evacuated.load());
