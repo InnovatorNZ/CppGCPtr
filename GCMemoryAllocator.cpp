@@ -429,6 +429,10 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
         if (!enableParallelClear) {
             for (auto& region : regionQue) {
                 if (region->canFree()) {
+                    {
+                        std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
+                        regionMap.erase(region->getStartAddr());
+                    }
                     region->free();
                 }
             }
@@ -439,8 +443,13 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
                     size_t startIndex = tid * snum;
                     size_t endIndex = (tid == gcThreadCount - 1) ? regionQue.size() : (tid + 1) * snum;
                     for (size_t j = startIndex; j < endIndex; j++) {
-                        if (regionQue[j]->canFree()) {
-                            regionQue[j]->free();
+                        GCRegion* region = regionQue[j].get();
+                        if (region->canFree()) {
+                            {
+                                std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
+                                regionMap.erase(region->getStartAddr());
+                            }
+                            region->free();
                         }
                     }
                 });
@@ -453,7 +462,6 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
         for (auto it = regionQue.begin(); it != regionQue.end();) {
             GCRegion* region = it->get();
             if (region->canFree()) {
-                regionMap.erase(region->getStartAddr());
                 it = regionQue.erase(it);
             } else {
                 it++;
