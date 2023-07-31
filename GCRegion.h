@@ -55,7 +55,7 @@ private:
     std::unique_ptr<GCRegionalHashMap> regionalHashMap;     // regional hash map
     std::unordered_map<void*, std::pair<void*, std::shared_ptr<GCRegion>>> forwarding_table;
     std::shared_mutex forwarding_table_mutex;
-    std::unique_ptr<std::unordered_map<void*, std::function<void()>>> destructor_map;
+    std::unique_ptr<std::unordered_map<void*, std::function<void(void*)>>> destructor_map;
     std::shared_mutex destructor_map_mtx;
     std::atomic<bool> evacuated;
 
@@ -117,7 +117,7 @@ public:
 
     void reclaim();
 
-    void registerDestructor(void*, const std::function<void()>&);
+    void registerDestructor(void*, const std::function<void(void*)>&);
 };
 
 

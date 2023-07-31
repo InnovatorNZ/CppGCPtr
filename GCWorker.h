@@ -35,7 +35,7 @@ private:
     std::vector<std::vector<ObjectInfo>> satb_queue_pool;
     std::unique_ptr<std::mutex[]> satb_queue_pool_mutex;
     std::mutex satb_queue_mutex;
-    std::unordered_map<void*, std::function<void()>> destructor_map;
+    std::unordered_map<void*, std::function<void(void*)>> destructor_map;
     std::mutex destructor_map_mutex;
     std::mutex thread_mutex;
     std::condition_variable condition;
@@ -112,7 +112,7 @@ public:
 
     void addSATB(const ObjectInfo&);
 
-    void registerDestructor(void* object_addr, const std::function<void()>&, GCRegion* = nullptr);
+    void registerDestructor(void* object_addr, const std::function<void(void*)>&, GCRegion* = nullptr);
 
     void beginMark();
 

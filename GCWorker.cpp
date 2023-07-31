@@ -147,6 +147,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         }
     } else {
         if (region == nullptr || region->isEvacuated() || !region->inside_region(object_addr, object_size)) {
+            // TODO: clearUnmarked()触发此处异常可能是由于setEvacuate()与isEvacuated()非原子，但又没有STW导致的
             std::clog << "Evacuated region or Out of range!" << std::endl;
             throw std::exception();
             return;
@@ -281,7 +282,7 @@ void GCWorker::addSATB(const ObjectInfo& objectInfo) {
     }
 }
 
-void GCWorker::registerDestructor(void* object_addr, const std::function<void()>& destructor, GCRegion* region) {
+void GCWorker::registerDestructor(void* object_addr, const std::function<void(void*)>& destructor, GCRegion* region) {
     if (region == nullptr) {
         std::unique_lock<std::mutex> lock(this->destructor_map_mutex);
         this->destructor_map.emplace(object_addr, destructor);
@@ -446,8 +447,8 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr
 void GCWorker::callDestructor(void* object_addr, bool remove_after_call) {
     auto destructor_it = destructor_map.find(object_addr);
     if (destructor_it != destructor_map.end()) {
-        std::function<void()>& destructor = destructor_it->second;
-        destructor();
+        auto& destructor = destructor_it->second;
+        destructor(object_addr);
         if (remove_after_call)
             destructor_map.erase(destructor_it);
     }

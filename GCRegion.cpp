@@ -25,7 +25,7 @@ GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size)
             regionalHashMap = std::make_unique<GCRegionalHashMap>();
         }
         if constexpr (enable_destructor) {
-            destructor_map = std::make_unique<std::unordered_map<void*, std::function<void()>>>();
+            destructor_map = std::make_unique<std::unordered_map<void*, std::function<void(void*)>>>();
             destructor_map->reserve(128);
         }
     }
@@ -311,18 +311,18 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCRegion::queryForwardingTable(void*
     else return it->second;
 }
 
-void GCRegion::registerDestructor(void* object_addr, const std::function<void()>& func) {
+void GCRegion::registerDestructor(void* object_addr, const std::function<void(void*)>& func) {
     if (destructor_map == nullptr) return;
     std::unique_lock<std::shared_mutex> lock(destructor_map_mtx);
     destructor_map->emplace(object_addr, func);
 }
 
 void GCRegion::callDestructor(void* object_addr) {
-    // std::clog << "Calling destructor of " << object_addr << std::endl;
     std::shared_lock<std::shared_mutex> lock(destructor_map_mtx);
     auto it = destructor_map->find(object_addr);
     if (it != destructor_map->end()) {
-        it->second();
+        auto& destructor = it->second;
+        destructor(object_addr);
     }
 }
 
