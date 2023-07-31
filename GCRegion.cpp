@@ -161,6 +161,7 @@ void GCRegion::clearUnmarked() {
             void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
             if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
                 // 非存活对象统一标记为REMAPPED（不能标记为NOT_ALLOCATED），因为仍然需要size信息遍历bitmap，并避免markState重复
+                // TODO: 但是这似乎会导致本来就是REMAPPED的对象不会被调用析构函数
                 bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
                 if constexpr (enable_destructor) {
                     callDestructor(addr);
