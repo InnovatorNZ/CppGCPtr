@@ -86,7 +86,7 @@ void GCRegion::free(void* addr, size_t size) {
             if constexpr (use_regional_hashmap) {
                 regionalHashMap->mark(addr, size, MarkState::REMAPPED, false, false);
             } else {
-                bitmap->mark(addr, size, MarkStateBit::REMAPPED);
+                bitmap->mark(addr, size, MarkStateBit::NOT_ALLOCATED);
             }
         }
     } else
@@ -146,6 +146,7 @@ void GCRegion::clearUnmarked() {
             const MarkState& markState = gcStatus.markState;
             if (GCPhase::needSweep(markState) && markState != MarkState::REMAPPED) {
                 // 非存活对象统一标记为REMAPPED（或者从hashmap中删除也可以），不然会导致markState经过两轮回收后重复
+                // TODO: 需要改为从hashmap中删除？
                 regionalMapIterator.setCurrentMarkState(MarkState::REMAPPED);
                 if constexpr (enable_destructor) {
                     void* addr = regionalMapIterator.getCurrentAddress();
@@ -159,14 +160,15 @@ void GCRegion::clearUnmarked() {
             GCBitMap::BitStatus bitStatus = bitMapIterator.current();
             MarkStateBit& markState = bitStatus.markState;
             void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
-            if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
+            if (GCPhase::needSweep(markState)) {    //非存活对象，调用其析构函数，并标记为未分配，防止因M0/M1重复使用致后续误判存活
                 // 非存活对象统一标记为REMAPPED（不能标记为NOT_ALLOCATED），因为仍然需要size信息遍历bitmap，并避免markState重复
                 // TODO: 但是这似乎会导致本来就是REMAPPED的对象不会被调用析构函数
-                bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
+                // 现改为标记为NOT_ALLOCATED
+                bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
                 if constexpr (enable_destructor) {
                     callDestructor(addr);
                 }
-            } else if (markState == MarkStateBit::NOT_ALLOCATED && regionType != RegionEnum::TINY) {
+            } else if (bitStatus.objectSize == 0 && regionType != RegionEnum::TINY) {
                 // break;
                 throw std::exception();    // 多线程情况下可能会误判
             }
@@ -192,9 +194,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
             if (GCPhase::isLiveObject(markState)) {
                 size_t object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : gcStatus.objectSize;
                 this->relocateObject(object_addr, object_size, memoryAllocator);
-            } else if (GCPhase::needSweep(markState) && markState != MarkState::REMAPPED) {
-                // TODO: 好像有bug：对于未触发relocate的region内并且熬过两轮垃圾回收的对象由于markState相同，会导致应该死亡的对象被复制
-                // regionalHashMap->mark(object_addr, gcStatus.objectSize, MarkState::REMAPPED);
+            } else if (GCPhase::needSweep(markState)) {
                 if constexpr (enable_destructor) {
                     callDestructor(object_addr);
                 }
@@ -206,17 +206,15 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
             GCBitMap::BitStatus bitStatus = bitMapIterator.current();
             MarkStateBit& markState = bitStatus.markState;
             void* object_addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
-            if (GCPhase::isLiveObject(markState)) {     // 筛选出存活对象并转移
+            if (GCPhase::isLiveObject(markState)) {     // 存活对象，转移
                 unsigned int object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : bitStatus.objectSize;
                 this->relocateObject(object_addr, object_size, memoryAllocator);
-            } else if (GCPhase::needSweep(markState) && markState != MarkStateBit::REMAPPED) {
-                // 非存活对象统一标记为REMAPPED；之所以不能标记为NOT_ALLOCATED是因为仍然需要size信息遍历bitmap
+            } else if (GCPhase::needSweep(markState)) { // 非存活对象，调用其析构函数
+                // 由于region触发重定位后是不会再被使用的，因此无需再次标记
                 // bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
                 if constexpr (enable_destructor) {
                     callDestructor(object_addr);
                 }
-            } else if (markState == MarkStateBit::NOT_ALLOCATED && regionType != RegionEnum::TINY) {
-                throw std::exception();    // 多线程情况下会误判吗？按理说是不应该在region被转移的过程中继续分配对象的
             }
         }
     }
