@@ -494,7 +494,7 @@ void GCMemoryAllocator::resetLiveSize() {
                 iterator->current()->resetLiveSize();
             }
         }
-        for (auto regionList : {&mediumRegionList, &tinyRegionList}) {
+        for (auto regionList : { &mediumRegionList, &tinyRegionList }) {
             auto iterator = regionList->getIterator();
             while (iterator->MoveNext()) {
                 iterator->current()->resetLiveSize();
@@ -505,7 +505,8 @@ void GCMemoryAllocator::resetLiveSize() {
             for (int i = 0; i < poolCount; i++) {
                 std::shared_lock<std::shared_mutex> lock(smallRegionQueMtxs[i]);
                 if (smallRegionQues[i].empty()) continue;
-                if (!enableParallelClear) {
+                const int ENABLE_PARALLEL_THREDSHOLD = 10000;
+                if (!enableParallelClear || smallRegionQues[i].size() < ENABLE_PARALLEL_THREDSHOLD) {
                     for (auto& region : smallRegionQues[i]) {
                         region->resetLiveSize();
                     }

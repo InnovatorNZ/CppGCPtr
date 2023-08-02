@@ -457,7 +457,7 @@ void GCWorker::callDestructor(void* object_addr, bool remove_after_call) {
 void GCWorker::endGC() {
     if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
         GCPhase::SwitchToNextPhase();
-        if (enableRelocation)
+        if (enableMemoryAllocator)
             memoryAllocator->resetLiveSize();
     } else {
         std::clog << "Not started GC, or not finished sweeping yet" << std::endl;
