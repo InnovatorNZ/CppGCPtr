@@ -153,13 +153,14 @@ public:
         GCPhase::EnterCriticalSection();
         this->setInlineMarkState(other.getInlineMarkState());
         this->obj.store(other.obj.load());
-        this->region = std::move(other.region);
+        this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
         other.obj = nullptr;
         other.obj_size = 0;
+        other.region = nullptr;
         other.setInlineMarkState(MarkState::REMAPPED);
         GCPhase::LeaveCriticalSection();
     }
@@ -167,13 +168,14 @@ public:
     template<typename U>
     GCPtr(GCPtr<U>&& other) noexcept : obj(other.obj), obj_size(other.obj_size) {
         this->setInlineMarkState(other.getInlineMarkState());
-        this->region = std::move(other.region);
+        this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
         other.obj = nullptr;
         other.obj_size = 0;
+        other.region = nullptr;
         other.setInlineMarkState(MarkState::REMAPPED);
     }
 
