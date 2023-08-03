@@ -167,18 +167,30 @@ unsigned int GCBitMap::BitMapIterator::getCurrentObjectSize() const {
 
 bool GCBitMap::BitMapIterator::MoveNext() {
     if (byte_offset == -1 || bit_offset == -1) {
+        // 初始化迭代器
         byte_offset = 0;
         bit_offset = 0;
-    } else {
-        if (bitmap.mark_obj_size && (bitmap.bitmap_arr[byte_offset] >> bit_offset & 3) != 0) {
-            char* next_addr = (char*) bitmap.region_start_addr + getCurrentOffset() + getCurrentObjectSize();
+    }
+    else {
+        if (bitmap.mark_obj_size) {
+            // 若启用在位图中标记对象大小，则按对象大小进行迭代
+            char* next_addr = (char*)bitmap.region_start_addr + getCurrentOffset() + getCurrentObjectSize();
             bitmap.addr_to_bit(next_addr, this->byte_offset, this->bit_offset);
-        } else {
+        }
+        else {
+            // 若未启用在位图中标记对象大小
             if (bit_offset == 0 && byte_offset < bitmap.bitmap_size && bitmap.bitmap_arr[byte_offset] == 0) {
+                // 使用for循环跳过全0的区域，以加速迭代过程
+                const int SINGLE_SKIP_SIZE = 100000;
+                int prev_byte_offset = byte_offset;
                 do {
                     byte_offset++;
-                } while (bitmap.bitmap_arr[byte_offset] == 0);
-            } else {
+                } while (byte_offset < bitmap.bitmap_size &&
+                         bitmap.bitmap_arr[byte_offset] == 0 &&
+                         byte_offset - prev_byte_offset < SINGLE_SKIP_SIZE);
+            }
+            else {
+                // 逐bit查阅
                 bit_offset += SINGLE_OBJECT_MARKBIT;
                 if (bit_offset >= 8) {
                     byte_offset++;
