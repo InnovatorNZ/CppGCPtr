@@ -44,7 +44,7 @@ private:
     std::unique_ptr<ThreadPoolExecutor> threadPool;
     int gcThreadCount;
     bool enableConcurrentMark, enableParallelGC, enableMemoryAllocator, useInlineMarkstate,
-            enableRelocation, enableDestructorSupport, enableReclaim;
+        enableRelocation, enableDestructorSupport, enableReclaim;
     volatile bool stop_, ready_;
 
     void mark(void*);
@@ -58,8 +58,10 @@ private:
         ObjectInfo objectInfo = gcptr->getObjectInfo();
         MarkState c_markstate = GCPhase::getCurrentMarkState();
         if (useInlineMarkstate) {
-            if (gcptr->getInlineMarkState() == c_markstate)
+            if (gcptr->getInlineMarkState() == c_markstate) {
+                std::clog << "Skipping " << gcptr << " as it already marked" << std::endl;
                 return;
+            }
             gcptr->setInlineMarkState(c_markstate);
         }
         root_object_snapshot.emplace_back(objectInfo);
@@ -78,6 +80,18 @@ private:
         else
             endIndex = (tid + 1) * snum;
     }
+
+    void startGC();
+
+    void beginMark();
+
+    void triggerSATBMark();
+
+    void beginSweep();
+
+    void selectRelocationSet();
+
+    void endGC();
 
 public:
     GCWorker();
@@ -114,17 +128,7 @@ public:
 
     void registerDestructor(void* object_addr, const std::function<void(void*)>&, GCRegion* = nullptr);
 
-    void beginMark();
-
-    void triggerSATBMark();
-
-    void beginSweep();
-
-    void selectRelocationSet();
-
     std::pair<void*, std::shared_ptr<GCRegion>> getHealedPointer(void*, size_t, GCRegion*) const;
-
-    void endGC();
 
     void printMap() const;
 

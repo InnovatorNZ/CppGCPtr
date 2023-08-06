@@ -66,6 +66,8 @@ public:
 
     MarkStateBit getMarkState(void* object_addr) const;
 
+    unsigned int getObjectSize(void* object_addr) const;
+
     BitMapIterator getIterator() const;
 
     unsigned int alignUpSize(unsigned int) const;

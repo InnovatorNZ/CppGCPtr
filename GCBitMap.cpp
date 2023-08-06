@@ -118,6 +118,18 @@ MarkStateBit GCBitMap::getMarkState(void* object_addr) const {
     return MarkStateUtil::toMarkState(value);
 }
 
+unsigned int GCBitMap::getObjectSize(void* object_addr) const {
+    if (!mark_obj_size || bitmap_arr == nullptr) return 0;
+    int offset_byte, offset_bit;
+    addr_to_bit(object_addr, offset_byte, offset_bit);
+    unsigned int s0 = static_cast<unsigned int>(bitmap_arr[offset_byte + 1].load());
+    unsigned int s1 = static_cast<unsigned int>(bitmap_arr[offset_byte + 2].load());
+    unsigned int s2 = static_cast<unsigned int>(bitmap_arr[offset_byte + 3].load());
+    unsigned int s3 = static_cast<unsigned int>(bitmap_arr[offset_byte + 4].load());
+    unsigned int objSize = s0 | s1 << 8 | s2 << 16 | s3 << 24;
+    return objSize;
+}
+
 GCBitMap::BitMapIterator GCBitMap::getIterator() const {
     return GCBitMap::BitMapIterator(*this);
 }
@@ -162,6 +174,9 @@ unsigned int GCBitMap::BitMapIterator::getCurrentObjectSize() const {
     unsigned int s2 = static_cast<unsigned int>(bitmap.bitmap_arr[byte_offset + 3].load());
     unsigned int s3 = static_cast<unsigned int>(bitmap.bitmap_arr[byte_offset + 4].load());
     unsigned int objSize = s0 | s1 << 8 | s2 << 16 | s3 << 24;
+    int obj_size = bitmap.getObjectSize((char*)bitmap.region_start_addr + getCurrentOffset());
+    if (obj_size != objSize)
+        throw std::exception();
     return objSize;
 }
 

@@ -1,4 +1,5 @@
 #include "GCWorker.h"
+#include "CppExecutor/sleep.h"
 
 std::unique_ptr<GCWorker> GCWorker::instance;
 
@@ -111,8 +112,10 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (objectInfo.object_addr == nullptr || objectInfo.region == nullptr) return;
     MarkState c_markstate = GCPhase::getCurrentMarkState();
     if (useInlineMarkstate) {
-        if (gcptr->getInlineMarkState() == c_markstate)     // 标记过了
+        if (gcptr->getInlineMarkState() == c_markstate) {     // 标记过了
+            std::clog << "Skipping " << gcptr << " as it already marked" << std::endl;
             return;
+        }
         // 客观地说，指针自愈确实应该在标记对象前面
         gcptr->setInlineMarkState(c_markstate);
     }
@@ -196,11 +199,9 @@ void GCWorker::GCThreadLoop() {
             ready_ = false;
         }
         if (stop_) break;
+        startGC();
         beginMark();
-        if (enableParallelGC)
-            GCUtil::stop_the_world(GCPhase::getSTWLock(), threadPool.get());
-        else
-            GCUtil::stop_the_world(GCPhase::getSTWLock());
+        GCUtil::stop_the_world(GCPhase::getSTWLock(), threadPool.get());
         auto start_time = std::chrono::high_resolution_clock::now();
         triggerSATBMark();
         selectRelocationSet();
@@ -229,6 +230,7 @@ void GCWorker::triggerGC() {
         using namespace std;
         cout << "Triggered GC" << endl;
         printMap();
+        startGC();
         beginMark();
         GCPhase::SwitchToNextPhase();       // skip satb remark
         printMap();
@@ -291,11 +293,21 @@ void GCWorker::registerDestructor(void* object_addr, const std::function<void(vo
     }
 }
 
-void GCWorker::beginMark() {
+void GCWorker::startGC() {
     if (GCPhase::getGCPhase() == eGCPhase::NONE) {
+        GCPhase::SwitchToNextPhase();
         if (enableMemoryAllocator)
             memoryAllocator->flushRegionMapBuffer();
-        GCPhase::SwitchToNextPhase();   // concurrent mark
+
+        if (enableConcurrentMark)
+            __sleep(0.1);       // 防止gc root尚未来得及加入root_set
+    } else {
+        std::cerr << "GC already started" << std::endl;
+    }
+}
+
+void GCWorker::beginMark() {
+    if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
         auto start_time = std::chrono::high_resolution_clock::now();
         this->root_object_snapshot.clear();
         this->root_ptr_snapshot.clear();
@@ -340,13 +352,14 @@ void GCWorker::beginMark() {
             }
         }
     } else {
-        std::clog << "Already in concurrent marking phase or in other invalid phase" << std::endl;
+        std::cerr << "Not in concurrent marking phase" << std::endl;
     }
 }
 
 void GCWorker::triggerSATBMark() {
     if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
         GCPhase::SwitchToNextPhase();   // remark
+        if (!enableConcurrentMark) return;
         if (!enableMemoryAllocator) {
             if (enableParallelGC) {
                 for (int i = 0; i < gcThreadCount; i++) {
@@ -434,7 +447,8 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr
             // region已被标识为需要转移，但尚未完成转移
             region->relocateObject(ptr, obj_size, this->memoryAllocator.get());
             ret = region->queryForwardingTable(ptr);
-            if (ret.first == nullptr) throw std::exception();
+            if (ret.first == nullptr)
+                throw std::exception();
             return ret;
         } else {
             return std::make_pair(nullptr, nullptr);

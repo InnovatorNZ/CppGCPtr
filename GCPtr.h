@@ -84,6 +84,18 @@ public:
         return this->get();
     }
 
+    void set(T* obj, const std::shared_ptr<GCRegion>& region = nullptr) {
+        this->obj = obj;
+        this->obj_size = sizeof(*obj);
+        this->region = region;
+        GCWorker::getWorker()->registerObject(obj, sizeof(*obj));
+        if (GCWorker::getWorker()->destructorEnabled()) {
+            GCWorker::getWorker()->registerDestructor(obj,
+                                                      [](void* self) { static_cast<T*>(self)->~T(); },
+                                                      region.get());
+        }
+    }
+
     void* getVoidPtr() override {
         return reinterpret_cast<void*>(this->get());
     }
@@ -138,6 +150,7 @@ public:
     }
 
     GCPtr(const GCPtr& other) : obj_size(other.obj_size) {
+        std::clog << "Copy constructor" << std::endl;
         GCPhase::EnterCriticalSection();
         this->setInlineMarkState(other.getInlineMarkState());
         this->obj.store(other.obj.load());
@@ -150,6 +163,7 @@ public:
     }
 
     GCPtr(GCPtr&& other) noexcept : obj_size(other.obj_size) {
+        std::clog << "Move constructor" << std::endl;
         GCPhase::EnterCriticalSection();
         this->setInlineMarkState(other.getInlineMarkState());
         this->obj.store(other.obj.load());
@@ -194,6 +208,7 @@ public:
 namespace gc {
     template<class T, class... Args>
     GCPtr<T> make_gc(Args&& ... args) {
+        GCPtr<T> gcptr;
         GCPhase::EnterCriticalSection();
         T* obj = nullptr;
         std::shared_ptr<GCRegion> region = nullptr;
@@ -205,10 +220,11 @@ namespace gc {
         } else {
             obj = new T(std::forward<Args>(args)...);
         }
+        gcptr.set(obj, region);
         GCPhase::LeaveCriticalSection();
 
         if (obj == nullptr) throw std::exception();
-        return GCPtr<T>(obj, region);
+        return gcptr;
     }
 
     template<class T, class... Args>

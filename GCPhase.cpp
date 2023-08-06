@@ -1,7 +1,7 @@
 #include "GCPhase.h"
 
-eGCPhase GCPhase::gcPhase = eGCPhase::NONE;
-MarkState GCPhase::currentMarkState = MarkState::REMAPPED;
+std::atomic<eGCPhase> GCPhase::gcPhase = eGCPhase::NONE;
+std::atomic<MarkState> GCPhase::currentMarkState = MarkState::REMAPPED;
 #if USE_SPINLOCK
 IReadWriteLock* GCPhase::stwLock = new SpinReadWriteLock();
 #else
@@ -15,8 +15,8 @@ eGCPhase GCPhase::getGCPhase() {
 void GCPhase::SwitchToNextPhase() {
     switch (gcPhase) {
         case eGCPhase::NONE:
-            gcPhase = eGCPhase::CONCURRENT_MARK;
             currentMarkState = MarkStateUtil::switchState(currentMarkState);
+            gcPhase = eGCPhase::CONCURRENT_MARK;
             break;
         case eGCPhase::CONCURRENT_MARK:
             gcPhase = eGCPhase::REMARK;

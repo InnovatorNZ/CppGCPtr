@@ -13,8 +13,8 @@
 
 class GCPhase {
 private:
-    static eGCPhase gcPhase;
-    static MarkState currentMarkState;
+    static std::atomic<eGCPhase> gcPhase;
+    static std::atomic<MarkState> currentMarkState;
     static IReadWriteLock* stwLock;
 public:
     static eGCPhase getGCPhase();

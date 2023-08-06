@@ -50,6 +50,15 @@ public:
     }
 };
 
+bool in_aobj_func(void* gcptr, GCPtr<MyObject> _aobj[], int arr_size) {
+    for (int i = 0; i < arr_size; i++) {
+        if (&_aobj[i] == gcptr) {
+            return true;
+        }
+    }
+    return false;
+}
+
 GCPtr<MyObject> obj3;
 
 int main() {
@@ -115,6 +124,7 @@ int main() {
         GCPtr<MyObject> obj9 = gc::make_gc<MyObject>();
         const int arr_size = 256;
         GCPtr<MyObject> aobj[arr_size];
+        
         //GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
         srand(time(0));
         for (int j = 0; j < 100000; j++) {
@@ -131,6 +141,7 @@ int main() {
                 aobj[r]->b = 7.17;
                 double _b = aobj[r]->b;
             }
+            in_aobj_func(&aobj[r], aobj, arr_size);
         }
 
         auto end_time = chrono::steady_clock::now();
@@ -140,7 +151,7 @@ int main() {
 
 #if TRIGGER_GC
         gc::triggerGC();
-        // Sleep(100);
+        Sleep(1000);
 #endif
     }
     cout << "Average user thread duration: " << (double)time_ / (double)n << " ms" << endl;
