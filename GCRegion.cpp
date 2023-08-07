@@ -182,7 +182,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
         return;
     }
     evacuated = true;
-    if (this->canFree()) {      // 已经没有存活对象了
+    if (this->canFree() && !enable_destructor) {      // 已经没有存活对象了
         return;
     }
     // std::clog << "Relocating region " << this << std::endl;
@@ -274,7 +274,7 @@ bool GCRegion::needEvacuate() const {
 void GCRegion::free() {
     // 释放整个region，只保留转发表
     evacuated = true;
-    //bitmap = nullptr;
+    bitmap = nullptr;
     regionalHashMap = nullptr;
     destructor_map = nullptr;
     total_size = 0;

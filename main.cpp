@@ -6,7 +6,7 @@ class MyObject {
 public:
     int a;
     double b;
-    //std::string c;
+    std::string c;
     GCPtr<MyObject> d;
     double f;
     GCPtr<MyObject> e;
