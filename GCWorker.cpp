@@ -113,7 +113,7 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     MarkState c_markstate = GCPhase::getCurrentMarkState();
     if (useInlineMarkstate) {
         if (gcptr->getInlineMarkState() == c_markstate) {     // 标记过了
-            std::clog << "Skipping " << gcptr << " as it already marked" << std::endl;
+            // std::clog << "Skipping " << gcptr << " as it already marked" << std::endl;
             return;
         }
         // 客观地说，指针自愈确实应该在标记对象前面

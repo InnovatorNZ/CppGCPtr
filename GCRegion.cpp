@@ -185,7 +185,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
     if (this->canFree()) {      // 已经没有存活对象了
         return;
     }
-    std::clog << "Relocating region " << this << std::endl;
+    // std::clog << "Relocating region " << this << std::endl;
     if constexpr (use_regional_hashmap) {
         auto regionalMapIterator = regionalHashMap->getIterator();
         while (regionalMapIterator.MoveNext()) {
@@ -240,7 +240,7 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
         // 如果在转移过程中，有应用线程访问了旧地址上的原对象并产生了写入怎么办？参考shenandoah解决方案
         std::unique_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
         if (!forwarding_table.contains(object_addr)) {
-            std::clog << "Forwarded " << object_addr << " to " << new_object_addr << std::endl;
+            // std::clog << "Forwarded " << object_addr << " to " << new_object_addr << std::endl;
             forwarding_table.emplace(object_addr, new_addr);
             if constexpr (enable_destructor) {
                 std::shared_lock<std::shared_mutex> lock(destructor_map_mtx);
@@ -253,7 +253,7 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
         }
     }
     // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
-    std::clog << "Undoing forwarding for " << object_addr << std::endl;
+    // std::clog << "Undoing forwarding for " << object_addr << std::endl;
     new_region->free(new_object_addr, object_size);
 }
 
