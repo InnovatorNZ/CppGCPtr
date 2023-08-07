@@ -392,6 +392,7 @@ void GCMemoryAllocator::SelectRelocationSet() {
         selectRelocationSet(mediumRegionQue, mediumRegionQueMtx);
         selectRelocationSet(tinyRegionQue, tinyRegionQueMtx);
     }
+    removeEvacuatedRegionMap();
 }
 
 void GCMemoryAllocator::selectRelocationSet(std::deque<std::shared_ptr<GCRegion>>& regionQue,
@@ -401,8 +402,7 @@ void GCMemoryAllocator::selectRelocationSet(std::deque<std::shared_ptr<GCRegion>
         std::shared_ptr<GCRegion>& region = *it;
         if (!region->isEvacuated() && region->needEvacuate()) {
             region->setEvacuated();
-            this->evacuationQue.emplace_back(region);
-            regionMap.erase(region->getStartAddr());
+            this->evacuationQue.emplace_back(std::move(region));
             it = regionQue.erase(it);
         } else {
             it++;
@@ -416,10 +416,16 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
         std::shared_ptr<GCRegion> region = iterator->current();
         if (!region->isEvacuated() && region->needEvacuate()) {
             region->setEvacuated();
-            this->evacuationQue.emplace_back(region);
+            this->evacuationQue.emplace_back(std::move(region));
             iterator->remove();
-            regionMap.erase(region->getStartAddr());
         }
+    }
+}
+
+void GCMemoryAllocator::removeEvacuatedRegionMap() {
+    std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+    for (auto& region : this->evacuationQue) {
+        regionMap.erase(region->getStartAddr());
     }
 }
 

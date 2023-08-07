@@ -66,6 +66,8 @@ private:
 
     void selectRelocationSet(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
 
+    void removeEvacuatedRegionMap();
+
     int getPoolIdx() const;
 
     GCRegion* queryRegionMap(void*);
