@@ -8,6 +8,8 @@
 #include "GCPtrBase.h"
 #include "GCWorker.h"
 
+class GCWorker;
+
 template<typename T>
 class GCPtr : public GCPtrBase {
     template<typename U>
@@ -244,10 +246,6 @@ namespace gc {
 
         if (obj == nullptr) throw std::exception();
         return GCPtr<T>(obj, region, true);
-    }
-
-    void triggerGC() {
-        GCWorker::getWorker()->triggerGC();
     }
 
 #ifdef OLD_MAKEGC

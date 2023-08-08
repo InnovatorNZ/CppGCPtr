@@ -11,7 +11,7 @@
 #include <functional>
 #include <condition_variable>
 
-#include "GCPtrBase.h"
+#include "GCPtr.h"
 #include "GCMemoryAllocator.h"
 #include "GCUtil.h"
 #include "GCParameter.h"
@@ -20,6 +20,9 @@
 #include "PhaseEnum.h"
 #include "CppExecutor/ThreadPoolExecutor.h"
 #include "CppExecutor/ArrayBlockingQueue.h"
+
+template<typename T>
+class GCPtr;
 
 class GCWorker {
 private:
@@ -52,6 +55,8 @@ private:
     void mark_v2(GCPtrBase*);
 
     void mark_v2(const ObjectInfo&);
+
+    void mark_exp(GCPtr<void>*);
 
     inline void mark_root(GCPtrBase* gcptr) {
         if (gcptr == nullptr || gcptr->getVoidPtr() == nullptr) return;
@@ -140,5 +145,9 @@ public:
 
     bool is_root(void* gcptr_addr);
 };
+
+namespace gc {
+    void triggerGC();
+}
 
 #endif //CPPGCPTR_GCWORKER_H

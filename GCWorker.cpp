@@ -6,6 +6,11 @@ std::unique_ptr<GCWorker> GCWorker::instance;
 GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
 
+void GCWorker::mark_exp(GCPtr<void>* gcptr) {
+    ObjectInfo objinfo = gcptr->getObjectInfo();
+    std::cout << objinfo.object_addr << " " << objinfo.object_size << std::endl;
+}
+
 GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestructorSupport, bool useInlineMarkState,
                    bool useSecondaryMemoryManager, bool enableRelocation, bool enableParallel, bool enableReclaim) :
         stop_(false), ready_(false), enableConcurrentMark(concurrent), enableMemoryAllocator(enableMemoryAllocator) {
@@ -500,5 +505,11 @@ bool GCWorker::is_root(void* gcptr_addr) {
         return !memoryAllocator->inside_allocated_regions(gcptr_addr);
     } else {
         return GCUtil::is_stack_pointer(gcptr_addr);
+    }
+}
+
+namespace gc {
+    void triggerGC() {
+        GCWorker::getWorker()->triggerGC();
     }
 }
