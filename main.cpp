@@ -2,18 +2,26 @@
 #include <string>
 #include "GCPtr.h"
 
+class MyObject2 {
+    int a, b;
+    float c[100];
+    // GCPtr<int> dd;
+};
+
 class MyObject {
 public:
     int a;
     double b;
-    std::string c;
+    // std::string c;
     GCPtr<MyObject> d;
     double f;
     GCPtr<MyObject> e;
     int h;
     double l[256];
+    MyObject2* m;
 
     MyObject() : a(rand() % RAND_MAX), b(0), h(0), f(0) {
+        m = new MyObject2();
     }
 
     void setG(GCPtr<MyObject> _g) {
@@ -23,6 +31,11 @@ public:
     int addH() {
         h++;
         return h;
+    }
+
+    ~MyObject() {
+        delete m;
+        //m = nullptr;
     }
 
 private:
@@ -124,7 +137,7 @@ int main() {
         GCPtr<MyObject> obj9 = gc::make_gc<MyObject>();
         const int arr_size = 256;
         GCPtr<MyObject> aobj[arr_size];
-        
+
         //GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
         srand(time(0));
         for (int j = 0; j < 100000; j++) {
@@ -154,6 +167,6 @@ int main() {
         Sleep(1000);
 #endif
     }
-    cout << "Average user thread duration: " << (double)time_ / (double)n << " ms" << endl;
+    cout << "Average user thread duration: " << (double) time_ / (double) n << " ms" << endl;
     return 0;
 }
