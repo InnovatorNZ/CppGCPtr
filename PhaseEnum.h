@@ -2,7 +2,7 @@
 #define CPPGCPTR_PHASEENUM_H
 
 #include <string>
-#include <exception>
+#include <stdexcept>
 
 enum class MarkState {
     REMAPPED,
