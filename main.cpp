@@ -154,7 +154,6 @@ int main() {
                 aobj[r]->b = 7.17;
                 double _b = aobj[r]->b;
             }
-            in_aobj_func(&aobj[r], aobj, arr_size);
         }
 
         auto end_time = chrono::steady_clock::now();
@@ -164,7 +163,7 @@ int main() {
 
 #if TRIGGER_GC
         gc::triggerGC();
-        Sleep(1000);
+        Sleep(100);
 #endif
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " ms" << endl;
