@@ -5,3 +5,5 @@ out/
 build/
 .vscode/
 CppGCPtr.exe
+.DS_Store
+*/.DS_Store

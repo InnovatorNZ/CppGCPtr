@@ -9,6 +9,7 @@
 #include <memory>
 #include <unordered_map>
 #include <functional>
+#include <stdexcept>
 #include "GCBitMap.h"
 #include "GCRegionalHashMap.h"
 #include "GCPhase.h"
@@ -43,6 +44,7 @@ public:
     static const size_t MEDIUM_REGION_SIZE;
     static constexpr bool use_regional_hashmap = GCParameter::useRegionalHashmap;
     static constexpr bool enable_destructor = GCParameter::enableDestructorSupport;
+    static constexpr bool enable_move_constructor = GCParameter::enableMoveConstructor;
 private:
     void* startAddress;
     size_t total_size;
@@ -57,6 +59,9 @@ private:
     std::shared_mutex forwarding_table_mutex;
     std::unique_ptr<std::unordered_map<void*, std::function<void(void*)>>> destructor_map;
     std::shared_mutex destructor_map_mtx;
+    std::unique_ptr<std::unordered_map<void*, std::function<void(void*, void*)>>> move_constructor_map;
+    std::shared_mutex move_constructor_map_mtx;
+    std::mutex relocation_mutex;
     std::atomic<bool> evacuated;
 
 protected:
@@ -65,6 +70,8 @@ protected:
     float getFreeRatio() const;
 
     void callDestructor(void*);
+
+    void callMoveConstructor(void*, void*);
 
 public:
     struct GCRegionHash {
@@ -118,6 +125,8 @@ public:
     void reclaim();
 
     void registerDestructor(void*, const std::function<void(void*)>&);
+
+    void registerMoveConstructor(void*, const std::function<void(void*, void*)>&);
 };
 
 

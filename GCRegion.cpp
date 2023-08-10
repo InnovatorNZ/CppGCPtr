@@ -28,6 +28,10 @@ GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size)
             destructor_map = std::make_unique<std::unordered_map<void*, std::function<void(void*)>>>();
             destructor_map->reserve(128);
         }
+        if constexpr (enable_move_constructor) {
+            move_constructor_map = std::make_unique<std::unordered_map<void*, std::function<void(void*, void*)>>>();
+            move_constructor_map->reserve(64);
+        }
     }
 }
 
@@ -227,6 +231,12 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
         std::clog << "The relocating object does not in current region." << std::endl;
         return;
     }
+    std::unique_lock<std::mutex> relocate_lock(this->relocation_mutex, std::defer_lock);
+    if constexpr (enable_move_constructor) {
+        // 使用移动构造函数会有潜在线程安全问题，即，重分配竞争失败有可能会导致原有数据丢失
+        // 因此启用移动构造函数的情况下只要触发转移对象就上锁，防止上述情况发生
+        relocate_lock.lock();
+    }
     {
         std::shared_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
         if (forwarding_table.contains(object_addr))      // 已经被应用线程转移了
@@ -236,18 +246,33 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
     void* new_object_addr = new_addr.first;
     std::shared_ptr<GCRegion>& new_region = new_addr.second;
     if (!this->isFreed()) {
-        ::memcpy(new_object_addr, object_addr, object_size);
+        if constexpr (enable_move_constructor) {
+            // 调用移动构造函数后立即调用析构函数析构原对象
+            callMoveConstructor(object_addr, new_object_addr);
+            callDestructor(object_addr);
+        } else {
+            ::memcpy(new_object_addr, object_addr, object_size);
+        }
         // 如果在转移过程中，有应用线程访问了旧地址上的原对象并产生了写入怎么办？参考shenandoah解决方案
-        std::unique_lock<std::shared_mutex> lock(this->forwarding_table_mutex);
+        std::unique_lock<std::shared_mutex> fwdtb_lock(this->forwarding_table_mutex);
         if (!forwarding_table.contains(object_addr)) {
             // std::clog << "Forwarded " << object_addr << " to " << new_object_addr << std::endl;
             forwarding_table.emplace(object_addr, new_addr);
+            fwdtb_lock.unlock();
+            // 将析构函数和移动构造函数注册到新region中去
             if constexpr (enable_destructor) {
-                std::shared_lock<std::shared_mutex> lock(destructor_map_mtx);
+                std::shared_lock<std::shared_mutex> lock2(destructor_map_mtx);
                 auto it = destructor_map->find(object_addr);
                 if (it != destructor_map->end()) {
                     new_region->registerDestructor(new_object_addr, it->second);
                 } else std::cerr << "destructor not found!" << std::endl;
+            }
+            if constexpr (enable_move_constructor) {
+                std::shared_lock<std::shared_mutex> lock2(move_constructor_map_mtx);
+                auto it = move_constructor_map->find(object_addr);
+                if (it != move_constructor_map->end()) {
+                    new_region->registerMoveConstructor(new_object_addr, it->second);
+                }
             }
             return;
         }
@@ -277,6 +302,7 @@ void GCRegion::free() {
     bitmap = nullptr;
     regionalHashMap = nullptr;
     destructor_map = nullptr;
+    move_constructor_map = nullptr;
     total_size = 0;
     allocated_offset = 0;
     ::free(startAddress);
@@ -289,6 +315,8 @@ void GCRegion::reclaim() {
         regionalHashMap->clear();
     if constexpr (enable_destructor)
         destructor_map->clear();
+    if constexpr (enable_move_constructor)
+        move_constructor_map->clear();
     allocated_offset = 0;
     live_size = 0;
     evacuated = false;
@@ -297,6 +325,7 @@ void GCRegion::reclaim() {
 GCRegion::GCRegion(GCRegion&& other) noexcept:
         regionType(other.regionType), startAddress(other.startAddress), total_size(other.total_size),
         bitmap(std::move(other.bitmap)), regionalHashMap(std::move(other.regionalHashMap)),
+        destructor_map(std::move(other.destructor_map)), move_constructor_map(std::move(other.move_constructor_map)),
         largeRegionMarkState(other.largeRegionMarkState) {
     this->allocated_offset.store(other.allocated_offset.load());
     this->live_size.store(other.live_size.load());
@@ -319,12 +348,27 @@ void GCRegion::registerDestructor(void* object_addr, const std::function<void(vo
     destructor_map->emplace(object_addr, func);
 }
 
+void GCRegion::registerMoveConstructor(void* object_addr, const std::function<void(void*, void*)>& func) {
+    if (move_constructor_map == nullptr) return;
+    std::unique_lock<std::shared_mutex> lock(move_constructor_map_mtx);
+    move_constructor_map->emplace(object_addr, func);
+}
+
 void GCRegion::callDestructor(void* object_addr) {
     std::shared_lock<std::shared_mutex> lock(destructor_map_mtx);
     auto it = destructor_map->find(object_addr);
     if (it != destructor_map->end()) {
         auto& destructor = it->second;
         destructor(object_addr);
+    }
+}
+
+void GCRegion::callMoveConstructor(void* source_addr, void* target_addr) {
+    std::shared_lock<std::shared_mutex> lock(move_constructor_map_mtx);
+    auto it = move_constructor_map->find(source_addr);
+    if (it != move_constructor_map->end()) {
+        auto& move_constructor = it->second;
+        move_constructor(source_addr, target_addr);
     }
 }
 
@@ -359,7 +403,6 @@ RegionEnum RegionEnumUtil::toRegionEnum(short e) {
         case 3:
             return RegionEnum::LARGE;
         default:
-            std::cerr << "Invalid region enum!" << std::endl;
-            throw std::exception();
+            throw std::invalid_argument("Invalid region enum!");
     }
 }

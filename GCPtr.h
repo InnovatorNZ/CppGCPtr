@@ -94,6 +94,13 @@ public:
                                                       [](void* self) { static_cast<T*>(self)->~T(); },
                                                       region.get());
         }
+        if constexpr (GCParameter::enableMoveConstructor) {
+            region->registerMoveConstructor(obj,
+                                            [](void* source_addr, void* target_addr) {
+                                                T* target = static_cast<T*>(target_addr);
+                                                new(target) T(std::move(*static_cast<T*>(source_addr)));
+                                            });
+        }
     }
 
     void* getVoidPtr() override {
