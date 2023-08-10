@@ -119,8 +119,8 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[pool_idx]);
                         smallRegionQues[pool_idx].emplace_back(new_region);
                     }
-                    if constexpr (GCParameter::enableDestructorSupport) {
-                    // if constexpr (false) {
+                    // if constexpr (GCParameter::enableDestructorSupport) {
+                    if constexpr (false) {
                         if (regionMapMtx.try_lock()) {
                             regionMap.emplace(new_region->getStartAddr(), new_region.get());
                             regionMapMtx.unlock();
@@ -128,6 +128,10 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                             // 若获取region红黑树的锁失败，则将新region放入缓冲区内，在GC开始的时候再添加进红黑树
                             // 在此期间所有在新区域中的对象由于不在管理区域内会被误判定为gc root，不过问题不大
                             // 更新：如果支持调用析构函数的话那是问题不大，但是现在尚未支持，因此非root被释放后其仍然留存在rootset中，产生访问非法内存错误
+                            // 再更新：即便支持调用析构函数也不行，因为root_set里存放的是指向gcptr的裸指针，并不会有指针自愈的功能，因而对象被转移后依然无法访问原有内存
+                            // TODO: 是否可以考虑增加移动构造函数的支持，这样就会在转移的时候调用移动构造，也不会有上述问题了？
+                            // 然而似乎事实显示这么做即便行得通，也会导致写入root_set的频率大幅增加，可能反而会损耗性能。。。
+                            // TODO: 另外，如果不使用regionMapBuffer方案，需要在新region的CAS之前就上regionMapMtx锁，防止小概率线程不安全导致上述问题
                             while (true) {
                                 std::clog << "Acquire regionMap mutex failed, adding to buffer vector" << std::endl;
                                 if (regionMapBufMtx0[pool_idx].try_lock()) {
