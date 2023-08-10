@@ -85,6 +85,7 @@ public:
     }
 
     void set(T* obj, const std::shared_ptr<GCRegion>& region = nullptr) {
+        // 备注：当且仅当obj是新的、无中生有的时候才需要调用set()以注册析构函数和移动构造函数
         this->obj = obj;
         this->obj_size = sizeof(*obj);
         this->region = region;
@@ -157,7 +158,7 @@ public:
     }
 
     GCPtr(const GCPtr& other) : obj_size(other.obj_size) {
-        std::clog << "Copy constructor" << std::endl;
+        // std::clog << "Copy constructor" << std::endl;
         GCPhase::EnterCriticalSection();
         this->setInlineMarkState(other.getInlineMarkState());
         this->obj.store(other.obj.load());
@@ -170,7 +171,7 @@ public:
     }
 
     GCPtr(GCPtr&& other) noexcept : obj_size(other.obj_size) {
-        std::clog << "Move constructor" << std::endl;
+        // std::clog << "Move constructor" << std::endl;
         GCPhase::EnterCriticalSection();
         this->setInlineMarkState(other.getInlineMarkState());
         this->obj.store(other.obj.load());

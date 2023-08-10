@@ -4,7 +4,7 @@
 
 class MyObject2 {
     int a, b;
-    float c[100];
+    double c[1024];
     // GCPtr<int> dd;
 };
 
@@ -33,9 +33,20 @@ public:
         return h;
     }
 
+    MyObject(MyObject&& other) noexcept : d(std::move(other.d)) {
+        this->a = other.a;
+        this->b = other.b;
+        this->f = other.f;
+        this->e = std::move(other.e);
+        this->h = other.h;
+        ::memcpy(this->l, other.l, sizeof(other.l));
+        this->m = other.m;
+        other.m = nullptr;
+    }
+
     ~MyObject() {
         delete m;
-        //m = nullptr;
+        m = nullptr;
     }
 
 private:

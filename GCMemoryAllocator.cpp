@@ -119,8 +119,8 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[pool_idx]);
                         smallRegionQues[pool_idx].emplace_back(new_region);
                     }
-                    // if constexpr (GCParameter::enableDestructorSupport) {
-                    if constexpr (false) {
+                    if constexpr (GCParameter::enableDestructorSupport) {
+                    // if constexpr (false) {
                         if (regionMapMtx.try_lock()) {
                             regionMap.emplace(new_region->getStartAddr(), new_region.get());
                             regionMapMtx.unlock();

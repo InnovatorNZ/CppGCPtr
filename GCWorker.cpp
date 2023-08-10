@@ -191,7 +191,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
 
 
 void GCWorker::GCThreadLoop() {
-    __sleep(100);
+    __sleep(0.1);
     while (true) {
         {
             std::unique_lock<std::mutex> lock(this->thread_mutex);
