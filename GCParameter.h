@@ -11,5 +11,5 @@ public:
 	static constexpr bool useInlineMarkState = true;            // 是否启用内联标记
 	static constexpr bool useSecondaryMemoryManager = false;    // 是否启用二级内存分配器（尚未支持）
 	static constexpr bool enableReclaim = false;                // 是否重利用内存（尚未支持）
-	static constexpr bool enableMoveConstructor = true;  	 	// 是否在重分配对象时调用移动构造函数（不推荐，当且仅当有问题才启用）；前提条件：启用重分配，启用析构函数，并且所有被GCPtr管理的对象是可移动的
+	static constexpr bool enableMoveConstructor = true;  	 	// 是否在重分配对象时调用移动构造函数（不推荐，有问题才启用）；前提条件：启用重分配，启用析构函数，并且所有被GCPtr管理的对象是可移动的
 };

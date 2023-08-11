@@ -12,7 +12,7 @@ class MyObject {
 public:
     int a;
     double b;
-    // std::string c;
+    std::string c;
     GCPtr<MyObject> d;
     double f;
     GCPtr<MyObject> e;
@@ -20,7 +20,9 @@ public:
     double l[256];
     MyObject2* m;
 
-    MyObject() : a(rand() % RAND_MAX), b(0), h(0), f(0) {
+    MyObject() : a(rand() % RAND_MAX),
+                 b(0), h(0), f(0),
+                 c("Hello, GCPtr!") {
         m = new MyObject2();
     }
 
@@ -33,7 +35,8 @@ public:
         return h;
     }
 
-    MyObject(MyObject&& other) noexcept : d(std::move(other.d)) {
+    MyObject(MyObject&& other) noexcept: d(std::move(other.d)),
+                                         c(std::move(other.c)) {
         this->a = other.a;
         this->b = other.b;
         this->f = other.f;
