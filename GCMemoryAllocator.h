@@ -11,6 +11,7 @@
 #include <shared_mutex>
 #include <random>
 #include "IMemoryAllocator.h"
+#include "GCParameter.h"
 #include "GCRegion.h"
 #include "GCMemoryManager.h"
 #include "ConcurrentLinkedList.h"

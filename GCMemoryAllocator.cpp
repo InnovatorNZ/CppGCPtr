@@ -110,12 +110,25 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
         std::shared_ptr<GCRegion> new_region = std::make_shared<GCRegion>(regionType, new_region_memory, regionSize);
 
         std::unique_lock<std::shared_mutex> region_map_lock(regionMapMtx, std::defer_lock);
-        if constexpr (!enableRegionMapBuffer) region_map_lock.lock();
+        if (!(enableRegionMapBuffer && regionType == RegionEnum::SMALL)) region_map_lock.lock();
 
         switch (regionType) {
             case RegionEnum::SMALL: {
                 int pool_idx = getPoolIdx();
-                if (smallAllocatingRegions[pool_idx].compare_exchange_strong(region, new_region)) {
+                bool cas_success;
+                if constexpr (enableRegionMapBuffer) {
+                    cas_success = smallAllocatingRegions[pool_idx].compare_exchange_strong(region, new_region);
+                } else {
+                    if (smallAllocatingRegions[pool_idx].load(std::memory_order_acquire) == region) {
+                        smallAllocatingRegions[pool_idx].store(new_region, std::memory_order_release);
+                        regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                        cas_success = true;
+                    } else {
+                        cas_success = false;
+                    }
+                    region_map_lock.unlock();
+                }
+                if (cas_success) {
                     if constexpr (useConcurrentLinkedList) {
                         smallRegionLists[pool_idx].push_head(new_region);
                     } else {
@@ -123,7 +136,6 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         smallRegionQues[pool_idx].emplace_back(new_region);
                     }
                     if constexpr (enableRegionMapBuffer) {
-                    // if constexpr (false) {
                         if (region_map_lock.try_lock()) {
                             regionMap.emplace(new_region->getStartAddr(), new_region.get());
                             region_map_lock.unlock();
@@ -132,9 +144,8 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                             // 在此期间所有在新区域中的对象由于不在管理区域内会被误判定为gc root，不过问题不大
                             // 更新：如果支持调用析构函数的话那是问题不大，但是现在尚未支持，因此非root被释放后其仍然留存在rootset中，产生访问非法内存错误
                             // 再更新：即便支持调用析构函数也不行，因为root_set里存放的是指向gcptr的裸指针，并不会有指针自愈的功能，因而对象被转移后依然无法访问原有内存
-                            // TODO: 是否可以考虑增加移动构造函数的支持，这样就会在转移的时候调用移动构造，也不会有上述问题了？
-                            // 然而似乎事实显示这么做即便行得通，也会导致写入root_set的频率大幅增加，可能反而会损耗性能。。。
-                            // TODO: 另外，如果不使用regionMapBuffer方案，需要在新region的CAS之前就上regionMapMtx锁，防止小概率线程不安全导致上述问题
+                            // 考虑增加移动构造函数的支持，这样就会在转移的时候调用移动构造，也不会有上述问题了；
+                            // 另外，如果不使用regionMapBuffer方案，需要在新region的CAS之前就上regionMapMtx锁，防止小概率线程不安全导致上述问题
                             std::clog << "Acquire region map mutex failed, adding to region map buffer" << std::endl;
                             while (true) {
                                 if (regionMapBufMtx0[pool_idx].try_lock()) {
@@ -148,12 +159,8 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                                 }
                             }
                         }
-                    } else {
-                        // std::unique_lock<std::shared_mutex> lock(regionMapMtx);
-                        regionMap.emplace(new_region->getStartAddr(), new_region.get());
                     }
                 } else {
-                    if constexpr (!enableRegionMapBuffer) region_map_lock.unlock();
                     std::clog << "Undo allocating new region as someone beats us." << std::endl;
                     new_region->free();
                 }
@@ -161,49 +168,49 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
 
                 break;
             case RegionEnum::MEDIUM:
-                if (mediumAllocatingRegion.compare_exchange_strong(region, new_region)) {
+                // if (mediumAllocatingRegion.compare_exchange_strong(region, new_region)) {
+                if (mediumAllocatingRegion.load(std::memory_order_acquire) == region) {
+                    mediumAllocatingRegion.store(new_region, std::memory_order_release);
+                    regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                    region_map_lock.unlock();
                     if constexpr (useConcurrentLinkedList) {
                         mediumRegionList.push_head(new_region);
                     } else {
                         std::unique_lock<std::shared_mutex> lock(mediumRegionQueMtx);
                         mediumRegionQue.emplace_back(new_region);
                     }
-                    {
-                        // std::unique_lock<std::shared_mutex> lock(regionMapMtx);
-                        regionMap.emplace(new_region->getStartAddr(), new_region.get());
-                    }
                 } else {
+                    region_map_lock.unlock();
                     new_region->free();
                 }
 
                 break;
             case RegionEnum::TINY:
-                if (tinyAllocatingRegion.compare_exchange_strong(region, new_region)) {
+                // if (tinyAllocatingRegion.compare_exchange_strong(region, new_region)) {
+                if (tinyAllocatingRegion.load(std::memory_order_acquire) == region) {
+                    tinyAllocatingRegion.store(new_region, std::memory_order_release);
+                    regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                    region_map_lock.unlock();
                     if constexpr (useConcurrentLinkedList) {
                         tinyRegionList.push_head(new_region);
                     } else {
                         std::unique_lock<std::shared_mutex> lock(tinyRegionQueMtx);
                         tinyRegionQue.emplace_back(new_region);
                     }
-                    {
-                        // std::unique_lock<std::shared_mutex> lock(regionMapMtx);
-                        regionMap.emplace(new_region->getStartAddr(), new_region.get());
-                    }
                 } else {
+                    region_map_lock.unlock();
                     new_region->free();
                 }
 
                 break;
             case RegionEnum::LARGE:
+                regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                region_map_lock.unlock();
                 if constexpr (useConcurrentLinkedList) {
                     largeRegionList.push_head(new_region);
                 } else {
                     std::unique_lock<std::shared_mutex> lock(largeRegionQueMtx);
                     largeRegionQue.emplace_back(new_region);
-                }
-                {
-                    // std::unique_lock<std::shared_mutex> lock(regionMapMtx);
-                    regionMap.emplace(new_region->getStartAddr(), new_region.get());
                 }
 
                 return std::make_pair(new_region_memory, new_region);

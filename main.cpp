@@ -3,9 +3,10 @@
 #include "GCPtr.h"
 
 class MyObject2 {
-    int a, b;
+public:
+    int a;
+    float b;
     double c[1024];
-    // GCPtr<int> dd;
 };
 
 class MyObject {
