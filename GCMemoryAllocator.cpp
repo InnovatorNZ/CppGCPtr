@@ -4,6 +4,7 @@
 #define min(a, b)            (((a) < (b)) ? (a) : (b))
 
 const size_t GCMemoryAllocator::INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
+thread_local std::shared_ptr<GCRegion> GCMemoryAllocator::smallAllocatingRegion;
 
 GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableParallelClear,
                                      int gcThreadCount, ThreadPoolExecutor* gcThreadPool) {
@@ -20,7 +21,7 @@ GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableP
             this->memoryPools.emplace_back(c_address, INITIAL_SINGLE_SIZE);
         }
     }
-    this->smallAllocatingRegions = std::make_unique<std::atomic<std::shared_ptr<GCRegion>>[]>(poolCount);
+    // this->smallAllocatingRegions = std::make_unique<std::atomic<std::shared_ptr<GCRegion>>[]>(poolCount);
     if constexpr (useConcurrentLinkedList) {
         this->smallRegionLists = std::make_unique<ConcurrentLinkedList<std::shared_ptr<GCRegion>>[]>(poolCount);
     } else {
@@ -47,6 +48,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate(size_t s
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType) {
     if (size == 0) return std::make_pair(nullptr, nullptr);
+    // thread_local std::shared_ptr<GCRegion> smallAllocatingRegion;
     while (true) {
         // 从已有region中寻找空闲区域
         std::shared_ptr<GCRegion> region;
@@ -54,6 +56,11 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
         switch (regionType) {
             case RegionEnum::SMALL: {
                 // 尝试从线程所属pool拿
+                if (smallAllocatingRegion != nullptr) {
+                    void* addr = smallAllocatingRegion->allocate(size);
+                    if (addr != nullptr) return std::make_pair(addr, smallAllocatingRegion);
+                }
+#if 0
                 int pool_idx = getPoolIdx();
                 region = this->smallAllocatingRegions[pool_idx].load();
                 if (region != nullptr) {
@@ -68,6 +75,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                         if (addr != nullptr) return std::make_pair(addr, region_);
                     }
                 }
+#endif
             }
                 break;
             case RegionEnum::MEDIUM:
@@ -110,11 +118,51 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
         std::shared_ptr<GCRegion> new_region = std::make_shared<GCRegion>(regionType, new_region_memory, regionSize);
 
         std::unique_lock<std::shared_mutex> region_map_lock(regionMapMtx, std::defer_lock);
-        if (!(enableRegionMapBuffer && regionType == RegionEnum::SMALL)) region_map_lock.lock();
+        if (regionType != RegionEnum::SMALL) region_map_lock.lock();
 
         switch (regionType) {
             case RegionEnum::SMALL: {
+                smallAllocatingRegion = new_region;
+
                 int pool_idx = getPoolIdx();
+                if constexpr (enableRegionMapBuffer) {
+                    if (region_map_lock.try_lock()) {
+                        regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                        region_map_lock.unlock();
+                    } else {
+                        // 若获取region红黑树的锁失败，则将新region放入缓冲区内，在GC开始的时候再添加进红黑树
+                        // 在此期间所有在新区域中的对象由于不在管理区域内会被误判定为gc root，不过问题不大
+                        // 更新：如果支持调用析构函数的话那是问题不大，但是现在尚未支持，因此非root被释放后其仍然留存在rootset中，产生访问非法内存错误
+                        // 再更新：即便支持调用析构函数也不行，因为root_set里存放的是指向gcptr的裸指针，并不会有指针自愈的功能，因而对象被转移后依然无法访问原有内存
+                        // 考虑增加移动构造函数的支持，这样就会在转移的时候调用移动构造，也不会有上述问题了；
+                        // 另外，如果不使用regionMapBuffer方案，需要在新region的CAS之前就上regionMapMtx锁，防止小概率线程不安全导致上述问题
+                        std::clog << "Acquire region map mutex failed, adding to region map buffer" << std::endl;
+                        while (true) {
+                            if (regionMapBufMtx0[pool_idx].try_lock()) {
+                                regionMapBuffer0[pool_idx].push_back(new_region.get());
+                                regionMapBufMtx0[pool_idx].unlock();
+                                break;
+                            } else if (regionMapBufMtx1[pool_idx].try_lock()) {
+                                regionMapBuffer1[pool_idx].push_back(new_region.get());
+                                regionMapBufMtx1[pool_idx].unlock();
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    region_map_lock.lock();
+                    regionMap.emplace(new_region->getStartAddr(), new_region.get());
+                    region_map_lock.unlock();
+                }
+
+                if constexpr (useConcurrentLinkedList) {
+                    smallRegionLists[pool_idx].push_head(new_region);
+                } else {
+                    std::unique_lock<std::shared_mutex> lock(smallRegionQueMtxs[pool_idx]);
+                    smallRegionQues[pool_idx].emplace_back(new_region);
+                }
+
+#if 0
                 bool cas_success;
                 if constexpr (enableRegionMapBuffer) {
                     cas_success = smallAllocatingRegions[pool_idx].compare_exchange_strong(region, new_region);
@@ -164,11 +212,11 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                     std::clog << "Undo allocating new region as someone beats us." << std::endl;
                     new_region->free();
                 }
+#endif
             }
 
                 break;
             case RegionEnum::MEDIUM:
-                // if (mediumAllocatingRegion.compare_exchange_strong(region, new_region)) {
                 if (mediumAllocatingRegion.load(std::memory_order_acquire) == region) {
                     mediumAllocatingRegion.store(new_region, std::memory_order_release);
                     regionMap.emplace(new_region->getStartAddr(), new_region.get());
@@ -186,7 +234,6 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
 
                 break;
             case RegionEnum::TINY:
-                // if (tinyAllocatingRegion.compare_exchange_strong(region, new_region)) {
                 if (tinyAllocatingRegion.load(std::memory_order_acquire) == region) {
                     tinyAllocatingRegion.store(new_region, std::memory_order_release);
                     regionMap.emplace(new_region->getStartAddr(), new_region.get());

@@ -44,7 +44,8 @@ private:
     std::shared_mutex largeRegionQueMtx;
     std::shared_mutex tinyRegionQueMtx;
 // #endif
-    std::unique_ptr<std::atomic<std::shared_ptr<GCRegion>>[]> smallAllocatingRegions;
+    // std::unique_ptr<std::atomic<std::shared_ptr<GCRegion>>[]> smallAllocatingRegions;
+    static thread_local std::shared_ptr<GCRegion> smallAllocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> mediumAllocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> tinyAllocatingRegion;
     std::vector<std::shared_ptr<GCRegion>> evacuationQue;
