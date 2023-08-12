@@ -19,7 +19,8 @@
 class GCMemoryAllocator : public IMemoryAllocator {
 private:
     static const size_t INITIAL_SINGLE_SIZE;
-    static constexpr bool useConcurrentLinkedList = false;
+    static constexpr bool useConcurrentLinkedList = GCParameter::useConcurrentLinkedList;
+    static constexpr bool enableRegionMapBuffer = GCParameter::enableRegionMapBuffer && GCParameter::enableMoveConstructor && GCParameter::enableDestructorSupport;
     bool enableInternalMemoryManager;
     bool enableParallelClear;
     unsigned int gcThreadCount;
