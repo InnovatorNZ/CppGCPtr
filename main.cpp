@@ -1,6 +1,11 @@
 #include <iostream>
+#include <thread>
 #include <string>
 #include "GCPtr.h"
+
+#define TRIGGER_GC 1
+#define MULTITHREAD_TEST 0
+#define DESTRUCTOR_TEST 0
 
 class MyObject2 {
 public:
@@ -13,7 +18,9 @@ class MyObject {
 public:
     int a;
     double b;
+#if DESTRUCTOR_TEST
     std::string c;
+#endif
     GCPtr<MyObject> d;
     double f;
     GCPtr<MyObject> e;
@@ -22,9 +29,15 @@ public:
     MyObject2* m;
 
     MyObject() : a(rand() % RAND_MAX),
-                 b(0), h(0), f(0),
-                 c("Hello, GCPtr!") {
+#if DESTRUCTOR_TEST
+        c("Hello, GCPtr!"),
+#endif
+        b(0), h(0), f(0) {
+#if DESTRUCTOR_TEST
         m = new MyObject2();
+#else
+        m = nullptr;
+#endif
     }
 
     void setG(GCPtr<MyObject> _g) {
@@ -36,8 +49,11 @@ public:
         return h;
     }
 
-    MyObject(MyObject&& other) noexcept: d(std::move(other.d)),
-                                         c(std::move(other.c)) {
+    MyObject(MyObject&& other) noexcept :
+#if DESTRUCTOR_TEST
+        c(std::move(other.c)),
+#endif
+        d(std::move(other.d)) {
         this->a = other.a;
         this->b = other.b;
         this->f = other.f;
@@ -90,7 +106,6 @@ bool in_aobj_func(void* gcptr, GCPtr<MyObject> _aobj[], int arr_size) {
 GCPtr<MyObject> obj3;
 
 int main() {
-#define TRIGGER_GC 1
     using namespace std;
     cout << "Size of MyObject: " << sizeof(MyObject) << endl;
     cout << "Size of GCPtr: " << sizeof(GCPtr<void>) << endl;
@@ -139,7 +154,19 @@ int main() {
             GCPtr<MyObject> obj4 = gc::make_gc<MyObject>();
         }
 
-        // Sleep(200);
+#if MULTITHREAD_TEST
+        const int th_num = 6;
+        std::thread th[th_num];
+        for (int tid = 0; tid < th_num; tid++) {
+            th[tid] = std::thread([] {
+                GCPtr<MyObject> thObj1 = gc::make_gc<MyObject>();
+                for (int k = 0; k < 100; k++) {
+                    GCPtr<MyObject> thObj2 = gc::make_gc<MyObject>();
+                }
+            });
+        }
+#endif
+
         double _f = obj3->e->f;
         obj3 = nullptr;
         obj2 = nullptr;
@@ -176,11 +203,20 @@ int main() {
         cout << "User thread duration: " << duration << " ms" << endl;
         time_ += duration;
 
+#if MULTITHREAD_TEST
+        for (int tid = 0; tid < th_num; tid++)
+            th[tid].join();
+#endif
 #if TRIGGER_GC
         gc::triggerGC();
-        Sleep(100);
 #endif
+        // Sleep(100);
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " ms" << endl;
+
+    Sleep(5000);
+    gc::triggerGC();
+    Sleep(10000);
+
     return 0;
 }
