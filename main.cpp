@@ -116,7 +116,7 @@ int main() {
             obj3->e->f = 12.43;
             GCPtr<MyObject> obj4 = gc::make_gc<MyObject>();
             GCPtr<MyObject> obj5 = gc::make_gc<MyObject>();
-            //obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
+            obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
             obj2->setG(gc::make_gc<MyObject>());
         }
         GCPtr<Base> polyTestVar = gc::make_gc<Derived>(3.14);
