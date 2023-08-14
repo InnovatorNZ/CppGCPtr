@@ -4,7 +4,7 @@
 #include "GCPtr.h"
 
 #define TRIGGER_GC 1
-#define MULTITHREAD_TEST 0
+#define MULTITHREAD_TEST 1
 #define DESTRUCTOR_TEST 0
 
 class MyObject2 {
@@ -147,8 +147,8 @@ int main() {
 #if TRIGGER_GC
         gc::triggerGC();
 #endif
-        obj3->e->f = 114.514;
 
+        obj3->e->f = 114.514;
         GCPtr<MyObject> obj5 = gc::make_gc<MyObject>();
         {
             GCPtr<MyObject> obj4 = gc::make_gc<MyObject>();
@@ -207,16 +207,13 @@ int main() {
         for (int tid = 0; tid < th_num; tid++)
             th[tid].join();
 #endif
+
 #if TRIGGER_GC
         gc::triggerGC();
 #endif
-        // Sleep(100);
+        Sleep(100);
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " ms" << endl;
-
-    Sleep(5000);
-    gc::triggerGC();
-    Sleep(10000);
 
     return 0;
 }
