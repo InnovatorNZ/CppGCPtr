@@ -4,7 +4,7 @@
 #include "GCPtr.h"
 
 #define TRIGGER_GC 1
-#define MULTITHREAD_TEST 1
+#define MULTITHREAD_TEST 0
 #define DESTRUCTOR_TEST 0
 
 class MyObject2 {
@@ -211,7 +211,7 @@ int main() {
 #if TRIGGER_GC
         gc::triggerGC();
 #endif
-        Sleep(100);
+        Sleep(1500);
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " ms" << endl;
 

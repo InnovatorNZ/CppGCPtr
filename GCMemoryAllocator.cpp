@@ -482,7 +482,7 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
         std::shared_ptr<GCRegion> region = iterator->current();
         if (!region->isEvacuated() && region->needEvacuate()) {
             region->setEvacuated();
-            this->evacuationQue.emplace_back(std::move(region));
+            this->evacuationQue.emplace_back(region);
             iterator->remove();
         }
     }
