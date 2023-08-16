@@ -92,7 +92,8 @@ public:
             if (c == nullptr) {
                 c = linkedList.head;
             } else {
-                c = c->next;
+                if (c_next == c->next.load())
+                    c = c->next;
             }
             if (c == nullptr) return false;
             c_next = c->next;
@@ -102,8 +103,7 @@ public:
 
         bool remove() override {
             if (c == nullptr || c_next == nullptr) return false;
-            if (c->next.compare_exchange_weak(c_next, c_next->next)) {
-                c_next = c->next;
+            if (c->next.compare_exchange_weak(c_next, c_next->next.load())) {
                 return true;
             } else {
                 return false;
