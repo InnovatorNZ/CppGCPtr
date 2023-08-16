@@ -483,7 +483,7 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
         if (!region->isEvacuated() && region->needEvacuate()) {
             region->setEvacuated();
             this->evacuationQue.emplace_back(region);
-            iterator->remove();
+            // iterator->remove();      // TODO: 不remove的话bug就消失了。链表的删除逻辑有问题？
         }
     }
 }
