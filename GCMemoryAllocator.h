@@ -49,6 +49,7 @@ private:
     std::atomic<std::shared_ptr<GCRegion>> mediumAllocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> tinyAllocatingRegion;
     std::vector<std::shared_ptr<GCRegion>> evacuationQue;
+    std::vector<std::shared_ptr<GCRegion>> clearQue;
     // 用于判定是否在被管理区域内的root的红黑树及其缓冲区
     std::map<void*, GCRegion*> regionMap;
     std::shared_mutex regionMapMtx;
@@ -69,7 +70,13 @@ private:
 
     void selectRelocationSet(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
 
+    void selectClearSet(std::deque<std::shared_ptr<GCRegion>>&, std::shared_mutex&);
+
+    void selectClearSet(ConcurrentLinkedList<std::shared_ptr<GCRegion>>&);
+
     void removeEvacuatedRegionMap();
+
+    void removeClearedRegionMap();
 
     int getPoolIdx() const;
 
@@ -85,7 +92,11 @@ public:
 
     void SelectRelocationSet();
 
+    void SelectClearSet();
+
     void triggerRelocation(bool enableReclaim = false);
+
+    void triggerClear_v2();
 
     void resetLiveSize();
 

@@ -157,7 +157,6 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         }
     } else {
         if (region == nullptr || region->isEvacuated() || !region->inside_region(object_addr, object_size)) {
-            // TODO: clearUnmarked()触发此处异常可能是由于setEvacuate()与isEvacuated()非原子，但又没有STW导致的
             std::clog << "Evacuated region or Out of range!" << std::endl;
             throw std::exception();
             return;
@@ -444,13 +443,16 @@ void GCWorker::triggerSATBMark() {
 }
 
 void GCWorker::selectRelocationSet() {
-    if (!enableMemoryAllocator || !enableRelocation) return;
+    if (!enableMemoryAllocator) return;
     if (GCPhase::getGCPhase() != eGCPhase::REMARK) {
         std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
         return;
     }
     GCPhase::SwitchToNextPhase();
-    memoryAllocator->SelectRelocationSet();
+    if (enableRelocation)
+        memoryAllocator->SelectRelocationSet();
+    else
+        memoryAllocator->SelectClearSet();
 }
 
 void GCWorker::beginSweep() {
@@ -474,7 +476,7 @@ void GCWorker::beginSweep() {
             if (enableRelocation)
                 memoryAllocator->triggerRelocation(enableReclaim);
             else
-                memoryAllocator->triggerClear();
+                memoryAllocator->triggerClear_v2();
         }
     } else std::clog << "Invalid phase, should in sweep phase" << std::endl;
 }

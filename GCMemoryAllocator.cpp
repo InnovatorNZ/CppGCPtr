@@ -338,6 +338,7 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
         std::cerr << "Wrong phase, should in sweeping phase to trigger relocation." << std::endl;
         return;
     }
+
     if (enableParallelClear) {
         size_t snum = evacuationQue.size() / gcThreadCount;
         for (int tid = 0; tid < gcThreadCount; tid++) {
@@ -441,6 +442,57 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
     }
 }
 
+void GCMemoryAllocator::triggerClear_v2() {
+    if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
+        std::cerr << "Wrong phase, should in sweeping phase to trigger relocation." << std::endl;
+        return;
+    }
+
+    if (enableParallelClear) {
+        size_t snum = clearQue.size() / gcThreadCount;
+        for (int tid = 0; tid < gcThreadCount; tid++) {
+            threadPool->execute([this, tid, snum] {
+                size_t startIndex = tid * snum;
+                size_t endIndex = (tid == gcThreadCount - 1) ? clearQue.size() : (tid + 1) * snum;
+                for (size_t j = startIndex; j < endIndex; j++) {
+                    clearQue[j]->clearUnmarked();
+                }
+            });
+        }
+        threadPool->waitForTaskComplete(gcThreadCount);
+    } else {
+        for (int i = 0; i < clearQue.size(); i++) {
+            clearQue[i]->clearUnmarked();
+        }
+    }
+
+    if (enableParallelClear) {
+        size_t snum = clearQue.size() / gcThreadCount;
+        for (int tid = 0; tid < gcThreadCount; tid++) {
+            threadPool->execute([this, tid, snum] {
+                size_t startIndex = tid * snum;
+                size_t endIndex = (tid == gcThreadCount - 1) ? clearQue.size() : (tid + 1) * snum;
+                for (size_t j = startIndex; j < endIndex; j++) {
+                    clearQue[j]->free();
+                }
+            });
+        }
+        threadPool->waitForTaskComplete(gcThreadCount);
+    } else {
+        for (auto& region : clearQue) {
+            region->free();
+        }
+    }
+
+    if constexpr (useConcurrentLinkedList) {
+        clearFreeRegion(this->largeRegionList);
+    } else {
+        clearFreeRegion(largeRegionQue, largeRegionQueMtx);
+    }
+
+    clearQue.clear();
+}
+
 void GCMemoryAllocator::SelectRelocationSet() {
     if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
         std::cerr << "Wrong phase, should in sweeping phase to trigger select relocation set." << std::endl;
@@ -488,9 +540,62 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
     }
 }
 
+void GCMemoryAllocator::SelectClearSet() {
+    if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
+        std::cerr << "Wrong phase, should in sweeping phase to trigger select clear set." << std::endl;
+        return;
+    }
+    this->clearQue.clear();
+    if constexpr (useConcurrentLinkedList) {
+        for (int i = 0; i < poolCount; i++)
+            selectClearSet(this->smallRegionLists[i]);
+        selectClearSet(this->mediumRegionList);
+        selectClearSet(this->tinyRegionList);
+    } else {
+        for (int i = 0; i < poolCount; i++)
+            selectClearSet(smallRegionQues[i], smallRegionQueMtxs[i]);
+        selectClearSet(mediumRegionQue, mediumRegionQueMtx);
+        selectClearSet(tinyRegionQue, tinyRegionQueMtx);
+    }
+    removeClearedRegionMap();
+}
+
+void GCMemoryAllocator::selectClearSet(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
+    std::unique_lock<std::shared_mutex> lock(regionQueMtx);
+    for (auto it = regionQue.begin(); it != regionQue.end();) {
+        std::shared_ptr<GCRegion>& region = *it;
+        if (!region->isEvacuated() && region->canFree()) {
+            region->setEvacuated();
+            this->clearQue.emplace_back(std::move(region));
+            it = regionQue.erase(it);
+        } else {
+            it++;
+        }
+    }
+}
+
+void GCMemoryAllocator::selectClearSet(ConcurrentLinkedList<std::shared_ptr<GCRegion>>& regionList) {
+    auto iterator = regionList.getRemovableIterator();
+    while (iterator->MoveNext()) {
+        std::shared_ptr<GCRegion> region = iterator->current();
+        if (!region->isEvacuated() && region->canFree()) {
+            region->setEvacuated();
+            this->clearQue.emplace_back(region);
+            iterator->remove();
+        }
+    }
+}
+
 void GCMemoryAllocator::removeEvacuatedRegionMap() {
     std::unique_lock<std::shared_mutex> lock(regionMapMtx);
     for (auto& region : this->evacuationQue) {
+        regionMap.erase(region->getStartAddr());
+    }
+}
+
+void GCMemoryAllocator::removeClearedRegionMap() {
+    std::unique_lock<std::shared_mutex> lock(regionMapMtx);
+    for (auto& region : this->clearQue) {
         regionMap.erase(region->getStartAddr());
     }
 }
