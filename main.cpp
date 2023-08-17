@@ -6,6 +6,7 @@
 #define TRIGGER_GC 1
 #define MULTITHREAD_TEST 0
 #define DESTRUCTOR_TEST 0
+#define WITH_STL_TEST 1
 
 class MyObject2 {
 public:
@@ -174,18 +175,22 @@ int main() {
         {
             GCPtr<MyObject> obj8 = gc::make_gc<MyObject>();
         }
-        // GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
 
         GCPtr<MyObject> obj9 = gc::make_gc<MyObject>();
         {
             srand(time(0));
             const int arr_size = 256;
             GCPtr<MyObject> aobj[arr_size];
+            GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
             for (int j = 0; j < 100000; j++) {
                 GCPtr<MyObject> temp_obj = gc::make_gc<MyObject>();
                 temp_obj->addH();
-                if (rand() % 7 == 0)
+                if (rand() % 7 == 0) {
                     obj9 = temp_obj;
+#if WITH_STL_TEST
+                    gcptr_vec->push_back(obj9);
+#endif
+                }
                 if (rand() % 11 == 0)
                     aobj[rand() % arr_size] = temp_obj;
                 temp_obj->f = 6294.83;
@@ -210,7 +215,7 @@ int main() {
 #if TRIGGER_GC
         gc::triggerGC();
 #endif
-        Sleep(1500);
+        Sleep(100);
     }
     cout << "Average user thread duration: " << (double) time_ / (double) n << " ms" << endl;
 
