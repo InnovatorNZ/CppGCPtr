@@ -456,6 +456,7 @@ void GCMemoryAllocator::triggerClear_v2() {
                 size_t endIndex = (tid == gcThreadCount - 1) ? clearQue.size() : (tid + 1) * snum;
                 for (size_t j = startIndex; j < endIndex; j++) {
                     clearQue[j]->clearUnmarked();
+                    clearQue[j]->free();
                 }
             });
         }
@@ -463,24 +464,7 @@ void GCMemoryAllocator::triggerClear_v2() {
     } else {
         for (int i = 0; i < clearQue.size(); i++) {
             clearQue[i]->clearUnmarked();
-        }
-    }
-
-    if (enableParallelClear) {
-        size_t snum = clearQue.size() / gcThreadCount;
-        for (int tid = 0; tid < gcThreadCount; tid++) {
-            threadPool->execute([this, tid, snum] {
-                size_t startIndex = tid * snum;
-                size_t endIndex = (tid == gcThreadCount - 1) ? clearQue.size() : (tid + 1) * snum;
-                for (size_t j = startIndex; j < endIndex; j++) {
-                    clearQue[j]->free();
-                }
-            });
-        }
-        threadPool->waitForTaskComplete(gcThreadCount);
-    } else {
-        for (auto& region : clearQue) {
-            region->free();
+            clearQue[i]->free();
         }
     }
 

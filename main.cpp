@@ -114,7 +114,6 @@ int main() {
     long long time_ = 0;
     Sleep(500);
 
-    //GCPtr<MyObject> obj3;
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::steady_clock::now();
         GCPtr<MyObject> obj2;
@@ -175,29 +174,29 @@ int main() {
         {
             GCPtr<MyObject> obj8 = gc::make_gc<MyObject>();
         }
+        // GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
 
         GCPtr<MyObject> obj9 = gc::make_gc<MyObject>();
-        const int arr_size = 256;
-        GCPtr<MyObject> aobj[arr_size];
-
-        //GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
-        srand(time(0));
-        for (int j = 0; j < 100000; j++) {
-            GCPtr<MyObject> temp_obj = gc::make_gc<MyObject>();
-            temp_obj->addH();
-            if (rand() % 7 == 0)
-                obj9 = temp_obj;
-            if (rand() % 11 == 0)
-                aobj[rand() % arr_size] = temp_obj;
-            temp_obj->f = 6294.83;
-            temp_obj->addH();
-            int r = rand() % arr_size;
-            if (aobj[r] != nullptr) {
-                aobj[r]->b = 7.17;
-                double _b = aobj[r]->b;
+        {
+            srand(time(0));
+            const int arr_size = 256;
+            GCPtr<MyObject> aobj[arr_size];
+            for (int j = 0; j < 100000; j++) {
+                GCPtr<MyObject> temp_obj = gc::make_gc<MyObject>();
+                temp_obj->addH();
+                if (rand() % 7 == 0)
+                    obj9 = temp_obj;
+                if (rand() % 11 == 0)
+                    aobj[rand() % arr_size] = temp_obj;
+                temp_obj->f = 6294.83;
+                temp_obj->addH();
+                int r = rand() % arr_size;
+                if (aobj[r] != nullptr) {
+                    aobj[r]->b = 7.17;
+                    double _b = aobj[r]->b;
+                }
             }
         }
-
         auto end_time = chrono::steady_clock::now();
         long long duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time).count();
         cout << "User thread duration: " << duration << " ms" << endl;
