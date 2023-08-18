@@ -189,6 +189,9 @@ int main() {
                     obj9 = temp_obj;
 #if WITH_STL_TEST
                     gcptr_vec->push_back(obj9);
+                    int idx = rand() % gcptr_vec->size();
+                    GCPtr<MyObject> f = gcptr_vec->at(idx);
+                    f->b = f->a;
 #endif
                 }
                 if (rand() % 11 == 0)
