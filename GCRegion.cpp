@@ -59,7 +59,8 @@ void* GCRegion::allocate(size_t size) {
         live_size += size;
     } else {
         if constexpr (use_regional_hashmap) {
-            // regionalHashMap->mark(object_addr, size, MarkState::REMAPPED, true);     // 有可能这里不需要
+            if constexpr (enable_destructor)
+                regionalHashMap->mark(object_addr, size, MarkState::REMAPPED, true);    // 若启用析构函数需要标记，否则不需要
         } else {
             bitmap->mark(object_addr, size, MarkStateBit::REMAPPED, true);
         }
@@ -70,7 +71,7 @@ void* GCRegion::allocate(size_t size) {
 void GCRegion::free(void* addr, size_t size) {
     if (inside_region(addr, size)) {
         // free()要不要调用mark(addr, size, MarkStateBit::NOT_ALLOCATED)？好像还是要的
-        // 现已改为mark的时候统计live_size，而不是frag_size，因此free时不能再mark为NOT_ALLOCATED，而是mark为REMAPPED
+        // 现已改为mark的时候统计live_size，而不是frag_size
         // frag_size += size;
         bool recently_assigned;
         while (true) {
@@ -88,7 +89,7 @@ void GCRegion::free(void* addr, size_t size) {
         }
         if (!recently_assigned) {
             if constexpr (use_regional_hashmap) {
-                regionalHashMap->mark(addr, size, MarkState::REMAPPED, false, false);
+                regionalHashMap->mark(addr, size, MarkState::DE_ALLOCATED, false, false);
             } else {
                 bitmap->mark(addr, size, MarkStateBit::NOT_ALLOCATED);
             }
@@ -148,10 +149,9 @@ void GCRegion::clearUnmarked() {
         while (regionalMapIterator.MoveNext()) {
             GCStatus gcStatus = regionalMapIterator.current();
             const MarkState& markState = gcStatus.markState;
-            if (GCPhase::needSweep(markState) && markState != MarkState::REMAPPED) {
-                // 非存活对象统一标记为REMAPPED（或者从hashmap中删除也可以），不然会导致markState经过两轮回收后重复
-                // TODO: 需要改为从hashmap中删除？
-                regionalMapIterator.setCurrentMarkState(MarkState::REMAPPED);
+            if (GCPhase::needSweep(markState)) {
+                // 非存活对象统一标记为DE_ALLOCATED（或者从hashmap中删除也可以），不然会导致markState经过两轮回收后重复
+                regionalMapIterator.setCurrentMarkState(MarkState::DE_ALLOCATED);
                 if constexpr (enable_destructor) {
                     void* addr = regionalMapIterator.getCurrentAddress();
                     callDestructor(addr);
@@ -164,10 +164,9 @@ void GCRegion::clearUnmarked() {
             GCBitMap::BitStatus bitStatus = bitMapIterator.current();
             MarkStateBit& markState = bitStatus.markState;
             void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
-            if (GCPhase::needSweep(markState)) {    //非存活对象，调用其析构函数，并标记为未分配，防止因M0/M1重复使用致后续误判存活
-                // 非存活对象统一标记为REMAPPED（不能标记为NOT_ALLOCATED），因为仍然需要size信息遍历bitmap，并避免markState重复
-                // TODO: 但是这似乎会导致本来就是REMAPPED的对象不会被调用析构函数
-                // 现改为标记为NOT_ALLOCATED
+            if (GCPhase::needSweep(markState)) {    // 非存活对象，调用其析构函数，并标记为未分配，防止因M0/M1重复使用致后续误判存活
+                // 非存活对象统一标记为REMAPPED，因为仍然需要size信息遍历bitmap，并避免markState重复
+                // 但是这似乎会导致本来就是REMAPPED的对象不会被调用析构函数，现改为标记为NOT_ALLOCATED
                 bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
                 if constexpr (enable_destructor) {
                     callDestructor(addr);
@@ -265,7 +264,7 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
                 auto it = destructor_map->find(object_addr);
                 if (it != destructor_map->end()) {
                     new_region->registerDestructor(new_object_addr, it->second);
-                } else std::cerr << "destructor not found!" << std::endl;
+                }
             }
             if constexpr (enable_move_constructor) {
                 std::shared_lock<std::shared_mutex> lock2(move_constructor_map_mtx);
@@ -360,7 +359,8 @@ void GCRegion::callDestructor(void* object_addr) {
     if (it != destructor_map->end()) {
         auto& destructor = it->second;
         destructor(object_addr);
-    }
+    } else
+        std::clog << "Destructor not found!" << std::endl;
 }
 
 void GCRegion::callMoveConstructor(void* source_addr, void* target_addr) {

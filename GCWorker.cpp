@@ -332,7 +332,7 @@ void GCWorker::beginMark() {
         if constexpr (!GCParameter::deferRemoveRoot)
         {
             std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex);
-            if (!enableMemoryAllocator && !useInlineMarkstate) {
+            if (!enableMemoryAllocator) {
                 for (auto it : *root_set) {
                     void* ptr = it->getVoidPtr();
                     if (ptr != nullptr)
@@ -352,7 +352,7 @@ void GCWorker::beginMark() {
                     it = root_map->erase(it);
                 } else {
                     GCPtrBase* gcptr = it->first;
-                    if (enableMemoryAllocator && useInlineMarkstate) {
+                    if (enableMemoryAllocator) {
                         this->mark_root(gcptr);
                     } else {
                         void* ptr = gcptr->getVoidPtr();
@@ -367,7 +367,7 @@ void GCWorker::beginMark() {
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
         std::clog << "Root set lock duration: " << std::dec << duration.count() << " us" << std::endl;
 
-        if (!enableMemoryAllocator && !useInlineMarkstate) {
+        if (!enableMemoryAllocator) {
             for (void* ptr : this->root_ptr_snapshot) {
                 this->mark(ptr);
             }
