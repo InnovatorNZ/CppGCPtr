@@ -502,7 +502,7 @@ void GCMemoryAllocator::selectRelocationSet(std::deque<std::shared_ptr<GCRegion>
     std::unique_lock<std::shared_mutex> lock(regionQueMtx);
     for (auto it = regionQue.begin(); it != regionQue.end();) {
         std::shared_ptr<GCRegion>& region = *it;
-        if (!region->isEvacuated() && region->needEvacuate()) {
+        if (!region->isEvacuated() && (region.use_count() == 1 || region->needEvacuate())) {
             region->setEvacuated();
             this->evacuationQue.emplace_back(std::move(region));
             it = regionQue.erase(it);
@@ -516,9 +516,10 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
     auto iterator = regionList.getRemovableIterator();
     while (iterator->MoveNext()) {
         std::shared_ptr<GCRegion> region = iterator->current();
-        if (!region->isEvacuated() && region->needEvacuate()) {
+        if (region != nullptr && !region->isEvacuated() &&
+            (region.use_count() <= 2 || region->needEvacuate())) {
             region->setEvacuated();
-            this->evacuationQue.emplace_back(region);
+            this->evacuationQue.emplace_back(std::move(region));
             iterator->remove();
         }
     }
@@ -548,7 +549,7 @@ void GCMemoryAllocator::selectClearSet(std::deque<std::shared_ptr<GCRegion>>& re
     std::unique_lock<std::shared_mutex> lock(regionQueMtx);
     for (auto it = regionQue.begin(); it != regionQue.end();) {
         std::shared_ptr<GCRegion>& region = *it;
-        if (!region->isEvacuated() && region->canFree()) {
+        if (!region->isEvacuated() && (region.use_count() == 1 || region->canFree())) {
             region->setEvacuated();
             this->clearQue.emplace_back(std::move(region));
             it = regionQue.erase(it);
@@ -562,9 +563,9 @@ void GCMemoryAllocator::selectClearSet(ConcurrentLinkedList<std::shared_ptr<GCRe
     auto iterator = regionList.getRemovableIterator();
     while (iterator->MoveNext()) {
         std::shared_ptr<GCRegion> region = iterator->current();
-        if (!region->isEvacuated() && region->canFree()) {
+        if (region != nullptr && !region->isEvacuated() && (region.use_count() <= 2 || region->canFree())) {
             region->setEvacuated();
-            this->clearQue.emplace_back(region);
+            this->clearQue.emplace_back(std::move(region));
             iterator->remove();
         }
     }

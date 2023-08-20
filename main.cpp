@@ -4,7 +4,7 @@
 #include "GCPtr.h"
 
 #define TRIGGER_GC 1
-#define MULTITHREAD_TEST 0
+#define MULTITHREAD_TEST 1
 #define DESTRUCTOR_TEST 0
 #define WITH_STL_TEST 0
 
@@ -163,6 +163,7 @@ int main() {
                 for (int k = 0; k < 100; k++) {
                     GCPtr<MyObject> thObj2 = gc::make_gc<MyObject>();
                 }
+                thObj1->b = 1.9191810;
             });
         }
 #endif
