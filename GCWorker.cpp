@@ -31,12 +31,15 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
     this->satb_queue_pool.resize(poolCount);
     this->satb_queue_pool_mutex = std::make_unique<std::mutex[]>(poolCount);
     if constexpr (GCParameter::deferRemoveRoot) {
-        root_map = std::make_unique<std::unordered_map<GCPtrBase*, bool>>();
-        root_map->reserve(128);
+        root_map = std::make_unique<std::unordered_map<GCPtrBase*, bool>[]>(poolCount);
+        for (int i = 0; i < poolCount; i++)
+            root_map[i].reserve(64);
     } else {
-        root_set = std::make_unique<std::unordered_set<GCPtrBase*>>();
-        root_set->reserve(128);
+        root_set = std::make_unique<std::unordered_set<GCPtrBase*>[]>(poolCount);
+        for (int i = 0; i < poolCount; i++)
+            root_set[i].reserve(64);
     }
+    root_set_mutex = std::make_unique<std::shared_mutex[]>(poolCount);
     if (enableParallel) {
         this->gcThreadCount = 4;
         this->threadPool = std::make_unique<ThreadPoolExecutor>(gcThreadCount, gcThreadCount, 0,
@@ -264,24 +267,26 @@ void GCWorker::registerObject(void* object_addr, size_t object_size) {
 }
 
 void GCWorker::addRoot(GCPtrBase* from) {
-    std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex);
+    int poolIdx = getPoolIdx();
+    std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);
     if constexpr (GCParameter::deferRemoveRoot)
-        root_map->insert_or_assign(from, false);
+        root_map[poolIdx].insert_or_assign(from, false);
     else
-        root_set->insert(from);
+        root_set[poolIdx].insert(from);
 }
 
 void GCWorker::removeRoot(GCPtrBase* from) {
+    int poolIdx = getPoolIdx();
     if constexpr (GCParameter::deferRemoveRoot) {
-        std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex);
-        auto it = root_map->find(from);
-        if (it != root_map->end()) {
-            it->second = true;      // 将删除标记置为true
+        std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex[poolIdx]);
+        auto it = root_map[poolIdx].find(from);
+        if (it != root_map[poolIdx].end()) {
+            it->second = true;
         } else
             std::cerr << "Root not found when delete?" << std::endl;
     } else {
-        std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex);
-        root_set->erase(from);
+        std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);
+        root_set[poolIdx].erase(from);
     }
 }
 
@@ -295,8 +300,7 @@ void GCWorker::addSATB(const ObjectInfo& objectInfo) {
         std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
         satb_queue.push_back(objectInfo.object_addr);
     } else {
-        std::thread::id tid = std::this_thread::get_id();
-        int pool_idx = std::hash<std::thread::id>()(tid) % poolCount;
+        int pool_idx = getPoolIdx();
         std::unique_lock<std::mutex> lock(satb_queue_pool_mutex[pool_idx]);
         satb_queue_pool[pool_idx].emplace_back(objectInfo);
     }
@@ -329,37 +333,36 @@ void GCWorker::beginMark() {
         auto start_time = std::chrono::high_resolution_clock::now();
         this->root_object_snapshot.clear();
         this->root_ptr_snapshot.clear();
-        if constexpr (!GCParameter::deferRemoveRoot)
-        {
-            std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex);
-            if (!enableMemoryAllocator) {
-                for (auto it : *root_set) {
-                    void* ptr = it->getVoidPtr();
-                    if (ptr != nullptr)
-                        this->root_ptr_snapshot.push_back(ptr);
-                }
-            } else {
-                for (auto& it : *root_set) {
-                    this->mark_root(it);
-                }
-            }
-        }
-        else
-        {
-            std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex);
-            for (auto it = root_map->begin(); it != root_map->end(); ) {
-                if (it->second) {
-                    it = root_map->erase(it);
-                } else {
-                    GCPtrBase* gcptr = it->first;
-                    if (enableMemoryAllocator) {
-                        this->mark_root(gcptr);
-                    } else {
-                        void* ptr = gcptr->getVoidPtr();
+        for (int i = 0; i < poolCount; i++) {
+            if constexpr (!GCParameter::deferRemoveRoot) {
+                std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex[i]);
+                if (!enableMemoryAllocator) {
+                    for (auto it : root_set[i]) {
+                        void* ptr = it->getVoidPtr();
                         if (ptr != nullptr)
                             this->root_ptr_snapshot.push_back(ptr);
                     }
-                    ++it;
+                } else {
+                    for (auto& it : root_set[i]) {
+                        this->mark_root(it);
+                    }
+                }
+            } else {
+                std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[i]);
+                for (auto it = root_map[i].begin(); it != root_map[i].end();) {
+                    if (it->second) {
+                        it = root_map[i].erase(it);
+                    } else {
+                        GCPtrBase* gcptr = it->first;
+                        if (enableMemoryAllocator) {
+                            this->mark_root(gcptr);
+                        } else {
+                            void* ptr = gcptr->getVoidPtr();
+                            if (ptr != nullptr)
+                                this->root_ptr_snapshot.push_back(ptr);
+                        }
+                        ++it;
+                    }
                 }
             }
         }

@@ -17,6 +17,12 @@ bool GCUtil::is_stack_pointer(void* ptr) {
 #endif
 }
 
+int GCUtil::getPoolIdx(int poolCount) {
+    std::thread::id tid = std::this_thread::get_id();
+    int pool_idx = static_cast<int>(std::hash<std::thread::id>()(tid) % poolCount);
+    return pool_idx;
+}
+
 void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs, ThreadPoolExecutor* gcPool) {
 #if _WIN32
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);

@@ -26,9 +26,9 @@ private:
     static std::unique_ptr<GCWorker> instance;
     std::unordered_map<void*, GCStatus> object_map;
     std::shared_mutex object_map_mutex;
-    std::unique_ptr<std::unordered_set<GCPtrBase*>> root_set;
-    std::unique_ptr<std::unordered_map<GCPtrBase*, bool>> root_map;     // bool代表删除标记位
-    std::shared_mutex root_set_mutex;
+    std::unique_ptr<std::unordered_set<GCPtrBase*>[]> root_set;
+    std::unique_ptr<std::unordered_map<GCPtrBase*, bool>[]> root_map;     // bool代表删除标记位
+    std::unique_ptr<std::shared_mutex[]> root_set_mutex;
     std::vector<void*> root_ptr_snapshot;
     std::vector<ObjectInfo> root_object_snapshot;
     std::vector<void*> satb_queue;
@@ -45,7 +45,7 @@ private:
     std::unique_ptr<ThreadPoolExecutor> threadPool;
     int gcThreadCount;
     bool enableConcurrentMark, enableParallelGC, enableMemoryAllocator, useInlineMarkstate,
-        enableRelocation, enableDestructorSupport, enableReclaim;
+            enableRelocation, enableDestructorSupport, enableReclaim;
     volatile bool stop_, ready_;
 
     void mark(void*);
@@ -93,6 +93,8 @@ private:
     void selectRelocationSet();
 
     void endGC();
+
+    int getPoolIdx() const { return GCUtil::getPoolIdx(poolCount); }
 
 public:
     GCWorker();

@@ -749,7 +749,5 @@ void GCMemoryAllocator::flushRegionMapBuffer() {
 }
 
 int GCMemoryAllocator::getPoolIdx() const {
-    std::thread::id tid = std::this_thread::get_id();
-    int pool_idx = std::hash<std::thread::id>()(tid) % poolCount;
-    return pool_idx;
+    return GCUtil::getPoolIdx(poolCount);
 }

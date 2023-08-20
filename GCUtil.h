@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <vector>
+#include <thread>
 #include <stdexcept>
 #include "IReadWriteLock.h"
 #include "GCParameter.h"
@@ -32,4 +33,6 @@ public:
     static void resume_the_world(IReadWriteLock* = nullptr);
 
     static bool is_stack_pointer(void* ptr);
+
+    static int getPoolIdx(int poolCount);
 };
