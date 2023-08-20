@@ -11,6 +11,10 @@
 #include <TlHelp32.h>
 #endif
 
+#if !_WIN32
+typedef unsigned long       DWORD;
+#endif
+
 class GCUtil {
 private:
     static std::vector<DWORD> _suspendedThreadIDs;
