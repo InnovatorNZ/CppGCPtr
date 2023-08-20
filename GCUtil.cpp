@@ -1,20 +1,24 @@
 #include "GCUtil.h"
 
 std::vector<DWORD> GCUtil::_suspendedThreadIDs;
+bool GCUtil::user_threads_suspended = false;
 
 bool GCUtil::is_stack_pointer(void* ptr) {
-#if _WIN32 && _MSC_VER
+#if _WIN32
     ULONG_PTR low, high;
-    GetCurrentThreadStackLimits(&low, &high); // 获取当前线程的栈区边界
-    return low <= reinterpret_cast<ULONG_PTR>(ptr) && reinterpret_cast<ULONG_PTR>(ptr) < high; // 判断指针是否在栈区范围内
+    GetCurrentThreadStackLimits(&low, &high);   // 获取当前线程的栈区边界
+    return low <= reinterpret_cast<ULONG_PTR>(ptr) && reinterpret_cast<ULONG_PTR>(ptr) < high;  // 判断指针是否在栈区范围内
 #else
-    // TODO: POSIX is_stack_pointer()
-    // 不确定的一律返回true
-    return true;
+    // 不确定的一律返回true，前提是启用了析构函数
+    if constexpr (GCParameter::enableDestructorSupport)
+        return true;
+    else
+        throw std::runtime_error("is_stack_pointer() is not supported on posix yet");
 #endif
 }
 
 void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs, ThreadPoolExecutor* gcPool) {
+#if _WIN32
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (hSnapshot) {
         THREADENTRY32 threadEntry;
@@ -51,34 +55,46 @@ void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs, Thread
         }
         CloseHandle(hSnapshot);
     }
+#else
+    throw std::invalid_argument("suspend user threads is not supported on your operating system");
+#endif
 }
 
 void GCUtil::resume_user_threads(const std::vector<DWORD>& suspendedThreadIDs) {
+#if _WIN32
     for (const DWORD& threadID : suspendedThreadIDs) {
         HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, threadID);
         if (hThread) {
             DWORD status = ResumeThread(hThread);
-            if (status != -1) {
-                //std::clog << "Thread 0x" << std::hex << threadID << " resumed" << std::endl;
-            } else {
+            if (status == -1) {
                 LPVOID lpMsgBuf;
                 DWORD dw = GetLastError();
                 FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-                              dw, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPTSTR) &lpMsgBuf, 0, NULL);
-                printf("Error: Thread ID: 0x%x resume failure, error message: %ws", threadID, (LPCTSTR) lpMsgBuf);
+                              dw, MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), (LPTSTR)&lpMsgBuf, 0, NULL);
+                printf("Error: Thread ID: 0x%x resume failure, error message: %ws", threadID, (LPCTSTR)lpMsgBuf);
             }
             CloseHandle(hThread);
         }
     }
+#endif
 }
 
-void GCUtil::stop_the_world(IReadWriteLock* stwLock, ThreadPoolExecutor* gcPool) {
+void GCUtil::stop_the_world(IReadWriteLock* stwLock, ThreadPoolExecutor* gcPool, bool suspend_user_thread) {
     stwLock->lockWrite(true);
-    GCUtil::suspend_user_threads(_suspendedThreadIDs, gcPool);
-    stwLock->unlockWrite();
+    if (suspend_user_thread) {
+        GCUtil::suspend_user_threads(_suspendedThreadIDs, gcPool);
+        GCUtil::user_threads_suspended = true;
+        stwLock->unlockWrite();
+    }
 }
 
-void GCUtil::resume_the_world() {
-    GCUtil::resume_user_threads(_suspendedThreadIDs);
-    _suspendedThreadIDs.clear();
+void GCUtil::resume_the_world(IReadWriteLock* stwLock) {
+    if (GCUtil::user_threads_suspended) {
+        GCUtil::resume_user_threads(_suspendedThreadIDs);
+        GCUtil::user_threads_suspended = false;
+        _suspendedThreadIDs.clear();
+    } else {
+        if (stwLock == nullptr) throw std::invalid_argument("stwLock cannot be nullptr");
+        stwLock->unlockWrite();
+    }
 }

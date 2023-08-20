@@ -207,14 +207,14 @@ void GCWorker::GCThreadLoop() {
         if (stop_) break;
         startGC();
         beginMark();
-        GCUtil::stop_the_world(GCPhase::getSTWLock(), threadPool.get());
+        GCUtil::stop_the_world(GCPhase::getSTWLock(), threadPool.get(), GCParameter::suspendThreadsWhenSTW);
         auto start_time = std::chrono::high_resolution_clock::now();
         triggerSATBMark();
         selectRelocationSet();
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
         std::clog << "Stop-the-world duration: " << std::dec << duration.count() << " us" << std::endl;
-        GCUtil::resume_the_world();
+        GCUtil::resume_the_world(GCPhase::getSTWLock());
         beginSweep();
         endGC();
     }

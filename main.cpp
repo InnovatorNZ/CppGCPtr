@@ -5,7 +5,7 @@
 
 #define TRIGGER_GC 1
 #define MULTITHREAD_TEST 0
-#define DESTRUCTOR_TEST 1
+#define DESTRUCTOR_TEST 0
 #define WITH_STL_TEST 0
 
 class MyObject2 {

@@ -42,23 +42,21 @@ public:
         }
     }
 
-    explicit GCPtr(T* obj, const std::shared_ptr<GCRegion>& region = nullptr, bool is_root = false) :
-            obj_size(sizeof(*obj)) {
-        GCPhase::EnterCriticalSection();
-        this->obj = obj;
-        this->region = region;
-        GCWorker::getWorker()->registerObject(obj, sizeof(*obj));
-        if (!is_root && GCWorker::getWorker()->is_root(this))
-            is_root = true;
-        this->is_root = is_root;
-        if (GCWorker::getWorker()->destructorEnabled()) {
-            GCWorker::getWorker()->registerDestructor(obj,
-                                                      [](void* self) { static_cast<T*>(self)->~T(); },
-                                                      region.get());
-        }
+    explicit GCPtr(bool is_root) : obj(nullptr), obj_size(0), is_root(is_root) {
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
+    }
+
+    explicit GCPtr(T* obj, const std::shared_ptr<GCRegion>& region = nullptr, bool is_root = false) {
+        GCPhase::EnterCriticalSection();
+        if (!is_root && GCWorker::getWorker()->is_root(this))
+            is_root = true;
+        this->is_root = is_root;
+        if (is_root) {
+            GCWorker::getWorker()->addRoot(this);
+        }
+        this->set(obj, region);
         GCPhase::LeaveCriticalSection();
     }
 
@@ -237,6 +235,32 @@ namespace gc {
 
     template<class T, class... Args>
     GCPtr<T> make_static(Args&& ... args) {
+        GCPtr<T> gcptr(true);
+        GCPhase::EnterCriticalSection();
+        T* obj = nullptr;
+        std::shared_ptr<GCRegion> region = nullptr;
+        if (GCWorker::getWorker()->memoryAllocatorEnabled()) {
+            auto pair = GCWorker::getWorker()->allocate(sizeof(T));
+            obj = static_cast<T*>(pair.first);
+            region = pair.second;
+            new(obj) T(std::forward<Args>(args)...);
+        } else {
+            obj = new T(std::forward<Args>(args)...);
+        }
+        gcptr.set(obj, region);
+        GCPhase::LeaveCriticalSection();
+
+        if (obj == nullptr) throw std::exception();
+        return gcptr;
+    }
+
+    void triggerGC() {
+        GCWorker::getWorker()->triggerGC();
+    }
+
+#ifdef OLD_MAKEGC
+    template<class T, class... Args>
+    GCPtr<T> make_static(Args&& ... args) {
         GCPhase::EnterCriticalSection();
         T* obj = nullptr;
         std::shared_ptr<GCRegion> region = nullptr;
@@ -254,11 +278,6 @@ namespace gc {
         return GCPtr<T>(obj, region, true);
     }
 
-    void triggerGC() {
-        GCWorker::getWorker()->triggerGC();
-    }
-
-#ifdef OLD_MAKEGC
     template<typename T>
     GCPtr <T> make_gc(T* obj) {
         GCPtr<T> ret(obj);
