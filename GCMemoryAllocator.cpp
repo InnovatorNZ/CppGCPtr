@@ -12,7 +12,10 @@ GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableP
     this->enableParallelClear = enableParallelClear;
     this->gcThreadCount = gcThreadCount;
     this->threadPool = gcThreadPool;
-    this->poolCount = std::thread::hardware_concurrency();
+    if constexpr (GCParameter::enableHashPool)
+        this->poolCount = std::thread::hardware_concurrency();
+    else
+        this->poolCount = 1;
     if (useInternalMemoryManager) {
         size_t initialSize = INITIAL_SINGLE_SIZE * poolCount;
         void* initialMemory = malloc(initialSize);
@@ -749,5 +752,6 @@ void GCMemoryAllocator::flushRegionMapBuffer() {
 }
 
 int GCMemoryAllocator::getPoolIdx() const {
+    if (poolCount == 1) return 0;
     return GCUtil::getPoolIdx(poolCount);
 }

@@ -94,7 +94,10 @@ private:
 
     void endGC();
 
-    int getPoolIdx() const { return GCUtil::getPoolIdx(poolCount); }
+    int getPoolIdx() const {
+        if (poolCount == 1) return 0;
+        return GCUtil::getPoolIdx(poolCount);
+    }
 
 public:
     GCWorker();

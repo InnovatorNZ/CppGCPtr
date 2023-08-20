@@ -27,7 +27,10 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
     if (enableRelocation) useInlineMarkstate = true;
     this->useInlineMarkstate = useInlineMarkState;
 
-    this->poolCount = std::thread::hardware_concurrency();
+    if constexpr (GCParameter::enableHashPool)
+        this->poolCount = std::thread::hardware_concurrency();
+    else
+        this->poolCount = 1;
     this->satb_queue_pool.resize(poolCount);
     this->satb_queue_pool_mutex = std::make_unique<std::mutex[]>(poolCount);
     if constexpr (GCParameter::deferRemoveRoot) {

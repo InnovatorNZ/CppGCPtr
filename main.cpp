@@ -221,7 +221,10 @@ int main() {
 #endif
         Sleep(100);
     }
+
+    Sleep(1000);
     cout << "Average user thread duration: " << (double) time_ / (double) n << " ms" << endl;
+    Sleep(1000);
 
     return 0;
 }
