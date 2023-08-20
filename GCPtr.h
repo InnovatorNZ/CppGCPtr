@@ -13,7 +13,8 @@ class GCWorker;
 template<typename T>
 class GCPtr : public GCPtrBase {
     template<typename U>
-    friend class GCPtr;
+    friend
+    class GCPtr;
 
 private:
     std::atomic<T*> obj;
@@ -22,10 +23,7 @@ private:
     std::shared_ptr<GCRegion> region;
     const int identifier_tail = GCPTR_IDENTIFIER_TAIL;
 
-    bool needHeal() const {
-        return this->obj != nullptr && GCWorker::getWorker()->relocationEnabled()
-               && GCPhase::needSelfHeal(getInlineMarkState());
-    }
+    bool needHeal() const;
 
     void selfHeal() {
         auto healed = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get());
@@ -164,7 +162,7 @@ public:
         GCPhase::LeaveCriticalSection();
     }
 
-    GCPtr(GCPtr&& other) noexcept : obj_size(other.obj_size) {
+    GCPtr(GCPtr&& other) noexcept: obj_size(other.obj_size) {
         std::clog << "Move constructor" << std::endl;
         GCPhase::EnterCriticalSection();
         this->setInlineMarkState(other.getInlineMarkState());
@@ -206,6 +204,12 @@ public:
         }
     }
 };
+
+template<typename T>
+bool GCPtr<T>::needHeal() const {
+    return this->obj != nullptr && GCWorker::getWorker()->relocationEnabled()
+           && GCPhase::needSelfHeal(getInlineMarkState());
+}
 
 namespace gc {
     template<class T, class... Args>
