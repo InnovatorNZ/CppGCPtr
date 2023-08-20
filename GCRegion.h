@@ -9,6 +9,7 @@
 #include <memory>
 #include <unordered_map>
 #include <functional>
+#include <cstring>
 #include <stdexcept>
 #include "GCBitMap.h"
 #include "GCRegionalHashMap.h"
