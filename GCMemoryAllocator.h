@@ -24,6 +24,7 @@ private:
     static constexpr bool useConcurrentLinkedList = GCParameter::useConcurrentLinkedList;
     static constexpr bool enableRegionMapBuffer =
             GCParameter::enableRegionMapBuffer && GCParameter::enableMoveConstructor && GCParameter::enableDestructorSupport;
+    static constexpr bool immediateClear = GCParameter::immediateClear;
     bool enableInternalMemoryManager;
     bool enableParallelClear;
     unsigned int gcThreadCount;
@@ -50,8 +51,10 @@ private:
     static thread_local std::shared_ptr<GCRegion> smallAllocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> mediumAllocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> tinyAllocatingRegion;
+
     std::vector<std::shared_ptr<GCRegion>> evacuationQue;
     std::vector<std::shared_ptr<GCRegion>> clearQue;
+    std::vector<GCRegion*> liveQue;
     // 用于判定是否在被管理区域内的root的红黑树及其缓冲区
     std::map<void*, GCRegion*> regionMap;
     std::shared_mutex regionMapMtx;

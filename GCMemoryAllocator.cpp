@@ -354,9 +354,28 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
             });
         }
         threadPool->waitForTaskComplete(gcThreadCount);
+
+        if constexpr (immediateClear) {
+            size_t snum = liveQue.size() / gcThreadCount;
+            for (int tid = 0; tid < gcThreadCount; tid++) {
+                threadPool->execute([this, tid, snum] {
+                    size_t startIndex = tid * snum;
+                    size_t endIndex = (tid == gcThreadCount - 1) ? liveQue.size() : (tid + 1) * snum;
+                    for (size_t j = startIndex; j < endIndex; j++) {
+                        liveQue[j]->clearUnmarked();
+                    }
+                });
+            }
+            threadPool->waitForTaskComplete(gcThreadCount);
+        }
     } else {
         for (int i = 0; i < evacuationQue.size(); i++) {
             evacuationQue[i]->triggerRelocation(this);
+        }
+        if constexpr (immediateClear) {
+            for (int i = 0; i < liveQue.size(); i++) {
+                liveQue[i]->clearUnmarked();
+            }
         }
     }
 
@@ -378,7 +397,7 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
 
         for (auto& region : evacuationQue) {
             std::shared_ptr<GCRegion> inherit_region =
-                    std::make_shared<GCRegion>(std::move(*region));
+                std::make_shared<GCRegion>(std::move(*region));
             inherit_region->reclaim();
             switch (region->getRegionType()) {
                 case RegionEnum::SMALL: {
@@ -388,7 +407,7 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
                         smallReclaimQues[poolIdx].push_back(inherit_region);
                     }
                 }
-                    break;
+                                      break;
                 case RegionEnum::MEDIUM: {
                     {
                         std::unique_lock<std::mutex> lock(mediumReclaimMtx);
@@ -401,7 +420,7 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
                         mediumRegionList.push_head(inherit_region);
                     }
                 }
-                    break;
+                                       break;
                 case RegionEnum::TINY: {
                     {
                         std::unique_lock<std::mutex> lock(tinyReclaimMtx);
@@ -414,7 +433,7 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
                         tinyRegionList.push_head(inherit_region);
                     }
                 }
-                    break;
+                                     break;
             }
         }
 #endif
@@ -486,6 +505,7 @@ void GCMemoryAllocator::SelectRelocationSet() {
         return;
     }
     this->evacuationQue.clear();
+    if constexpr (immediateClear) this->liveQue.clear();
     if constexpr (useConcurrentLinkedList) {
         for (int i = 0; i < poolCount; i++)
             selectRelocationSet(this->smallRegionLists[i]);
@@ -505,13 +525,19 @@ void GCMemoryAllocator::selectRelocationSet(std::deque<std::shared_ptr<GCRegion>
     std::unique_lock<std::shared_mutex> lock(regionQueMtx);
     for (auto it = regionQue.begin(); it != regionQue.end();) {
         std::shared_ptr<GCRegion>& region = *it;
-        if (!region->isEvacuated() && (region.use_count() == 1 || region->needEvacuate())) {
-            region->setEvacuated();
-            this->evacuationQue.emplace_back(std::move(region));
-            it = regionQue.erase(it);
-        } else {
-            it++;
+        if (!region->isEvacuated()) {
+            if (region.use_count() == 1 || region->needEvacuate()) {
+                region->setEvacuated();
+                this->evacuationQue.emplace_back(std::move(region));
+                it = regionQue.erase(it);
+                continue;
+            } else {
+                if constexpr (immediateClear) {
+                    this->liveQue.push_back(region.get());
+                }
+            }
         }
+        ++it;
     }
 }
 
@@ -519,11 +545,14 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
     auto iterator = regionList.getRemovableIterator();
     while (iterator->MoveNext()) {
         std::shared_ptr<GCRegion> region = iterator->current();
-        if (region != nullptr && !region->isEvacuated() &&
-            (region.use_count() <= 2 || region->needEvacuate())) {
-            region->setEvacuated();
-            this->evacuationQue.emplace_back(std::move(region));
-            iterator->remove();
+        if (region != nullptr && !region->isEvacuated()) {
+            if (region.use_count() <= 2 || region->needEvacuate()) {
+                region->setEvacuated();
+                this->evacuationQue.emplace_back(std::move(region));
+                iterator->remove();
+            } else if constexpr (immediateClear) {
+                this->liveQue.push_back(region.get());
+            }
         }
     }
 }
@@ -552,13 +581,17 @@ void GCMemoryAllocator::selectClearSet(std::deque<std::shared_ptr<GCRegion>>& re
     std::unique_lock<std::shared_mutex> lock(regionQueMtx);
     for (auto it = regionQue.begin(); it != regionQue.end();) {
         std::shared_ptr<GCRegion>& region = *it;
-        if (!region->isEvacuated() && (region.use_count() == 1 || region->canFree())) {
-            region->setEvacuated();
-            this->clearQue.emplace_back(std::move(region));
-            it = regionQue.erase(it);
-        } else {
-            it++;
+        if (!region->isEvacuated()) {
+            if (region.use_count() == 1 || region->canFree()) {
+                region->setEvacuated();
+                this->clearQue.emplace_back(std::move(region));
+                it = regionQue.erase(it);
+                continue;
+            } else if constexpr (immediateClear) {
+                this->liveQue.push_back(region.get());
+            }
         }
+        ++it;
     }
 }
 
@@ -566,10 +599,14 @@ void GCMemoryAllocator::selectClearSet(ConcurrentLinkedList<std::shared_ptr<GCRe
     auto iterator = regionList.getRemovableIterator();
     while (iterator->MoveNext()) {
         std::shared_ptr<GCRegion> region = iterator->current();
-        if (region != nullptr && !region->isEvacuated() && (region.use_count() <= 2 || region->canFree())) {
-            region->setEvacuated();
-            this->clearQue.emplace_back(std::move(region));
-            iterator->remove();
+        if (region != nullptr && !region->isEvacuated()) {
+            if (region.use_count() <= 2 || region->canFree()) {
+                region->setEvacuated();
+                this->clearQue.emplace_back(std::move(region));
+                iterator->remove();
+            } else if constexpr (immediateClear) {
+                this->liveQue.push_back(region.get());
+            }
         }
     }
 }
