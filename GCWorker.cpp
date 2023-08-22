@@ -457,8 +457,8 @@ void GCWorker::selectRelocationSet() {
     GCPhase::SwitchToNextPhase();
     if (enableRelocation)
         memoryAllocator->SelectRelocationSet();
-    else
-        memoryAllocator->SelectClearSet();
+    // else
+    //    memoryAllocator->SelectClearSet();
 }
 
 void GCWorker::beginSweep() {
@@ -482,7 +482,7 @@ void GCWorker::beginSweep() {
             if (enableRelocation)
                 memoryAllocator->triggerRelocation(enableReclaim);
             else
-                memoryAllocator->triggerClear_v2();
+                memoryAllocator->triggerClear();
         }
     } else std::clog << "Invalid phase, should in sweep phase" << std::endl;
 }

@@ -299,14 +299,16 @@ void GCMemoryAllocator::triggerClear() {
         std::cerr << "Wrong phase, should in sweeping phase to trigger clear." << std::endl;
         return;
     }
+    /* triggerClear() 分三步：
+     * 1. 判定clear条件，即GCRegion::canFree()，符合条件者执行GCRegion::setEvacuated()
+     * 2. 执行clearUnmarked()（如有必要）
+     * 3. 执行clearFreeRegion()，从容器中删除
+     */
+    SelectClearSet();
     if constexpr (useConcurrentLinkedList) {
-        clearFreeRegion(this->largeRegionList);
-        for (int i = 0; i < poolCount; i++)
-            clearFreeRegion(this->smallRegionLists[i]);
-        clearFreeRegion(this->mediumRegionList);
-        clearFreeRegion(this->tinyRegionList);
-    } else {
-        // 调用clearUnmarked可按region并行化
+        // TODO：链表版本的
+        throw std::invalid_argument("linked list doesn't support clear yet.");
+
         {
             for (int i = 0; i < poolCount; i++) {
                 std::shared_lock<std::shared_mutex> lock(this->smallRegionQueMtxs[i]);
@@ -327,12 +329,71 @@ void GCMemoryAllocator::triggerClear() {
                 tinyRegionQue[i]->clearUnmarked();
             }
         }
-        // clearFreeRegion可由四个线程并行化，但对于每种类型应单线程
-        clearFreeRegion(largeRegionQue, largeRegionQueMtx);
+
+
+        clearFreeRegion(this->largeRegionList);
         for (int i = 0; i < poolCount; i++)
-            clearFreeRegion(smallRegionQues[i], smallRegionQueMtxs[i]);
-        clearFreeRegion(mediumRegionQue, mediumRegionQueMtx);
-        clearFreeRegion(tinyRegionQue, tinyRegionQueMtx);
+            clearFreeRegion(this->smallRegionLists[i]);
+        clearFreeRegion(this->mediumRegionList);
+        clearFreeRegion(this->tinyRegionList);
+    }
+    else {
+        if constexpr (immediateClear || GCParameter::enableDestructorSupport) {
+            // 若启用析构函数，则强制每轮回收后都执行clearUnmarked()，不然会由于M0/M1重复导致被误判存活而不调用析构函数
+            // 调用clearUnmarked可按region并行化
+            const int PARALLEL_THRESHOLD = 16;
+            {
+                for (int i = 0; i < poolCount; i++) {
+                    std::shared_lock<std::shared_mutex> lock(this->smallRegionQueMtxs[i]);
+                    if (enableParallelClear && smallRegionQues[i].size() >= PARALLEL_THRESHOLD) {
+                        size_t snum = smallRegionQues[i].size() / gcThreadCount;
+                        for (int tid = 0; tid < gcThreadCount; tid++) {
+                            threadPool->execute([this, i, tid, snum] {
+                                size_t startIndex = tid * snum;
+                                size_t endIndex = (tid == gcThreadCount - 1) ? smallRegionQues[i].size() : (tid + 1) * snum;
+                                for (size_t j = startIndex; j < endIndex; j++) {
+                                    smallRegionQues[i][j]->clearUnmarked();
+                                }
+                            });
+                        }
+                        threadPool->waitForTaskComplete(gcThreadCount);
+                    } else {
+                        for (int j = 0; j < smallRegionQues[i].size(); j++) {
+                            smallRegionQues[i][j]->clearUnmarked();
+                        }
+                    }
+                }
+            }
+            {
+                std::shared_lock<std::shared_mutex> lock(this->mediumRegionQueMtx);
+                if (enableParallelClear && mediumRegionQue.size() >= PARALLEL_THRESHOLD) {
+                    size_t snum = mediumRegionQue.size() / gcThreadCount;
+                    for (int tid = 0; tid < gcThreadCount; tid++) {
+                        threadPool->execute([this, tid, snum] {
+                            size_t startIndex = tid * snum;
+                            size_t endIndex = (tid == gcThreadCount - 1) ? mediumRegionQue.size() : (tid + 1) * snum;
+                            for (size_t j = startIndex; j < endIndex; j++) {
+                                mediumRegionQue[j]->clearUnmarked();
+                            }
+                        });
+                    }
+                    threadPool->waitForTaskComplete(gcThreadCount);
+                } else {
+                    for (int i = 0; i < mediumRegionQue.size(); i++) {
+                        mediumRegionQue[i]->clearUnmarked();
+                    }
+                }
+            }
+            {
+                std::shared_lock<std::shared_mutex> lock(this->tinyRegionQueMtx);
+                for (int i = 0; i < tinyRegionQue.size(); i++) {
+                    tinyRegionQue[i]->clearUnmarked();
+                }
+            }
+        }
+        // Step 3. 将clearQue中的所有region执行GCRegion::free()
+        processClearQue();
+        clearFreeRegion(largeRegionQue, largeRegionQueMtx);
     }
 }
 
@@ -499,6 +560,32 @@ void GCMemoryAllocator::triggerClear_v2() {
     clearQue.clear();
 }
 
+void GCMemoryAllocator::processClearQue() {
+    removeClearedRegionMap();
+
+    const int PARALLEL_THRESHOLD = 8;
+    if (enableParallelClear && clearQue.size() > PARALLEL_THRESHOLD) {
+        size_t snum = clearQue.size() / gcThreadCount;
+        for (int tid = 0; tid < gcThreadCount; tid++) {
+            threadPool->execute([this, tid, snum] {
+                size_t startIndex = tid * snum;
+                size_t endIndex = (tid == gcThreadCount - 1) ? clearQue.size() : (tid + 1) * snum;
+                for (size_t j = startIndex; j < endIndex; j++) {
+                    clearQue[j]->clearUnmarked();
+                    clearQue[j]->free();
+                }
+            });
+        }
+        threadPool->waitForTaskComplete(gcThreadCount);
+    } else {
+        for (int i = 0; i < clearQue.size(); i++) {
+            clearQue[i]->clearUnmarked();
+            clearQue[i]->free();
+        }
+    }
+    clearQue.clear();
+}
+
 void GCMemoryAllocator::SelectRelocationSet() {
     if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
         std::cerr << "Wrong phase, should in sweeping phase to trigger select relocation set." << std::endl;
@@ -558,10 +645,6 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
 }
 
 void GCMemoryAllocator::SelectClearSet() {
-    if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
-        std::cerr << "Wrong phase, should in sweeping phase to trigger select clear set." << std::endl;
-        return;
-    }
     this->clearQue.clear();
     if constexpr (useConcurrentLinkedList) {
         for (int i = 0; i < poolCount; i++)
@@ -574,7 +657,7 @@ void GCMemoryAllocator::SelectClearSet() {
         selectClearSet(mediumRegionQue, mediumRegionQueMtx);
         selectClearSet(tinyRegionQue, tinyRegionQueMtx);
     }
-    removeClearedRegionMap();
+    // removeClearedRegionMap();
 }
 
 void GCMemoryAllocator::selectClearSet(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
@@ -587,8 +670,6 @@ void GCMemoryAllocator::selectClearSet(std::deque<std::shared_ptr<GCRegion>>& re
                 this->clearQue.emplace_back(std::move(region));
                 it = regionQue.erase(it);
                 continue;
-            } else if constexpr (immediateClear) {
-                this->liveQue.push_back(region.get());
             }
         }
         ++it;
@@ -604,8 +685,6 @@ void GCMemoryAllocator::selectClearSet(ConcurrentLinkedList<std::shared_ptr<GCRe
                 region->setEvacuated();
                 this->clearQue.emplace_back(std::move(region));
                 iterator->remove();
-            } else if constexpr (immediateClear) {
-                this->liveQue.push_back(region.get());
             }
         }
     }
@@ -628,7 +707,10 @@ void GCMemoryAllocator::removeClearedRegionMap() {
 void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& regionQue, std::shared_mutex& regionQueMtx) {
     {
         std::shared_lock<std::shared_mutex> lock(regionQueMtx);
-        if (!enableParallelClear) {
+        if (regionQue.empty()) return;
+
+        const int PARALLEL_THRESHOLD = 64;
+        if (!enableParallelClear || regionQue.size() < PARALLEL_THRESHOLD) {
             for (auto& region : regionQue) {
                 if (region->canFree()) {
                     {
@@ -707,8 +789,8 @@ void GCMemoryAllocator::resetLiveSize() {
             for (int i = 0; i < poolCount; i++) {
                 std::shared_lock<std::shared_mutex> lock(smallRegionQueMtxs[i]);
                 if (smallRegionQues[i].empty()) continue;
-                const int ENABLE_PARALLEL_THREDSHOLD = 10000;
-                if (!enableParallelClear || smallRegionQues[i].size() < ENABLE_PARALLEL_THREDSHOLD) {
+                const int PARALLEL_THREDSHOLD = 10000;
+                if (!enableParallelClear || smallRegionQues[i].size() < PARALLEL_THREDSHOLD) {
                     for (auto& region : smallRegionQues[i]) {
                         region->resetLiveSize();
                     }

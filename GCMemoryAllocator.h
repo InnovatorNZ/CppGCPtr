@@ -83,6 +83,8 @@ private:
 
     void removeClearedRegionMap();
 
+    void processClearQue();
+
     int getPoolIdx() const;
 
     GCRegion* queryRegionMap(void*);
