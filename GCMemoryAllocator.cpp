@@ -304,7 +304,7 @@ void GCMemoryAllocator::triggerClear() {
      * 2. 执行clearUnmarked()（如有必要）
      * 3. 执行clearFreeRegion()，从容器中删除
      */
-    SelectClearSet();
+    // SelectClearSet();
     if constexpr (useConcurrentLinkedList) {
         // TODO：链表版本的
         throw std::invalid_argument("linked list doesn't support clear yet.");
@@ -336,9 +336,9 @@ void GCMemoryAllocator::triggerClear() {
             clearFreeRegion(this->smallRegionLists[i]);
         clearFreeRegion(this->mediumRegionList);
         clearFreeRegion(this->tinyRegionList);
-    }
-    else {
-        if constexpr (immediateClear || GCParameter::enableDestructorSupport) {
+    } else {
+        // if constexpr (immediateClear || GCParameter::enableDestructorSupport) {
+        if constexpr (false) {      // TODO: 调查此处的bug？
             // 若启用析构函数，则强制每轮回收后都执行clearUnmarked()，不然会由于M0/M1重复导致被误判存活而不调用析构函数
             // 调用clearUnmarked可按region并行化
             const int PARALLEL_THRESHOLD = 16;
@@ -358,8 +358,8 @@ void GCMemoryAllocator::triggerClear() {
                         }
                         threadPool->waitForTaskComplete(gcThreadCount);
                     } else {
-                        for (int j = 0; j < smallRegionQues[i].size(); j++) {
-                            smallRegionQues[i][j]->clearUnmarked();
+                        for (auto& region : smallRegionQues[i]) {
+                            region->clearUnmarked();
                         }
                     }
                 }
@@ -379,15 +379,15 @@ void GCMemoryAllocator::triggerClear() {
                     }
                     threadPool->waitForTaskComplete(gcThreadCount);
                 } else {
-                    for (int i = 0; i < mediumRegionQue.size(); i++) {
-                        mediumRegionQue[i]->clearUnmarked();
+                    for (auto& region : mediumRegionQue) {
+                        region->clearUnmarked();
                     }
                 }
             }
             {
                 std::shared_lock<std::shared_mutex> lock(this->tinyRegionQueMtx);
-                for (int i = 0; i < tinyRegionQue.size(); i++) {
-                    tinyRegionQue[i]->clearUnmarked();
+                for (auto& region : tinyRegionQue) {
+                    region->clearUnmarked();
                 }
             }
         }
@@ -645,7 +645,7 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
 }
 
 void GCMemoryAllocator::SelectClearSet() {
-    this->clearQue.clear();
+    // this->clearQue.clear();
     if constexpr (useConcurrentLinkedList) {
         for (int i = 0; i < poolCount; i++)
             selectClearSet(this->smallRegionLists[i]);
@@ -700,7 +700,8 @@ void GCMemoryAllocator::removeEvacuatedRegionMap() {
 void GCMemoryAllocator::removeClearedRegionMap() {
     std::unique_lock<std::shared_mutex> lock(regionMapMtx);
     for (auto& region : this->clearQue) {
-        regionMap.erase(region->getStartAddr());
+        if (!regionMap.erase(region->getStartAddr()))
+            std::clog << "Not removed from region map?" << std::endl;
     }
 }
 

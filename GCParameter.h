@@ -17,5 +17,5 @@ public:
 	static constexpr bool deferRemoveRoot = true;				// 是否延迟删除当作为gc root的GCPtr析构时，若启用会提升GCPtr析构时的性能，但会导致root set内存占用上升
 	static constexpr bool suspendThreadsWhenSTW = false;		// 是否在STW期间暂停用户线程，若禁用则将仅使用读写锁阻塞；仅支持Windows
 	static constexpr bool enableHashPool = true;				// 是否启用线程id进行hash后取模的池化方案；可以降低锁的竞争，但可能会产生计算哈希的开销
-	static constexpr bool immediateClear = true;				// 尽量在一轮回收后就清除已是垃圾的对象，否则将在2~3轮后回收；启用此选项会增加垃圾回收的性能开销，但可以更快腾出内存
+	static constexpr bool immediateClear = false;				// 尽量在一轮回收后就清除已是垃圾的对象，否则将在2~3轮后回收；启用此选项会增加垃圾回收的性能开销，但可以更快腾出内存
 };

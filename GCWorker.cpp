@@ -457,8 +457,8 @@ void GCWorker::selectRelocationSet() {
     GCPhase::SwitchToNextPhase();
     if (enableRelocation)
         memoryAllocator->SelectRelocationSet();
-    // else
-    //    memoryAllocator->SelectClearSet();
+    else
+        memoryAllocator->SelectClearSet();
 }
 
 void GCWorker::beginSweep() {
