@@ -337,8 +337,8 @@ void GCMemoryAllocator::triggerClear() {
         clearFreeRegion(this->mediumRegionList);
         clearFreeRegion(this->tinyRegionList);
     } else {
-        // if constexpr (immediateClear || GCParameter::enableDestructorSupport) {
-        if constexpr (false) {      // TODO: 调查此处的bug？
+        if constexpr (immediateClear || GCParameter::enableDestructorSupport) {
+        // if constexpr (false) {      // TODO: 调查此处的bug？
             // 若启用析构函数，则强制每轮回收后都执行clearUnmarked()，不然会由于M0/M1重复导致被误判存活而不调用析构函数
             // 调用clearUnmarked可按region并行化
             const int PARALLEL_THRESHOLD = 16;

@@ -9,7 +9,7 @@ const size_t GCRegion::MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
 
 GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size) :
         regionType(regionType), startAddress(startAddress), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
-        total_size(total_size), allocated_offset(0), live_size(0), evacuated(false) {
+        total_size(total_size), allocated_offset(0), live_size(0), evacuated(false), allocating(0) {
     if (regionType != RegionEnum::LARGE) {
         if constexpr (!use_regional_hashmap) {
             switch (regionType) {
@@ -42,9 +42,13 @@ void* GCRegion::allocate(size_t size) {
         size = TINY_OBJECT_THRESHOLD;
     else if (regionType != RegionEnum::LARGE && !use_regional_hashmap)
         size = bitmap->alignUpSize(size);
+    allocating.fetch_add(1, std::memory_order_release);
     while (true) {
         size_t p_offset = allocated_offset;
-        if (p_offset + size > total_size) return nullptr;
+        if (p_offset + size > total_size) {
+            allocating.fetch_add(-1, std::memory_order_release);
+            return nullptr;
+        }
         if (allocated_offset.compare_exchange_weak(p_offset, p_offset + size)) {
             object_addr = reinterpret_cast<void*>(reinterpret_cast<char*>(startAddress) + p_offset);
             break;
@@ -65,6 +69,7 @@ void* GCRegion::allocate(size_t size) {
             bitmap->mark(object_addr, size, MarkStateBit::REMAPPED, true);
         }
     }
+    allocating.fetch_add(-1, std::memory_order_release);
     return object_addr;
 }
 
@@ -159,8 +164,11 @@ void GCRegion::clearUnmarked() {
             }
         }
     } else {
+        size_t _allocated_offset = allocated_offset.load();
+        while (allocating.load(std::memory_order_acquire) != 0)
+            std::this_thread::yield();
         auto bitMapIterator = bitmap->getIterator();
-        while (bitMapIterator.MoveNext() && bitMapIterator.getCurrentOffset() < allocated_offset) {
+        while (bitMapIterator.MoveNext() && bitMapIterator.getCurrentOffset() < _allocated_offset) {
             GCBitMap::BitStatus bitStatus = bitMapIterator.current();
             MarkStateBit& markState = bitStatus.markState;
             void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();

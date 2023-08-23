@@ -64,6 +64,7 @@ private:
     std::shared_mutex move_constructor_map_mtx;
     std::mutex relocation_mutex;
     std::atomic<bool> evacuated;
+    std::atomic<int> allocating;
 
 protected:
     float getFragmentRatio() const;
