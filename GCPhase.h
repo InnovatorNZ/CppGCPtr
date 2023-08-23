@@ -9,7 +9,7 @@
 #include "SpinReadWriteLock.h"
 #include "MutexReadWriteLock.h"
 
-#define USE_SPINLOCK false
+#define USE_SPINLOCK true
 
 class GCPhase {
 private:

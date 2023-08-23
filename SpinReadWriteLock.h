@@ -12,36 +12,34 @@ public:
 
     void lockRead() override {
         while (true) {
-            int c_read_cnt = lock_state;
+            int c_read_cnt = lock_state.load(std::memory_order_acquire);
             if (c_read_cnt < 0)         // Spin until there are no active writers
                 continue;
-            if (lock_state.compare_exchange_weak(c_read_cnt, c_read_cnt + 1))
+            if (lock_state.compare_exchange_weak(c_read_cnt, c_read_cnt + 1, std::memory_order_release))
                 break;
-            else
-                std::clog << "CAS read lock failed" << std::endl;
+            // else std::clog << "CAS read lock failed" << std::endl;
         }
     }
 
     void unlockRead() override {
         while (true) {
-            int c_read_cnt = lock_state;
+            int c_read_cnt = lock_state.load(std::memory_order_acquire);
             if (c_read_cnt <= 0) return;
-            if (lock_state.compare_exchange_weak(c_read_cnt, c_read_cnt - 1))
+            if (lock_state.compare_exchange_weak(c_read_cnt, c_read_cnt - 1, std::memory_order_release))
                 break;
         }
     }
 
     void lockWrite(bool yield) override {
         while (true) {
-            int c_lock_state = lock_state;
+            int c_lock_state = lock_state.load(std::memory_order_acquire);
             if (c_lock_state != 0) {        // Spin until there are no active readers and writers
                 if (yield) std::this_thread::yield();
                 continue;
             }
-            if (lock_state.compare_exchange_weak(c_lock_state, -1))
+            if (lock_state.compare_exchange_weak(c_lock_state, -1, std::memory_order_release))
                 break;
-            else
-                std::clog << "CAS write lock failed" << std::endl;
+            // else std::clog << "CAS write lock failed" << std::endl;
         }
     }
 
@@ -51,9 +49,9 @@ public:
 
     void unlockWrite() override {
         while (true) {
-            int c_lock_state = lock_state;
+            int c_lock_state = lock_state.load(std::memory_order_acquire);
             if (c_lock_state >= 0) return;
-            if (lock_state.compare_exchange_weak(c_lock_state, 0))
+            if (lock_state.compare_exchange_weak(c_lock_state, 0, std::memory_order_release))
                 break;
         }
     }
