@@ -8,8 +8,9 @@
 #include "PhaseEnum.h"
 #include "SpinReadWriteLock.h"
 #include "MutexReadWriteLock.h"
+#include "WeakSpinReadWriteLock.h"
 
-#define USE_SPINLOCK true
+#define USE_SPINLOCK 2
 
 class GCPhase {
 private:

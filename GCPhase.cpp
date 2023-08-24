@@ -2,8 +2,10 @@
 
 std::atomic<eGCPhase> GCPhase::gcPhase = eGCPhase::NONE;
 std::atomic<MarkState> GCPhase::currentMarkState = MarkState::REMAPPED;
-#if USE_SPINLOCK
+#if USE_SPINLOCK == 1
 IReadWriteLock* GCPhase::stwLock = new SpinReadWriteLock();
+#elif USE_SPINLOCK == 2
+IReadWriteLock* GCPhase::stwLock = new WeakSpinReadWriteLock();
 #else
 IReadWriteLock* GCPhase::stwLock = new MutexReadWriteLock();
 #endif
