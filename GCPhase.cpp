@@ -92,3 +92,11 @@ std::string GCPhase::getGCPhaseString() {
             return "Invalid";
     }
 }
+
+GCPhase::RAIISTWLock::RAIISTWLock() {
+    GCPhase::EnterCriticalSection();
+}
+
+GCPhase::RAIISTWLock::~RAIISTWLock() {
+    GCPhase::LeaveCriticalSection();
+}

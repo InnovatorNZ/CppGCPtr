@@ -59,6 +59,13 @@ public:
     static IReadWriteLock* getSTWLock() {
         return stwLock;
     }
+
+    class RAIISTWLock {
+    public:
+        RAIISTWLock();
+
+        ~RAIISTWLock();
+    };
 };
 
 
