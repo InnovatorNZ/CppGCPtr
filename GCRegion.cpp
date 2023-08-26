@@ -9,7 +9,7 @@ const size_t GCRegion::MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
 
 GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size) :
         regionType(regionType), startAddress(startAddress), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
-        total_size(total_size), allocated_offset(0), live_size(0), evacuated(false), allocating(0) {
+        total_size(total_size), allocated_offset(0), live_size(0), evacuated(false) {
     if (regionType != RegionEnum::LARGE) {
         if constexpr (!use_regional_hashmap) {
             switch (regionType) {
@@ -42,11 +42,9 @@ void* GCRegion::allocate(size_t size) {
         size = TINY_OBJECT_THRESHOLD;
     else if (regionType != RegionEnum::LARGE && !use_regional_hashmap)
         size = bitmap->alignUpSize(size);
-    allocating.fetch_add(1, std::memory_order_release);
     while (true) {
         size_t p_offset = allocated_offset;
         if (p_offset + size > total_size) {
-            allocating.fetch_add(-1, std::memory_order_release);
             return nullptr;
         }
         if (allocated_offset.compare_exchange_weak(p_offset, p_offset + size)) {
@@ -69,7 +67,6 @@ void* GCRegion::allocate(size_t size) {
             bitmap->mark(object_addr, size, MarkStateBit::REMAPPED, true);
         }
     }
-    allocating.fetch_add(-1, std::memory_order_release);
     return object_addr;
 }
 
@@ -165,24 +162,27 @@ void GCRegion::clearUnmarked() {
         }
     } else {
         size_t _allocated_offset = allocated_offset.load();
-        while (allocating.load(std::memory_order_acquire) != 0)
-            std::this_thread::yield();
+        std::this_thread::yield();
         auto bitMapIterator = bitmap->getIterator();
-        while (bitMapIterator.MoveNext() && bitMapIterator.getCurrentOffset() < _allocated_offset) {
-            GCBitMap::BitStatus bitStatus = bitMapIterator.current();
-            MarkStateBit& markState = bitStatus.markState;
-            void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
-            if (GCPhase::needSweep(markState)) {    // 非存活对象，调用其析构函数，并标记为未分配，防止因M0/M1重复使用致后续误判存活
-                // 非存活对象统一标记为REMAPPED，因为仍然需要size信息遍历bitmap，并避免markState重复
-                // 但是这似乎会导致本来就是REMAPPED的对象不会被调用析构函数，现改为标记为NOT_ALLOCATED
-                bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
-                if constexpr (enable_destructor) {
-                    callDestructor(addr);
+        try {
+            while (bitMapIterator.MoveNext() && bitMapIterator.getCurrentOffset() < _allocated_offset) {
+                GCBitMap::BitStatus bitStatus = bitMapIterator.current();
+                MarkStateBit& markState = bitStatus.markState;
+                void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
+                if (GCPhase::needSweep(markState)) {    // 非存活对象，调用其析构函数，并标记为未分配，防止因M0/M1重复使用致后续误判存活
+                    // 非存活对象统一标记为REMAPPED，因为仍然需要size信息遍历bitmap，并避免markState重复
+                    // 但是这似乎会导致本来就是REMAPPED的对象不会被调用析构函数，现改为标记为NOT_ALLOCATED
+                    bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
+                    if constexpr (enable_destructor) {
+                        callDestructor(addr);
+                    }
+                } else if (bitStatus.objectSize == 0 && regionType != RegionEnum::TINY) {
+                    throw std::runtime_error("Object size found 0 in bitmap");
                 }
-            } else if (bitStatus.objectSize == 0 && regionType != RegionEnum::TINY) {
-                // break;
-                throw std::exception();    // 多线程情况下可能会误判
             }
+        } catch (std::runtime_error e) {
+            // 线程安全可能造成的bitmap迭代过程中抛出的异常都catch住
+            std::clog << "Bitmap throw an exception: " << e.what() << std::endl;
         }
     }
 }

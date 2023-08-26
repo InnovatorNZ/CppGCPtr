@@ -7,6 +7,8 @@
 #include <mutex>
 #include <unordered_set>
 #include <memory>
+#include <stdexcept>
+#include <format>
 #include "PhaseEnum.h"
 #include "Iterator.h"
 

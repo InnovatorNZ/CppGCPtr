@@ -76,7 +76,9 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
             if (!overwrite) {
                 unsigned int ori_obj_size = *reinterpret_cast<unsigned int*>(bitmap_arr + offset_byte + 1);
                 if (ori_obj_size != 0 && ori_obj_size != object_size) {
-                    std::clog << "Different object size found in bitmap! original: " << ori_obj_size << ", target: " << object_size << std::endl;
+                    std::string errorMsg = std::format("Different object size found in bitmap. Original: {}, Target: {}",
+                                                       ori_obj_size, object_size);
+                    throw std::runtime_error(errorMsg);
                 } else {
                     mark_obj_size_func();
                 }
@@ -175,8 +177,9 @@ unsigned int GCBitMap::BitMapIterator::getCurrentObjectSize() const {
     unsigned int s3 = static_cast<unsigned int>(bitmap.bitmap_arr[byte_offset + 4].load());
     unsigned int objSize = s0 | s1 << 8 | s2 << 16 | s3 << 24;
     int obj_size = bitmap.getObjectSize((char*)bitmap.region_start_addr + getCurrentOffset());
-    if (obj_size != objSize)
-        throw std::exception();
+    if (obj_size != objSize) {
+        throw std::runtime_error(std::format("Object size verified failed in bitmap, {} vs {}", obj_size, objSize));
+    }
     return objSize;
 }
 
