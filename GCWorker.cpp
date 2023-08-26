@@ -285,11 +285,32 @@ void GCWorker::removeRoot(GCPtrBase* from) {
         auto it = root_map[poolIdx].find(from);
         if (it != root_map[poolIdx].end()) {
             it->second = true;
-        } else
+        } else {
+            read_lock.unlock();
+            for (int i = 0; i < poolCount; i++) {
+                if (i == poolIdx) continue;
+                std::shared_lock<std::shared_mutex> read_lock2(this->root_set_mutex[i]);
+                if (root_map[i].empty()) continue;
+                auto it = root_map[i].find(from);
+                if (it != root_map[i].end()) {
+                    it->second = true;
+                    return;
+                }
+            }
             std::cerr << "Root not found when delete?" << std::endl;
+        }
     } else {
         std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);
-        root_set[poolIdx].erase(from);
+        if (!root_set[poolIdx].erase(from)) {
+            write_lock.unlock();
+            for (int i = 0; i < poolCount; i++) {
+                if (i == poolIdx) continue;
+                std::unique_lock<std::shared_mutex> write_lock2(this->root_set_mutex[i]);
+                if (root_set[i].erase(from))
+                    return;
+            }
+            std::cerr << "Root not found when delete?" << std::endl;
+        }
     }
 }
 
