@@ -180,7 +180,7 @@ void GCRegion::clearUnmarked() {
                     throw std::runtime_error("Object size found 0 in bitmap");
                 }
             }
-        } catch (std::runtime_error e) {
+        } catch (std::runtime_error& e) {
             // 线程安全可能造成的bitmap迭代过程中抛出的异常都catch住
             std::clog << "Bitmap throw an exception: " << e.what() << std::endl;
         }

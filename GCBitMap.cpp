@@ -176,7 +176,7 @@ unsigned int GCBitMap::BitMapIterator::getCurrentObjectSize() const {
     unsigned int s2 = static_cast<unsigned int>(bitmap.bitmap_arr[byte_offset + 3].load());
     unsigned int s3 = static_cast<unsigned int>(bitmap.bitmap_arr[byte_offset + 4].load());
     unsigned int objSize = s0 | s1 << 8 | s2 << 16 | s3 << 24;
-    int obj_size = bitmap.getObjectSize((char*)bitmap.region_start_addr + getCurrentOffset());
+    unsigned int obj_size = bitmap.getObjectSize((char*)bitmap.region_start_addr + getCurrentOffset());
     if (obj_size != objSize) {
         throw std::runtime_error(std::format("Object size verified failed in bitmap, {} vs {}", obj_size, objSize));
     }
