@@ -26,10 +26,16 @@ private:
     }
 
     void selfHeal() {
+        auto cmarkstate = getInlineMarkState();
         auto healed = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get());
         if (healed.first != nullptr) {
             this->obj = static_cast<T*>(healed.first);
             this->region = healed.second;
+        }
+        if (getInlineMarkState() != cmarkstate) {
+            std::clog << "Mark state of gcptr found changed in selfHeal(), " <<
+                MarkStateUtil::toString(cmarkstate) << "->" <<
+                MarkStateUtil::toString(getInlineMarkState()) << std::endl;
         }
         this->setInlineMarkState(MarkState::REMAPPED);
     }
