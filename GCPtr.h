@@ -25,19 +25,20 @@ private:
                && GCPhase::needSelfHeal(getInlineMarkState());
     }
 
-    void selfHeal() {
-        auto cmarkstate = getInlineMarkState();
+    bool needHeal(const MarkState& markState) const {
+        return this->obj != nullptr && GCWorker::getWorker()->relocationEnabled()
+            && GCPhase::needSelfHeal(markState);
+    }
+
+    void selfHeal(const MarkState& _markState) {
+        if (_markState == MarkState::REMAPPED) return;
         auto healed = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get());
         if (healed.first != nullptr) {
             this->obj = static_cast<T*>(healed.first);
             this->region = healed.second;
         }
-        if (getInlineMarkState() != cmarkstate) {
-            std::clog << "Mark state of gcptr found changed in selfHeal(), " <<
-                MarkStateUtil::toString(cmarkstate) << "->" <<
-                MarkStateUtil::toString(getInlineMarkState()) << std::endl;
-        }
-        this->setInlineMarkState(MarkState::REMAPPED);
+        // this->setInlineMarkState(MarkState::REMAPPED);
+        this->casInlineMarkState(_markState, MarkState::REMAPPED);
     }
 
 public:
@@ -67,8 +68,9 @@ public:
     }
 
     T* get() {
-        if (this->needHeal())
-            this->selfHeal();
+        MarkState mark_state = getInlineMarkState();
+        if (this->needHeal(mark_state))
+            this->selfHeal(mark_state);
         return this->obj;
     }
 

@@ -2,6 +2,7 @@
 #define CPPGCPTR_GCPTRBASE_H
 
 #include <memory>
+#include <atomic>
 #include "ObjectInfo.h"
 #include "GCPhase.h"
 
@@ -13,7 +14,7 @@ private:
     const int identifier_head = GCPTR_IDENTIFIER_HEAD;
 
 protected:
-    volatile MarkState inlineMarkState;      // 类似zgc的染色指针，加快“读取”染色标记
+    std::atomic<MarkState> inlineMarkState;
 
 public:
     GCPtrBase() {
@@ -35,6 +36,10 @@ public:
 
     void setInlineMarkState(MarkState markstate) {
         this->inlineMarkState = markstate;
+    }
+
+    bool casInlineMarkState(MarkState expected, MarkState target) {
+        return inlineMarkState.compare_exchange_weak(expected, target);
     }
 };
 
