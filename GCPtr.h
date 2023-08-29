@@ -38,7 +38,10 @@ private:
             this->region = healed.second;
         }
         // this->setInlineMarkState(MarkState::REMAPPED);
-        this->casInlineMarkState(_markState, MarkState::REMAPPED);
+        if (!this->casInlineMarkState(_markState, MarkState::REMAPPED)) {
+            std::clog << "GCPtr mark state changed, " << MarkStateUtil::toString(_markState) << "=>"
+                << MarkStateUtil::toString(getInlineMarkState()) << std::endl;
+        }
     }
 
 public:
