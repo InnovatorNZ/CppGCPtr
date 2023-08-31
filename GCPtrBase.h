@@ -24,6 +24,15 @@ public:
             inlineMarkState = MarkState::REMAPPED;
     }
 
+    GCPtrBase(const GCPtrBase& other) {
+#if 0
+        if (GCPhase::duringGC())
+            inlineMarkState = GCPhase::getCurrentMarkState();
+        else
+#endif
+            inlineMarkState.store(other.getInlineMarkState());
+    }
+
     virtual ~GCPtrBase() = default;
 
     virtual void* getVoidPtr() = 0;
