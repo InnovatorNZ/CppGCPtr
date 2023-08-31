@@ -25,7 +25,7 @@ public:
     }
 
     GCPtrBase(const GCPtrBase& other) {
-#if 0
+#if 1
         if (GCPhase::duringGC())
             inlineMarkState = GCPhase::getCurrentMarkState();
         else

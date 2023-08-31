@@ -122,14 +122,15 @@ public:
         return ObjectInfo{obj_addr, obj_size, region.get()};
     }
 
-    GCPtr<T>& operator=(const GCPtr<T>& other) {
+    GCPtr& operator=(const GCPtr& other) {
         if (this != &other) {
             GCPhase::EnterCriticalSection();
-            if (this->obj != nullptr && this->obj != other.obj && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
+            if (this->obj != nullptr && this->obj != other.obj
+                    && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
                 GCWorker::getWorker()->addSATB(this->getObjectInfo());
             }
-            this->setInlineMarkState(other.getInlineMarkState());
-            this->obj.store(other.obj.load());
+            // this->setInlineMarkState(other.getInlineMarkState());    // TODO: operator=后续逻辑与复制构造函数一致，即GCPtrBase(const GCPtrBase&)
+            this->obj = const_cast<GCPtr&>(other).get();
             this->obj_size = other.obj_size;
             this->region = other.region;
             /*
@@ -170,7 +171,7 @@ public:
         // std::clog << "Copy constructor" << std::endl;
         GCPhase::EnterCriticalSection();
         // this->setInlineMarkState(other.getInlineMarkState());
-        this->obj.store(other.obj.load());
+        this->obj = const_cast<GCPtr&>(other).get();
         this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
@@ -200,8 +201,9 @@ public:
 
     template<typename U>
     GCPtr(const GCPtr<U>& other) : GCPtrBase(other),
-                                   obj(other.obj), obj_size(other.obj_size) {
+                                   obj_size(other.obj_size) {
         // this->setInlineMarkState(other.getInlineMarkState());
+        this->obj = other.get();
         this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
