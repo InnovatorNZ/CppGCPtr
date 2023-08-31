@@ -25,12 +25,7 @@ public:
     }
 
     GCPtrBase(const GCPtrBase& other) {
-#if 1
-        if (GCPhase::duringGC())
-            inlineMarkState = GCPhase::getCurrentMarkState();
-        else
-#endif
-            inlineMarkState.store(other.getInlineMarkState());
+        setInlineMarkState(other);
     }
 
     virtual ~GCPtrBase() = default;
@@ -45,6 +40,13 @@ public:
 
     void setInlineMarkState(MarkState markstate) {
         this->inlineMarkState = markstate;
+    }
+
+    void setInlineMarkState(const GCPtrBase& other) {
+        if (GCPhase::duringGC())
+            inlineMarkState = GCPhase::getCurrentMarkState();
+        else
+            inlineMarkState.store(other.getInlineMarkState());
     }
 
     bool casInlineMarkState(MarkState expected, MarkState target) {

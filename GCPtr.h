@@ -27,7 +27,7 @@ private:
 
     bool needHeal(const MarkState& markState) const {
         return this->obj != nullptr && GCWorker::getWorker()->relocationEnabled()
-            && GCPhase::needSelfHeal(markState);
+               && GCPhase::needSelfHeal(markState);
     }
 
     void selfHeal(const MarkState& _markState) {
@@ -40,7 +40,7 @@ private:
         // this->setInlineMarkState(MarkState::REMAPPED);
         if (!this->casInlineMarkState(_markState, MarkState::REMAPPED)) {
             std::clog << "GCPtr mark state changed, " << MarkStateUtil::toString(_markState) << "=>"
-                << MarkStateUtil::toString(getInlineMarkState()) << std::endl;
+                      << MarkStateUtil::toString(getInlineMarkState()) << std::endl;
         }
     }
 
@@ -79,10 +79,13 @@ public:
 
     T* get() const {
         // Calling const get() will disable pointer self-heal, which is not recommend
-        if (this->needHeal())
-            return static_cast<T*>(GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get()).first);
-        else
+        if (this->needHeal()) {
+            void* healed_ptr = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get()).first;
+            if (healed_ptr == nullptr) return obj;
+            else return static_cast<T*>(healed_ptr);
+        } else {
             return obj;
+        }
     }
 
     T* operator->() {
@@ -129,7 +132,7 @@ public:
                     && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
                 GCWorker::getWorker()->addSATB(this->getObjectInfo());
             }
-            // this->setInlineMarkState(other.getInlineMarkState());    // TODO: operator=后续逻辑与复制构造函数一致，即GCPtrBase(const GCPtrBase&)
+            setInlineMarkState(other);
             this->obj = const_cast<GCPtr&>(other).get();
             this->obj_size = other.obj_size;
             this->region = other.region;
@@ -203,6 +206,7 @@ public:
     GCPtr(const GCPtr<U>& other) : GCPtrBase(other),
                                    obj_size(other.obj_size) {
         // this->setInlineMarkState(other.getInlineMarkState());
+        // TODO: other为const，指针自愈无法更新region
         this->obj = other.get();
         this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
