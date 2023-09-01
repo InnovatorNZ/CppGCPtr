@@ -206,8 +206,7 @@ public:
     GCPtr(const GCPtr<U>& other) : GCPtrBase(other),
                                    obj_size(other.obj_size) {
         // this->setInlineMarkState(other.getInlineMarkState());
-        // TODO: other为const，指针自愈无法更新region
-        this->obj = other.get();
+        this->obj = static_cast<T*>(const_cast<GCPtr<U>&>(other).get());
         this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
