@@ -176,7 +176,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
     for (char* n_addr = cptr; n_addr < cptr + object_size - SIZEOF_GCPTR; n_addr += sizeof(void*)) {
         int identifier_head = *(reinterpret_cast<int*>(n_addr));
         if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
-            auto _max = [](int x, int y)constexpr { return x > y ? x : y; };
+            constexpr auto _max = [](int x, int y) constexpr { return x > y ? x : y; };
             constexpr int tail_offset =
                     sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
                     sizeof(std::shared_ptr<GCRegion>);
