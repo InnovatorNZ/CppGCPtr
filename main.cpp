@@ -95,6 +95,35 @@ public:
     }
 };
 
+template<typename T>
+class MyVector {
+private:
+    T* dat;
+    int idx = 0;
+    const int maxn = 10000;
+public:
+    void push_back(T d) {
+        dat[idx] = d;
+        idx = (idx + 1) % maxn;
+    }
+
+    T at(int _idx) {
+        return dat[_idx];
+    }
+
+    int size() {
+        return idx == 0 ? 1 : idx;
+    }
+
+    MyVector() {
+        dat = new T[maxn];
+    }
+
+    ~MyVector() {
+        delete[] dat;
+    }
+};
+
 bool in_aobj_func(void* gcptr, GCPtr<MyObject> _aobj[], int arr_size) {
     for (int i = 0; i < arr_size; i++) {
         if (&_aobj[i] == gcptr) {
@@ -182,7 +211,8 @@ int main() {
             srand(time(0));
             const int arr_size = 256;
             GCPtr<MyObject> aobj[arr_size];
-            GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
+            // GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
+            GCPtr<MyVector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<MyVector<GCPtr<MyObject>>>();
             for (int j = 0; j < 100000; j++) {
                 GCPtr<MyObject> temp_obj = gc::make_gc<MyObject>();
                 temp_obj->addH();
