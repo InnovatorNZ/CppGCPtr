@@ -320,6 +320,11 @@ void GCWorker::addSATB(void* object_addr) {
 }
 
 void GCWorker::addSATB(const ObjectInfo& objectInfo) {
+    if constexpr (GCParameter::distinctSATB) {
+        std::unique_lock<std::mutex> lock(satb_queue_mutex);
+        auto result = satb_set.insert(objectInfo.object_addr);
+        if (!result.second) return;
+    }
     if (!enableMemoryAllocator) {
         std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
         satb_queue.push_back(objectInfo.object_addr);
@@ -465,6 +470,8 @@ void GCWorker::triggerSATBMark() {
                 satb_queue_pool[i].clear();
             }
         }
+        if constexpr (GCParameter::distinctSATB)
+            satb_set.clear();
     } else
         std::clog << "Already in remark phase or in other invalid phase" << std::endl;
 }

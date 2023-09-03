@@ -36,6 +36,7 @@ private:
     std::vector<std::vector<ObjectInfo>> satb_queue_pool;
     std::unique_ptr<std::mutex[]> satb_queue_pool_mutex;
     std::mutex satb_queue_mutex;
+    std::unordered_set<void*> satb_set;
     std::unordered_map<void*, std::function<void(void*)>> destructor_map;
     std::mutex destructor_map_mutex;
     std::mutex thread_mutex;
