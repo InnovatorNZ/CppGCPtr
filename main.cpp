@@ -211,8 +211,9 @@ int main() {
             srand(time(0));
             const int arr_size = 256;
             GCPtr<MyObject> aobj[arr_size];
-            // GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();  //待测试，GCPtr是否与std::标准库兼容
-            GCPtr<MyVector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<MyVector<GCPtr<MyObject>>>();
+            GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();
+            gcptr_vec->reserve(100000);
+            // GCPtr<MyVector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<MyVector<GCPtr<MyObject>>>();
             for (int j = 0; j < 100000; j++) {
                 GCPtr<MyObject> temp_obj = gc::make_gc<MyObject>();
                 temp_obj->addH();
