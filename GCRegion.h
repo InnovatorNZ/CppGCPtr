@@ -64,6 +64,7 @@ private:
     std::shared_mutex move_constructor_map_mtx;
     std::mutex relocation_mutex;
     std::atomic<bool> evacuated;
+    std::atomic<int> use_count;
 
 protected:
     float getFragmentRatio() const;
@@ -128,6 +129,10 @@ public:
     void registerDestructor(void*, const std::function<void(void*)>&);
 
     void registerMoveConstructor(void*, const std::function<void(void*, void*)>&);
+
+    void inc_use_count();
+
+    void dec_use_count();
 };
 
 

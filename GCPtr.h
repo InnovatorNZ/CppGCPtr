@@ -9,6 +9,66 @@
 #include "GCWorker.h"
 
 template<typename T>
+class PtrGuard {
+private:
+    T* ptr;
+    GCRegion* region;
+    bool owns;
+    const bool relocationEnabled;
+
+    struct DeferGuard_t {
+        explicit DeferGuard_t() = default;
+    };
+
+public:
+    static constexpr DeferGuard_t DeferGuard{};
+
+    PtrGuard(T* ptr, GCRegion* region, DeferGuard_t) :
+            ptr(ptr), region(region), owns(false),
+            relocationEnabled(GCWorker::getWorker()->relocationEnabled()) {
+    }
+
+    PtrGuard(T* ptr, GCRegion* region) : PtrGuard(ptr, region, DeferGuard) {
+        if (relocationEnabled)
+            lock();
+    }
+
+    ~PtrGuard() {
+        unlock();
+    }
+
+    PtrGuard(const PtrGuard&) = delete;
+
+    PtrGuard(PtrGuard&&) = delete;
+
+    void lock() {
+        if (!owns) {
+            region->inc_use_count();
+            owns = true;
+        }
+    }
+
+    void unlock() {
+        if (owns) {
+            region->dec_use_count();
+            owns = false;
+        }
+    }
+
+    T* get() const {
+        return ptr;
+    }
+
+    T* operator->() const {
+        return ptr;
+    }
+
+    T* value() const {
+        return ptr;
+    }
+};
+
+template<typename T>
 class GCPtr : public GCPtrBase {
     template<typename U>
     friend class GCPtr;
@@ -70,11 +130,15 @@ public:
         GCPhase::LeaveCriticalSection();
     }
 
-    T* get() {
+    T* getRaw() {
         MarkState mark_state = getInlineMarkState();
         if (this->needHeal(mark_state))
             this->selfHeal(mark_state);
         return this->obj;
+    }
+
+    PtrGuard<T> get() {
+        return PtrGuard<T>(this->getRaw(), this->region.get());
     }
 
     T* get() const {
@@ -88,7 +152,7 @@ public:
         }
     }
 
-    T* operator->() {
+    PtrGuard<T> operator->() {
         return this->get();
     }
 
@@ -117,7 +181,7 @@ public:
     }
 
     void* getVoidPtr() override {
-        return reinterpret_cast<void*>(this->get());
+        return reinterpret_cast<void*>(this->getRaw());
     }
 
     ObjectInfo getObjectInfo() override {
@@ -129,11 +193,11 @@ public:
         if (this != &other) {
             GCPhase::EnterCriticalSection();
             if (this->obj != nullptr && this->obj != other.obj
-                    && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
+                && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
                 GCWorker::getWorker()->addSATB(this->getObjectInfo());
             }
             setInlineMarkState(other);
-            this->obj = const_cast<GCPtr&>(other).get();
+            this->obj = const_cast<GCPtr&>(other).getRaw();
             this->obj_size = other.obj_size;
             this->region = other.region;
             /*
@@ -174,7 +238,7 @@ public:
         // std::clog << "Copy constructor" << std::endl;
         GCPhase::EnterCriticalSection();
         // this->setInlineMarkState(other.getInlineMarkState());
-        this->obj = const_cast<GCPtr&>(other).get();
+        this->obj = const_cast<GCPtr&>(other).getRaw();
         this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
@@ -206,7 +270,7 @@ public:
     GCPtr(const GCPtr<U>& other) : GCPtrBase(other),
                                    obj_size(other.obj_size) {
         // this->setInlineMarkState(other.getInlineMarkState());
-        this->obj = static_cast<T*>(const_cast<GCPtr<U>&>(other).get());
+        this->obj = static_cast<T*>(const_cast<GCPtr<U>&>(other).getRaw());
         this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {

@@ -9,7 +9,7 @@ const size_t GCRegion::MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
 
 GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size) :
         regionType(regionType), startAddress(startAddress), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
-        total_size(total_size), allocated_offset(0), live_size(0), evacuated(false) {
+        total_size(total_size), allocated_offset(0), live_size(0), evacuated(false), use_count(0) {
     if (regionType != RegionEnum::LARGE) {
         if constexpr (!use_regional_hashmap) {
             switch (regionType) {
@@ -192,6 +192,14 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
+    int wait_cnt = 0;
+    while (use_count != 0) {
+        wait_cnt++;
+        std::this_thread::yield();
+    }
+    if (wait_cnt != 0)
+        std::clog << "Info: Spin waiting for region use_count for " << wait_cnt << " times" << std::endl;
+
     evacuated = true;
     if (this->canFree() && !enable_destructor) {      // 已经没有存活对象了
         return;
@@ -383,6 +391,14 @@ void GCRegion::callMoveConstructor(void* source_addr, void* target_addr) {
 bool GCRegion::inside_region(void* addr, size_t size) const {
     return (char*) addr >= (char*) startAddress
            && (char*) addr + size <= (char*) startAddress + allocated_offset;
+}
+
+void GCRegion::inc_use_count() {
+    ++use_count;
+}
+
+void GCRegion::dec_use_count() {
+    --use_count;
 }
 
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {
