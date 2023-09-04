@@ -490,8 +490,6 @@ void GCWorker::selectRelocationSet() {
 }
 
 void GCWorker::beginSweep() {
-    if (GCPhase::getGCPhase() == eGCPhase::REMARK)
-        GCPhase::SwitchToNextPhase();
     if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
         if (!enableMemoryAllocator) {
             std::shared_lock<std::shared_mutex> lock(object_map_mutex);

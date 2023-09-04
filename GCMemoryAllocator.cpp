@@ -403,6 +403,7 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
         return;
     }
 
+    Sleep(150);
     if (enableParallelClear) {
         size_t snum = evacuationQue.size() / gcThreadCount;
         for (int tid = 0; tid < gcThreadCount; tid++) {

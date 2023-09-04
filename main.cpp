@@ -212,7 +212,7 @@ int main() {
             const int arr_size = 256;
             GCPtr<MyObject> aobj[arr_size];
             GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();
-            gcptr_vec->reserve(100000);
+            // gcptr_vec->reserve(100000);
             // GCPtr<MyVector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<MyVector<GCPtr<MyObject>>>();
             for (int j = 0; j < 100000; j++) {
                 GCPtr<MyObject> temp_obj = gc::make_gc<MyObject>();
