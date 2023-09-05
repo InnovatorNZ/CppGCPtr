@@ -137,26 +137,35 @@ public:
         return this->obj;
     }
 
+    T* getRaw() const {
+        if (this->needHeal()) {
+            void* healed_ptr = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get()).first;
+            if (healed_ptr != nullptr) {
+                return static_cast<T*>(healed_ptr);
+            }
+        }
+        return obj;
+    }
+
     PtrGuard<T> get() {
         return PtrGuard<T>(this->getRaw(), this->region.get());
     }
 
-    T* get() const {
-        // Calling const get() will disable pointer self-heal, which is not recommend
+    PtrGuard<T> get() const {
         if (this->needHeal()) {
-            void* healed_ptr = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get()).first;
-            if (healed_ptr == nullptr) return obj;
-            else return static_cast<T*>(healed_ptr);
-        } else {
-            return obj;
+            auto healed = GCWorker::getWorker()->getHealedPointer(obj, obj_size, region.get());
+            if (healed.first != nullptr) {
+                return PtrGuard<T>(static_cast<T*>(healed.first), healed.second.get());
+            }
         }
+        return PtrGuard<T>(obj, region.get());
     }
 
     PtrGuard<T> operator->() {
         return this->get();
     }
 
-    T* operator->() const {
+    PtrGuard<T> operator->() const {
         return this->get();
     }
 
@@ -227,7 +236,7 @@ public:
     }
 
     bool operator==(GCPtr<T>& other) {
-        return this->get() == other.get();
+        return this->getRaw() == other.getRaw();
     }
 
     bool operator==(std::nullptr_t) const {
