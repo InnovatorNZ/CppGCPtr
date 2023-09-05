@@ -18,7 +18,7 @@ private:
     static std::atomic<eGCPhase> gcPhase;
     static std::atomic<MarkState> currentMarkState;
     static IReadWriteLock* stwLock;
-    static SpinLock gcPhaseLock;
+    static IReadWriteLock* gcPhaseLock;
 public:
     static eGCPhase getGCPhase();
 
