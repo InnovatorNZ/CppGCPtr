@@ -60,17 +60,20 @@ bool GCPhase::needSweep(MarkStateBit markState) {
 }
 
 bool GCPhase::needSelfHeal(MarkState markState) {
-    // TODO: 将markState和gcPhase取出来，并上SpinLock
+    gcPhaseLock.lock();
+    MarkState currentMarkState = getCurrentMarkState();
+    eGCPhase currentGCPhase = getGCPhase();
+    gcPhaseLock.unlock();
     if (markState == MarkState::REMAPPED)       // 已重分配，无需指针自愈
         return false;
     else if (markState == MarkState::DE_ALLOCATED)  // 已被释放，不应调用此函数
         throw std::invalid_argument("DE_ALLOCATED needn't call needSelfHeal()");
-    if (duringMarking()) {
+    if (duringMarking(currentGCPhase)) {
         // 若在标记阶段，需要完成指针自愈的是上一轮存活的对象
-        return markState != getCurrentMarkState();
+        return markState != currentMarkState;
     } else {
         // 若在转移阶段或非垃圾回收阶段，需要完成指针自愈的是本轮存活的对象
-        return markState == getCurrentMarkState();
+        return markState == currentMarkState;
     }
 }
 

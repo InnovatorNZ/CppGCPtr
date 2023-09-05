@@ -15,6 +15,7 @@ public:
         while (true) {
             bool locked = this->locked_.load();
             if (locked) {
+                // std::clog << "Locked" << std::endl;
                 if (yield) std::this_thread::yield();
                 continue;
             }

@@ -50,6 +50,10 @@ public:
         return gcPhase == eGCPhase::CONCURRENT_MARK || gcPhase == eGCPhase::REMARK;
     }
 
+    static bool duringMarking(const eGCPhase& gcPhase) {
+        return gcPhase == eGCPhase::CONCURRENT_MARK || gcPhase == eGCPhase::REMARK;
+    }
+
     static void EnterCriticalSection() {
         stwLock->lockRead();
     }
