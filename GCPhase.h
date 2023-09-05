@@ -9,6 +9,7 @@
 #include "SpinReadWriteLock.h"
 #include "MutexReadWriteLock.h"
 #include "WeakSpinReadWriteLock.h"
+#include "SpinLock.h"
 
 #define USE_SPINLOCK 0
 
@@ -17,6 +18,7 @@ private:
     static std::atomic<eGCPhase> gcPhase;
     static std::atomic<MarkState> currentMarkState;
     static IReadWriteLock* stwLock;
+    static SpinLock gcPhaseLock;
 public:
     static eGCPhase getGCPhase();
 

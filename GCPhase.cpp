@@ -2,6 +2,7 @@
 
 std::atomic<eGCPhase> GCPhase::gcPhase = eGCPhase::NONE;
 std::atomic<MarkState> GCPhase::currentMarkState = MarkState::REMAPPED;
+SpinLock GCPhase::gcPhaseLock;
 #if USE_SPINLOCK == 1
 IReadWriteLock* GCPhase::stwLock = new SpinReadWriteLock();
 #elif USE_SPINLOCK == 2
@@ -16,9 +17,11 @@ eGCPhase GCPhase::getGCPhase() {
 
 void GCPhase::SwitchToNextPhase() {
     switch (gcPhase) {
-        case eGCPhase::NONE:
-            currentMarkState = MarkStateUtil::switchState(currentMarkState);
+        case eGCPhase::NONE: {
+            RAIISpinLock lock(gcPhaseLock);
             gcPhase = eGCPhase::CONCURRENT_MARK;
+            currentMarkState = MarkStateUtil::switchState(currentMarkState);
+        }
             break;
         case eGCPhase::CONCURRENT_MARK:
             gcPhase = eGCPhase::REMARK;
@@ -57,6 +60,7 @@ bool GCPhase::needSweep(MarkStateBit markState) {
 }
 
 bool GCPhase::needSelfHeal(MarkState markState) {
+    // TODO: 将markState和gcPhase取出来，并上SpinLock
     if (markState == MarkState::REMAPPED)       // 已重分配，无需指针自愈
         return false;
     else if (markState == MarkState::DE_ALLOCATED)  // 已被释放，不应调用此函数
