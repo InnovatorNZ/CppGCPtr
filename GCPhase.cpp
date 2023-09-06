@@ -3,12 +3,12 @@
 std::atomic<eGCPhase> GCPhase::gcPhase = eGCPhase::NONE;
 std::atomic<MarkState> GCPhase::currentMarkState = MarkState::REMAPPED;
 IReadWriteLock* GCPhase::gcPhaseLock = new WeakSpinReadWriteLock();
-#if USE_SPINLOCK == 1
+#if USE_SPINLOCK == 0
+IReadWriteLock* GCPhase::stwLock = new MutexReadWriteLock();
+#elif USE_SPINLOCK == 1
 IReadWriteLock* GCPhase::stwLock = new SpinReadWriteLock();
 #elif USE_SPINLOCK == 2
 IReadWriteLock* GCPhase::stwLock = new WeakSpinReadWriteLock();
-#else
-IReadWriteLock* GCPhase::stwLock = new MutexReadWriteLock();
 #endif
 
 eGCPhase GCPhase::getGCPhase() {
@@ -62,8 +62,8 @@ bool GCPhase::needSweep(MarkStateBit markState) {
 
 bool GCPhase::needSelfHeal(MarkState markState) {
     gcPhaseLock->lockRead();
-    MarkState currentMarkState = getCurrentMarkState();
-    eGCPhase currentGCPhase = getGCPhase();
+    const MarkState currentMarkState = getCurrentMarkState();
+    const eGCPhase currentGCPhase = getGCPhase();
     gcPhaseLock->unlockRead();
     if (markState == MarkState::REMAPPED)       // 已重分配，无需指针自愈
         return false;
