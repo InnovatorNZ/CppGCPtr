@@ -256,24 +256,23 @@ public:
         GCPhase::LeaveCriticalSection();
     }
 
-#ifdef GCPTR_MOVE_CONSTRUCTOR
-    GCPtr(GCPtr&& other) noexcept : obj_size(other.obj_size) {
+    GCPtr(GCPtr&& other) noexcept : GCPtrBase(other), obj_size(other.obj_size) {
         // std::clog << "Move constructor" << std::endl;
         GCPhase::EnterCriticalSection();
-        this->setInlineMarkState(other.getInlineMarkState());
         this->obj.store(other.obj.load());
         this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
+        /*
         other.obj = nullptr;
         other.obj_size = 0;
         other.region = nullptr;
         other.setInlineMarkState(MarkState::REMAPPED);
+        */
         GCPhase::LeaveCriticalSection();
     }
-#endif
 
     template<typename U>
     GCPtr(const GCPtr<U>& other) : GCPtrBase(other),
