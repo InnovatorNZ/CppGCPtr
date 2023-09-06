@@ -246,7 +246,7 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
         std::clog << "The relocating object does not in current region." << std::endl;
         return;
     }
-    std::unique_lock<std::mutex> relocate_lock(this->relocation_mutex, std::defer_lock);
+    std::unique_lock<std::recursive_mutex> relocate_lock(this->relocation_mutex, std::defer_lock);
     if constexpr (enable_move_constructor) {
         // 使用移动构造函数会有潜在线程安全问题，即，重分配竞争失败有可能会导致原有数据丢失
         // 因此启用移动构造函数的情况下只要触发转移对象就上锁，防止上述情况发生

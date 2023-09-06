@@ -62,7 +62,7 @@ private:
     std::shared_mutex destructor_map_mtx;
     std::unique_ptr<std::unordered_map<void*, std::function<void(void*, void*)>>> move_constructor_map;
     std::shared_mutex move_constructor_map_mtx;
-    std::mutex relocation_mutex;
+    std::recursive_mutex relocation_mutex;
     std::atomic<bool> evacuated;
     std::atomic<int> use_count;
 
