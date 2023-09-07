@@ -256,6 +256,7 @@ public:
         GCPhase::LeaveCriticalSection();
     }
 
+#if 0
     GCPtr(GCPtr&& other) noexcept : GCPtrBase(other), obj_size(other.obj_size) {
         // std::clog << "Move constructor" << std::endl;
         GCPhase::EnterCriticalSection();
@@ -273,6 +274,7 @@ public:
         */
         GCPhase::LeaveCriticalSection();
     }
+#endif
 
     template<typename U>
     GCPtr(const GCPtr<U>& other) : GCPtrBase(other),
