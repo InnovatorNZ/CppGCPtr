@@ -44,7 +44,7 @@ public:
 
     void setInlineMarkState(const GCPtrBase& other) {
         if (GCPhase::duringGC())
-            inlineMarkState = GCPhase::getCurrentMarkState();
+            inlineMarkState = MarkState::COPIED;
         else
             inlineMarkState.store(other.getInlineMarkState());
     }

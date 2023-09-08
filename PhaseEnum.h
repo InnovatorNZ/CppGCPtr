@@ -9,6 +9,7 @@ enum class MarkState {
     M0,
     M1,
     DE_ALLOCATED,
+    COPIED
 };
 
 enum class MarkStateBit {
