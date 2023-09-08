@@ -200,7 +200,7 @@ public:
 
     GCPtr& operator=(const GCPtr& other) {
         if (this != &other) {
-            GCPhase::EnterCriticalSection();
+            // GCPhase::EnterCriticalSection();
             if (this->obj != nullptr && this->obj != other.obj
                 && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
                 GCWorker::getWorker()->addSATB(this->getObjectInfo());
@@ -216,7 +216,7 @@ public:
                 GCWorker::getWorker()->addRoot(this);
             }
             */
-            GCPhase::LeaveCriticalSection();
+            // GCPhase::LeaveCriticalSection();
         }
         return *this;
     }
