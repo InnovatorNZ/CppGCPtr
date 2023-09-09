@@ -205,8 +205,10 @@ public:
                 GCWorker::getWorker()->addSATB(this->getObjectInfo());
             }
             setInlineMarkState(other);
-            // this->obj = const_cast<GCPtr&>(other).getRaw();
-            this->obj.store(other.obj.load());
+            if constexpr (GCParameter::useCopiedMarkstate)
+                this->obj.store(other.obj.load());
+            else
+                this->obj = const_cast<GCPtr&>(other).getRaw();
             this->obj_size = other.obj_size;
             this->region = other.region;
             /*
@@ -247,8 +249,10 @@ public:
         // std::clog << "Copy constructor" << std::endl;
         GCPhase::EnterCriticalSection();
         // this->setInlineMarkState(other.getInlineMarkState());
-        // this->obj = const_cast<GCPtr&>(other).getRaw();
-        this->obj.store(other.obj.load());
+        if constexpr (GCParameter::useCopiedMarkstate)
+            this->obj.store(other.obj.load());
+        else
+            this->obj = const_cast<GCPtr&>(other).getRaw();
         this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
@@ -281,8 +285,10 @@ public:
     GCPtr(const GCPtr<U>& other) : GCPtrBase(other),
                                    obj_size(other.obj_size) {
         // this->setInlineMarkState(other.getInlineMarkState());
-        // this->obj = static_cast<T*>(const_cast<GCPtr<U>&>(other).getRaw());
-        this->obj.store(other.obj.load());
+        if constexpr (GCParameter::useCopiedMarkstate)
+            this->obj.store(other.obj.load());
+        else
+            this->obj = static_cast<T*>(const_cast<GCPtr<U>&>(other).getRaw());
         this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {

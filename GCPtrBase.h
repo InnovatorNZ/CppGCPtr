@@ -43,10 +43,14 @@ public:
     }
 
     void setInlineMarkState(const GCPtrBase& other) {
-        if (GCPhase::duringMarking())
-            inlineMarkState = MarkState::COPIED;
-        else
+        if (GCPhase::duringMarking()) {
+            if constexpr (GCParameter::useCopiedMarkstate)
+                inlineMarkState = MarkState::COPIED;
+            else
+                inlineMarkState = GCPhase::getCurrentMarkState();
+        } else {
             inlineMarkState.store(other.getInlineMarkState());
+        }
     }
 
     bool casInlineMarkState(MarkState expected, MarkState target) {
