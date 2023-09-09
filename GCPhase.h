@@ -67,8 +67,12 @@ public:
     }
 
     class RAIISTWLock {
+    private:
+        bool owns;
     public:
         RAIISTWLock();
+
+        explicit RAIISTWLock(bool doNotLockAtRemarkPhase);
 
         ~RAIISTWLock();
     };

@@ -514,7 +514,7 @@ void GCWorker::beginSweep() {
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr, size_t obj_size, GCRegion* region) const {
-    GCPhase::RAIISTWLock raiiStwLock;
+    GCPhase::RAIISTWLock raiiStwLock(true);
     std::pair<void*, std::shared_ptr<GCRegion>> ret = region->queryForwardingTable(ptr);
     if (ret.first == nullptr) {
         if (region->isEvacuated()) {

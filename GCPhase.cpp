@@ -63,7 +63,7 @@ bool GCPhase::needSweep(MarkStateBit markState) {
 bool GCPhase::needSelfHeal(MarkState markState) {
     if (markState == MarkState::REMAPPED)           // 已重分配，无需指针自愈
         return false;
-    else if (markState == MarkState::COPIED)       // GC期间新分配，需要自愈
+    else if (markState == MarkState::COPIED)        // GC期间新分配，需要自愈
         return true;
     else if (markState == MarkState::DE_ALLOCATED)  // 已被释放，不应调用此函数
         throw std::invalid_argument("DE_ALLOCATED needn't call needSelfHeal()");
@@ -107,8 +107,19 @@ std::string GCPhase::getGCPhaseString() {
 
 GCPhase::RAIISTWLock::RAIISTWLock() {
     GCPhase::EnterCriticalSection();
+    owns = true;
+}
+
+GCPhase::RAIISTWLock::RAIISTWLock(bool doNotLockAtRemarkPhase) : owns(false) {
+    if (doNotLockAtRemarkPhase && GCPhase::getGCPhase() == eGCPhase::REMARK)
+        return;
+    GCPhase::EnterCriticalSection();
+    owns = true;
 }
 
 GCPhase::RAIISTWLock::~RAIISTWLock() {
-    GCPhase::LeaveCriticalSection();
+    if (owns) {
+        GCPhase::LeaveCriticalSection();
+        owns = false;
+    }
 }
