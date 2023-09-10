@@ -8,6 +8,12 @@
 #define DESTRUCTOR_TEST 0
 #define WITH_STL_TEST 1
 
+#if !_WIN32
+void Sleep(int millisecond) {
+    GCUtil::sleep((float)millisecond / 1000);
+}
+#endif
+
 class MyObject2 {
 public:
     int a;
