@@ -204,7 +204,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
     if (this->canFree() && !enable_destructor) {      // 已经没有存活对象了
         return;
     }
-    // std::clog << "Relocating region " << this << std::endl;
+    std::clog << "Relocating region " << this << std::endl;
     if constexpr (use_regional_hashmap) {
         auto regionalMapIterator = regionalHashMap->getIterator();
         while (regionalMapIterator.MoveNext()) {
@@ -375,8 +375,9 @@ void GCRegion::callDestructor(void* object_addr) {
     if (it != destructor_map->end()) {
         auto& destructor = it->second;
         destructor(object_addr);
-    } else
-        std::clog << "Destructor not found!" << std::endl;
+    } else {
+        std::clog << "Destructor not found of " << object_addr << ", region " << this << std::endl;
+    }
 }
 
 void GCRegion::callMoveConstructor(void* source_addr, void* target_addr) {
