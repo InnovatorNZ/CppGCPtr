@@ -18,10 +18,11 @@ constexpr int SINGLE_OBJECT_MARKBIT = 2;     // 表示每两个bit标记一个�
 class GCBitMap {
 private:
     // bitmap 采用2个bit标记一个对象，00: Not Allocated, 01: Remapped/Deleted, 10: M0, 11: M1
-    int region_to_bitmap_ratio;     // bitmap的每两个bit对应于region的多少字节，默认为1，即2bit->1byte
+    int region_to_bitmap_ratio;             // bitmap的每两个bit对应于region的多少字节，默认为1，即2bit->1byte
     int bitmap_size;
     bool mark_obj_size;                     // 是否在位图中标记对象大小
-    const bool mark_high_bit = false;       // 是否在位图中标记高位
+    const bool mark_high_bit = false;       // 是否在位图中标记高位（已禁用）
+    int iterate_step_size;                  // 若未启用在位图中标记对象大小，则指定迭代步长
     void* region_start_addr;
     std::atomic<unsigned char>* bitmap_arr;
 #if USE_SINGLE_OBJECT_MAP
@@ -56,7 +57,8 @@ public:
         int getCurrentOffset() const;
     };
 
-    GCBitMap(void* region_start_addr, size_t region_size, bool mark_obj_size = true, int region_to_bitmap_ratio = 1);
+    GCBitMap(void* region_start_addr, size_t region_size, bool mark_obj_size = true,
+             int iterate_step_size = 0, int region_to_bitmap_ratio = 1);
 
     ~GCBitMap();
 

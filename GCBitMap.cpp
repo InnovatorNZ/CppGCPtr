@@ -1,7 +1,8 @@
 #include "GCBitMap.h"
 
-GCBitMap::GCBitMap(void* region_start_addr, size_t region_size, bool mark_obj_size, int region_to_bitmap_ratio) :
-        region_start_addr(region_start_addr), region_to_bitmap_ratio(region_to_bitmap_ratio), mark_obj_size(mark_obj_size) {
+GCBitMap::GCBitMap(void* region_start_addr, size_t region_size, bool mark_obj_size, int iterate_step_size, int region_to_bitmap_ratio) :
+        region_start_addr(region_start_addr), region_to_bitmap_ratio(region_to_bitmap_ratio),
+        mark_obj_size(mark_obj_size), iterate_step_size(iterate_step_size) {
     int bitmap_size_ = ceil((double)region_size / (double)region_to_bitmap_ratio * SINGLE_OBJECT_MARKBIT / 8);
     this->bitmap_size = bitmap_size_;
     this->bitmap_arr = static_cast<std::atomic<unsigned char>*>(::malloc(bitmap_size_ * sizeof(std::atomic<unsigned char>)));
@@ -12,15 +13,20 @@ GCBitMap::~GCBitMap() {
     this->bitmap_arr = nullptr;
 }
 
-GCBitMap::GCBitMap(const GCBitMap& other) : region_to_bitmap_ratio(other.region_to_bitmap_ratio), mark_obj_size(other.mark_obj_size) {
+GCBitMap::GCBitMap(const GCBitMap& other) : region_to_bitmap_ratio(other.region_to_bitmap_ratio),
+                                            mark_obj_size(other.mark_obj_size),
+                                            iterate_step_size(other.iterate_step_size) {
     this->bitmap_size = other.bitmap_size;
     this->region_start_addr = other.region_start_addr;
     this->bitmap_arr = static_cast<std::atomic<unsigned char>*>(::malloc(bitmap_size * sizeof(std::atomic<unsigned char>)));
+    if (bitmap_arr == nullptr) throw std::exception();
     for (int i = 0; i < bitmap_size; i++)
         this->bitmap_arr[i].store(other.bitmap_arr[i].load());
 }
 
-GCBitMap::GCBitMap(GCBitMap&& other) noexcept: region_to_bitmap_ratio(other.region_to_bitmap_ratio), mark_obj_size(other.mark_obj_size) {
+GCBitMap::GCBitMap(GCBitMap&& other) noexcept : region_to_bitmap_ratio(other.region_to_bitmap_ratio),
+                                                mark_obj_size(other.mark_obj_size),
+                                                iterate_step_size(other.iterate_step_size) {
     this->bitmap_size = other.bitmap_size;
     this->region_start_addr = other.region_start_addr;
     this->bitmap_arr = std::move(other.bitmap_arr);
@@ -51,7 +57,7 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
             if (!overwrite) {
                 unsigned char c_markstate = c_value >> offset_bit & 3;
                 if (c_markstate == ch_state) {
-                    std::clog << "Bitmap found already marked at " << object_addr << std::endl;
+                    std::clog << "Info: Bitmap found already marked at " << object_addr << std::endl;
                     return false;
                 }
             }
@@ -192,11 +198,18 @@ bool GCBitMap::BitMapIterator::MoveNext() {
     else {
         if (bitmap.mark_obj_size) {
             // 若启用在位图中标记对象大小，则按对象大小进行迭代
-            char* next_addr = (char*)bitmap.region_start_addr + getCurrentOffset() + getCurrentObjectSize();
+            void* next_addr = (char*)bitmap.region_start_addr + getCurrentOffset() + getCurrentObjectSize();
+            bitmap.addr_to_bit(next_addr, this->byte_offset, this->bit_offset);
+        }
+        else if (bitmap.iterate_step_size > 0) {
+            // 若未启用在位图中标记对象大小，但指定了迭代步长
+            void* next_addr = (char*)bitmap.region_start_addr + getCurrentOffset() + bitmap.iterate_step_size;
             bitmap.addr_to_bit(next_addr, this->byte_offset, this->bit_offset);
         }
         else {
             // 若未启用在位图中标记对象大小
+            // 备注：更新版本的bitmap的数组初始化时不再赋初值，因此该方法不再适用
+            std::cerr << "Deprecated iteration of bitmap." << std::endl;
             if (bit_offset == 0 && byte_offset < bitmap.bitmap_size && bitmap.bitmap_arr[byte_offset] == 0) {
                 // 使用for循环跳过全0的区域，以加速迭代过程
                 const int SINGLE_SKIP_SIZE = 100000;

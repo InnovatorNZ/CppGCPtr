@@ -18,7 +18,7 @@ GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size)
                     bitmap = std::make_unique<GCBitMap>(startAddress, total_size);
                     break;
                 case RegionEnum::TINY:
-                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size, false);
+                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size, false, TINY_OBJECT_THRESHOLD);
                     break;
             }
         } else {
@@ -192,19 +192,20 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
-    int wait_cnt = 0;
-    while (use_count != 0) {
-        wait_cnt++;
-        std::this_thread::yield();
+    {
+        int wait_cnt = 0;
+        while (use_count != 0) {
+            wait_cnt++;
+            std::this_thread::yield();
+        }
+        if (wait_cnt != 0)
+            std::clog << "Info: Spin waiting for region use_count for " << wait_cnt << " times" << std::endl;
     }
-    if (wait_cnt != 0)
-        std::clog << "Info: Spin waiting for region use_count for " << wait_cnt << " times" << std::endl;
-
     evacuated = true;
     if (this->canFree() && !enable_destructor) {      // 已经没有存活对象了
         return;
     }
-    std::clog << "Relocating region " << this << std::endl;
+    // std::clog << "Relocating region " << this << std::endl;
     if constexpr (use_regional_hashmap) {
         auto regionalMapIterator = regionalHashMap->getIterator();
         while (regionalMapIterator.MoveNext()) {

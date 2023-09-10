@@ -64,7 +64,7 @@ private:
     std::shared_mutex move_constructor_map_mtx;
     std::recursive_mutex relocation_mutex;
     std::atomic<bool> evacuated;
-    std::atomic<int> use_count;
+    std::atomic<int> use_count;             // 用于PtrGuard计数用，PtrGuard存在期间禁止重定位
 
 protected:
     float getFragmentRatio() const;
