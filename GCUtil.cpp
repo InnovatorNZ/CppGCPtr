@@ -4,16 +4,18 @@ std::vector<DWORD> GCUtil::_suspendedThreadIDs;
 bool GCUtil::user_threads_suspended = false;
 
 bool GCUtil::is_stack_pointer(void* ptr) {
-    if constexpr (_WIN32 && !GCParameter::enableMemoryAllocator) {
+#if _WIN32 && _MSC_VER
+    if constexpr (!GCParameter::enableMemoryAllocator) {
         ULONG_PTR low, high;
         GetCurrentThreadStackLimits(&low, &high);   // 获取当前线程的栈区边界
         return low <= reinterpret_cast<ULONG_PTR>(ptr) && reinterpret_cast<ULONG_PTR>(ptr) < high;  // 判断指针是否在栈区范围内
+    }
+#endif
+    // 不确定的一律返回true，前提是启用了析构函数
+    if constexpr (GCParameter::enableDestructorSupport) {
+        return true;
     } else {
-        // 不确定的一律返回true，前提是启用了析构函数
-        if constexpr (GCParameter::enableDestructorSupport)
-            return true;
-        else
-            throw std::runtime_error("is_stack_pointer() is not supported on posix yet");
+        throw std::runtime_error("is_stack_pointer() is not supported on current system");
     }
 }
 
