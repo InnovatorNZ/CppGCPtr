@@ -20,4 +20,5 @@ public:
 	static constexpr bool immediateClear = true;				// 尽量在一轮回收后就清除已是垃圾的对象，否则将在2~3轮后回收；启用此选项会增加垃圾回收的性能开销，但可以更快腾出内存
 	static constexpr bool distinctSATB = false;					// 是否在对删除屏障引发的SATB去重；不推荐，因为没必要
 	static constexpr bool useCopiedMarkstate = false;			// 是否引入无状态的内联标记（参见Solution 2.1 rev）；不推荐，有问题
+	static constexpr bool doNotRelocatePtrGuard = true;			// 禁止对任何存在PtrGuard引用的region重分配，若禁用，则会自旋等待析构后再重分配；建议当存在相当长生命周期的PtrGuard时启用该选项；前提条件：启用重分配
 };

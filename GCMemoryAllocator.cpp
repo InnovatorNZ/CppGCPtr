@@ -614,7 +614,8 @@ void GCMemoryAllocator::selectRelocationSet(std::deque<std::shared_ptr<GCRegion>
     for (auto it = regionQue.begin(); it != regionQue.end();) {
         std::shared_ptr<GCRegion>& region = *it;
         if (!region->isEvacuated()) {
-            if (region.use_count() == 1 || region->needEvacuate()) {
+            if (region.use_count() == 1 || region->needEvacuate() &&
+                (GCParameter::doNotRelocatePtrGuard ? region->zero_use_count() : true)) {
                 region->setEvacuated();
                 this->evacuationQue.emplace_back(std::move(region));
                 it = regionQue.erase(it);
@@ -634,7 +635,8 @@ void GCMemoryAllocator::selectRelocationSet(ConcurrentLinkedList<std::shared_ptr
     while (iterator->MoveNext()) {
         std::shared_ptr<GCRegion> region = iterator->current();
         if (region != nullptr && !region->isEvacuated()) {
-            if (region.use_count() <= 2 || region->needEvacuate()) {
+            if (region.use_count() <= 2 || region->needEvacuate() &&
+                (GCParameter::doNotRelocatePtrGuard ? region->zero_use_count() : true)) {
                 region->setEvacuated();
                 this->evacuationQue.emplace_back(std::move(region));
                 iterator->remove();

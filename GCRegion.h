@@ -133,6 +133,8 @@ public:
     void inc_use_count();
 
     void dec_use_count();
+
+    bool zero_use_count() const { return use_count == 0; }
 };
 
 
