@@ -207,13 +207,13 @@ int main() {
         }
 
         GCPtr<MyObject> obj9 = gc::make_gc<MyObject>();
+        GCPtr<MyObject> obj10 = gc::make_gc<MyObject>();
         {
             srand(time(0));
             const int arr_size = 256;
             GCPtr<MyObject> aobj[arr_size];
             GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();
             // gcptr_vec->reserve(100000);
-            GCPtr<MyObject> obj10 = gc::make_gc<MyObject>();
             GCPtr<MyObject> obj11 = gc::make_gc<MyObject>();
             obj10->d = obj11;
             obj11->d = obj10;
@@ -241,6 +241,8 @@ int main() {
             }
             obj11->b = (double)obj10->a / 2;
         }
+        obj10->b = obj10->d->a * 2;
+
         auto end_time = chrono::steady_clock::now();
         long long duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time).count();
         cout << "User thread duration: " << duration << " ms" << endl;
