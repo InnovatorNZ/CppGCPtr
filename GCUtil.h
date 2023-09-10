@@ -10,6 +10,8 @@
 #if _WIN32
 #include <Windows.h>
 #include <TlHelp32.h>
+#else
+#include <unistd.h>
 #endif
 
 #if !_WIN32
@@ -35,4 +37,6 @@ public:
     static bool is_stack_pointer(void* ptr);
 
     static int getPoolIdx(int poolCount);
+
+    static void sleep(float sec);
 };

@@ -1,5 +1,4 @@
 #include "GCWorker.h"
-#include "CppExecutor/sleep.h"
 
 std::unique_ptr<GCWorker> GCWorker::instance;
 
@@ -203,7 +202,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
 
 
 void GCWorker::GCThreadLoop() {
-    __sleep(0.1);
+    GCUtil::sleep(0.1);
     while (true) {
         {
             std::unique_lock<std::mutex> lock(this->thread_mutex);
@@ -351,7 +350,7 @@ void GCWorker::startGC() {
             memoryAllocator->flushRegionMapBuffer();
 
         if (enableConcurrentMark)
-            __sleep(0.1);       // 防止gc root尚未来得及加入root_set
+            GCUtil::sleep(0.1);       // 防止gc root尚未来得及加入root_set
     } else {
         std::cerr << "GC already started" << std::endl;
     }

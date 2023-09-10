@@ -106,3 +106,11 @@ void GCUtil::resume_the_world(IReadWriteLock* stwLock) {
         stwLock->unlockWrite();
     }
 }
+
+void GCUtil::sleep(float sec) {
+#if _WIN32
+    Sleep(sec * 1000);
+#else
+    usleep(sec * 1000 * 1000);
+#endif
+}
