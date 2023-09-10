@@ -19,5 +19,5 @@ public:
 	static constexpr bool enableHashPool = true;				// 是否启用线程id进行hash后取模的池化方案；可以降低锁的竞争，但可能会产生计算哈希的开销
 	static constexpr bool immediateClear = false;				// 尽量在一轮回收后就清除已是垃圾的对象，否则将在2~3轮后回收；启用此选项会增加垃圾回收的性能开销，但可以更快腾出内存
 	static constexpr bool distinctSATB = false;					// 是否在对删除屏障引发的SATB去重；不推荐，因为没必要
-	static constexpr bool useCopiedMarkstate = false;			// 是否引入无状态的内联标记（参见Solution 2.1 rev）；不推荐，有问题
+	static constexpr bool useCopiedMarkstate = true;			// 是否引入无状态的内联标记（参见Solution 2.1 rev）；不推荐，有问题
 };

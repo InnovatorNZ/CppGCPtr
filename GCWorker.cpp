@@ -125,7 +125,7 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (objectInfo.object_addr == nullptr || objectInfo.region == nullptr) return;
     MarkState c_markstate = GCPhase::getCurrentMarkState();
     if (useInlineMarkstate) {
-        if (gcptr->getInlineMarkState() == c_markstate) {     // 标记过了
+        if (gcptr->getInlineMarkState() == c_markstate && !GCParameter::useCopiedMarkstate) {     // 标记过了
             // std::clog << "Skipping " << gcptr << " as it already marked" << std::endl;
             return;
         }

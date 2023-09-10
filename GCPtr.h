@@ -97,8 +97,10 @@ private:
             this->obj = static_cast<T*>(healed.first);
             this->region = healed.second;
         }
-        if (_markState == MarkState::COPIED && GCPhase::duringGC())
+        if (_markState == MarkState::COPIED && GCPhase::duringGC()) {
             this->casInlineMarkState(_markState, GCPhase::getCurrentMarkState());
+            // std::clog << "Healing COPIED gcptr for " << this << std::endl;
+        }
         else
             this->casInlineMarkState(_markState, MarkState::REMAPPED);
     }
