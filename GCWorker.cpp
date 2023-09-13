@@ -170,7 +170,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         region->mark(object_addr, object_size);
     }
 
-    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 56 : 36;
+    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 72 : 48;
     char* cptr = reinterpret_cast<char*>(object_addr);
     for (char* n_addr = cptr; n_addr < cptr + object_size - SIZEOF_GCPTR; n_addr += sizeof(void*)) {
         int identifier_head = *(reinterpret_cast<int*>(n_addr));
