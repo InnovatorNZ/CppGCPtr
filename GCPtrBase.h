@@ -28,7 +28,9 @@ public:
         setInlineMarkState(other);
     }
 
-    virtual ~GCPtrBase() = default;
+    virtual ~GCPtrBase() {
+        inlineMarkState = MarkState::DE_ALLOCATED;
+    }
 
     virtual void* getVoidPtr() = 0;
 

@@ -119,6 +119,9 @@ void GCWorker::mark(void* object_addr) {
 
 void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (gcptr == nullptr) return;
+    if (gcptr->getInlineMarkState() == MarkState::DE_ALLOCATED)
+        throw std::runtime_error("mark_v2() try to mark a deallocated object");
+    
     ObjectInfo objectInfo = gcptr->getObjectInfo();
 
     if (objectInfo.object_addr == nullptr || objectInfo.region == nullptr) return;
