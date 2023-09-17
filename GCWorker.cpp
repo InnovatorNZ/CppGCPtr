@@ -119,11 +119,12 @@ void GCWorker::mark(void* object_addr) {
 
 void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (gcptr == nullptr) return;
-    if (gcptr->getInlineMarkState() == MarkState::DE_ALLOCATED)
-        throw std::runtime_error("mark_v2() try to mark a deallocated object");
-    
-    ObjectInfo objectInfo = gcptr->getObjectInfo();
+    if (gcptr->getInlineMarkState() == MarkState::DE_ALLOCATED) {
+        std::cerr << "mark_v2() try to mark a deallocated object, addr=" << (void*) gcptr << std::endl;
+        throw std::exception();
+    }
 
+    ObjectInfo objectInfo = gcptr->getObjectInfo();
     if (objectInfo.object_addr == nullptr || objectInfo.region == nullptr) return;
     MarkState c_markstate = GCPhase::getCurrentMarkState();
     if (useInlineMarkstate) {
@@ -180,8 +181,8 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
             constexpr auto _max = [](int x, int y) constexpr { return x > y ? x : y; };
             constexpr int tail_offset =
-                sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
-                sizeof(std::shared_ptr<GCRegion>) + sizeof(WeakSpinReadWriteLock);
+                    sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
+                    sizeof(std::shared_ptr<GCRegion>) + sizeof(WeakSpinReadWriteLock);
             char* tail_addr = n_addr + tail_offset;
             int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {
@@ -197,7 +198,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
 #endif
                 mark_v2(next_ptr);
             } else {
-                std::clog << "Identifier head found at " << (void*)n_addr << " but not found tail" << std::endl;
+                std::clog << "Identifier head found at " << (void*) n_addr << " but not found tail" << std::endl;
             }
         }
     }
