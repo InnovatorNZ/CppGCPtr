@@ -120,7 +120,7 @@ void GCWorker::mark(void* object_addr) {
 void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (gcptr == nullptr) return;
     if (gcptr->getInlineMarkState() == MarkState::DE_ALLOCATED) {
-        std::cerr << "mark_v2() try to mark a deallocated object, addr=" << (void*) gcptr << std::endl;
+        std::cerr << "mark_v2() try to mark a deallocated object, &gcptr=" << (void*)gcptr << std::endl;
         throw std::exception();
     }
 
@@ -166,7 +166,9 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         }
     } else {
         if (region == nullptr || region->isEvacuated() || !region->inside_region(object_addr, object_size)) {
-            std::clog << "Evacuated region or Out of range!" << std::endl;
+            std::clog << "Evacuated Region or Out of Range! " <<
+                "region= " << (void*)region << ", isEvacuated=" << (region == nullptr ? -1 : region->isEvacuated()) <<
+                ", object_addr=" << object_addr << ", object_size=" << object_size << std::endl;
             throw std::exception();
             return;
         }
@@ -174,15 +176,15 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         region->mark(object_addr, object_size);
     }
 
-    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 72 : 48;
+    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 64 : 40;
     char* cptr = reinterpret_cast<char*>(object_addr);
     for (char* n_addr = cptr; n_addr < cptr + object_size - SIZEOF_GCPTR; n_addr += sizeof(void*)) {
         int identifier_head = *(reinterpret_cast<int*>(n_addr));
         if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
             constexpr auto _max = [](int x, int y) constexpr { return x > y ? x : y; };
             constexpr int tail_offset =
-                    sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
-                    sizeof(std::shared_ptr<GCRegion>) + sizeof(WeakSpinReadWriteLock);
+                sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
+                sizeof(std::shared_ptr<GCRegion>) + sizeof(std::unique_ptr<IReadWriteLock>);
             char* tail_addr = n_addr + tail_offset;
             int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {

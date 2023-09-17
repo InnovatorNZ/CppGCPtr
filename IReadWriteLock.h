@@ -6,9 +6,11 @@ public:
 
     IReadWriteLock(const IReadWriteLock&) = delete;
 
-    IReadWriteLock(IReadWriteLock&&) = delete;
+    IReadWriteLock(IReadWriteLock&&) noexcept = delete;
 
     IReadWriteLock& operator=(const IReadWriteLock&) = delete;
+
+    virtual ~IReadWriteLock() = default;
 
     virtual void lockRead() = 0;
 

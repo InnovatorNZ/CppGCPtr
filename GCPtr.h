@@ -78,7 +78,7 @@ private:
     unsigned int obj_size;
     bool is_root;
     std::shared_ptr<GCRegion> region;
-    WeakSpinReadWriteLock ptrlock;
+    std::unique_ptr<IReadWriteLock> ptrLock;
     const int identifier_tail = GCPTR_IDENTIFIER_TAIL;
 
     bool needHeal() const {
@@ -104,8 +104,16 @@ private:
             this->casInlineMarkState(_markState, MarkState::REMAPPED);
     }
 
+    void initPtrLock() {
+        if constexpr (GCParameter::enablePtrRWLock)
+            ptrLock = std::make_unique<WeakSpinReadWriteLock>();
+        else
+            ptrLock = nullptr;
+    }
+
 public:
     GCPtr() : obj(nullptr), obj_size(0) {
+        initPtrLock();
         is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
@@ -113,12 +121,14 @@ public:
     }
 
     explicit GCPtr(bool is_root) : obj(nullptr), obj_size(0), is_root(is_root) {
+        initPtrLock();
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
     }
 
     explicit GCPtr(T* obj, const std::shared_ptr<GCRegion>& region = nullptr, bool is_root = false) {
+        initPtrLock();
         GCPhase::EnterCriticalSection();
         if (!is_root && GCWorker::getWorker()->is_root(this))
             is_root = true;
@@ -171,11 +181,11 @@ public:
 
     void set(T* obj, const std::shared_ptr<GCRegion>& region = nullptr) {
         // 备注：当且仅当obj是新的、无中生有的时候才需要调用set()以注册析构函数和移动构造函数
-        ptrlock.lockWrite();
+        if (ptrLock != nullptr) ptrLock->lockWrite();
         this->obj = obj;
         this->obj_size = sizeof(*obj);
         this->region = region;
-        ptrlock.unlockWrite();
+        if (ptrLock != nullptr) ptrLock->unlockWrite();
         GCWorker::getWorker()->registerObject(obj, sizeof(*obj));
         if (GCWorker::getWorker()->destructorEnabled()) {
             GCWorker::getWorker()->registerDestructor(obj,
@@ -196,11 +206,11 @@ public:
     }
 
     ObjectInfo getObjectInfo() override {
-        ptrlock.lockRead();
+        if (ptrLock != nullptr) ptrLock->lockRead();
         void* obj_addr = this->getVoidPtr();
         unsigned int obj_size = this->obj_size;
         GCRegion* region = this->region.get();
-        ptrlock.unlockRead();
+        if (ptrLock != nullptr) ptrLock->unlockRead();
         return ObjectInfo{ obj_addr, obj_size, region };
     }
 
@@ -212,14 +222,14 @@ public:
                 GCWorker::getWorker()->addSATB(this->getObjectInfo());
             }
             setInlineMarkState(other);
-            ptrlock.lockWrite();
+            if (ptrLock != nullptr) ptrLock->lockWrite();
             if constexpr (GCParameter::useCopiedMarkstate)
                 this->obj.store(other.obj.load());
             else
                 this->obj = const_cast<GCPtr&>(other).getRaw();
             this->obj_size = other.obj_size;
             this->region = other.region;
-            ptrlock.unlockWrite();
+            if (ptrLock != nullptr) ptrLock->unlockWrite();
             /*
              * 赋值运算符重载无需再次判别is_root，有且仅有构造函数需要
             if (GCWorker::getWorker()->is_root(this)) {
@@ -239,11 +249,11 @@ public:
                 GCWorker::getWorker()->addSATB(this->getObjectInfo());
                 GCPhase::LeaveCriticalSection();
             }
-            ptrlock.lockWrite(true);
+            if (ptrLock != nullptr) ptrLock->lockWrite(true);
             this->obj = nullptr;
             this->obj_size = 0;
             this->region = nullptr;
-            ptrlock.unlockWrite();
+            if (ptrLock != nullptr) ptrLock->unlockWrite();
         }
         return *this;
     }
@@ -258,15 +268,16 @@ public:
 
     GCPtr(const GCPtr& other) : GCPtrBase(other), obj_size(other.obj_size) {
         // std::clog << "Copy constructor" << std::endl;
+        initPtrLock();
         GCPhase::EnterCriticalSection();
         // this->setInlineMarkState(other.getInlineMarkState());
-        ptrlock.lockWrite(true);
+        if (ptrLock != nullptr) ptrLock->lockWrite(true);
         if constexpr (GCParameter::useCopiedMarkstate)
             this->obj.store(other.obj.load());
         else
             this->obj = const_cast<GCPtr&>(other).getRaw();
         this->region = other.region;
-        ptrlock.unlockWrite();
+        if (ptrLock != nullptr) ptrLock->unlockWrite();
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
@@ -298,6 +309,7 @@ public:
     GCPtr(const GCPtr<U>& other) : GCPtrBase(other),
                                    obj_size(other.obj_size) {
         // this->setInlineMarkState(other.getInlineMarkState());
+        initPtrLock();
         if constexpr (GCParameter::useCopiedMarkstate)
             this->obj.store(other.obj.load());
         else
