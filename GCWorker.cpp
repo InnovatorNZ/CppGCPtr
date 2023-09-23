@@ -121,7 +121,8 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (gcptr == nullptr) return;
     if (gcptr->getInlineMarkState() == MarkState::DE_ALLOCATED) {
         std::cerr << "mark_v2() try to mark a deallocated object, &gcptr=" << (void*)gcptr << std::endl;
-        throw std::exception();
+        //throw std::exception();
+        return;
     }
 
     ObjectInfo objectInfo = gcptr->getObjectInfo();
@@ -216,18 +217,22 @@ void GCWorker::GCThreadLoop() {
             ready_ = false;
         }
         if (stop_) break;
-        startGC();
-        beginMark();
-        GCUtil::stop_the_world(GCPhase::getSTWLock(), threadPool.get(), GCParameter::suspendThreadsWhenSTW);
-        auto start_time = std::chrono::high_resolution_clock::now();
-        triggerSATBMark();
-        selectRelocationSet();
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-        std::clog << "Stop-the-world duration: " << std::dec << duration.count() << " us" << std::endl;
-        GCUtil::resume_the_world(GCPhase::getSTWLock());
-        beginSweep();
-        endGC();
+        {
+            startGC();
+            GCUtil::stop_the_world(GCPhase::getSTWLock(), threadPool.get(), GCParameter::suspendThreadsWhenSTW);
+            auto start_time = std::chrono::high_resolution_clock::now();
+            beginMark();
+            triggerSATBMark();
+            selectRelocationSet();
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+            std::clog << "Stop-the-world duration: " << std::dec << duration.count() << " us" << std::endl;
+            GCUtil::resume_the_world(GCPhase::getSTWLock());
+            beginSweep();
+            endGC();
+            if constexpr (GCParameter::waitingForGCFinished)
+                finished_gc_condition.notify_all();
+        }
     }
     std::cout << "GC thread exited." << std::endl;
 }
@@ -238,6 +243,14 @@ void GCWorker::wakeUpGCThread() {
         ready_ = true;
     }
     condition.notify_all();
+    if constexpr (GCParameter::waitingForGCFinished) {
+        std::cout << "Main thread waiting for gc finished" << std::endl;
+        {
+            std::unique_lock<std::mutex> lock(this->finished_gc_mutex);
+            finished_gc_condition.wait(lock);
+        }
+        std::cout << "Main thread was notified that gc finished" << std::endl;
+    }
 }
 
 void GCWorker::triggerGC() {

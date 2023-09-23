@@ -40,7 +40,9 @@ private:
     std::unordered_map<void*, std::function<void(void*)>> destructor_map;
     std::mutex destructor_map_mutex;
     std::mutex thread_mutex;
+    std::mutex finished_gc_mutex;
     std::condition_variable condition;
+    std::condition_variable finished_gc_condition;
     std::unique_ptr<std::thread> gc_thread;
     std::unique_ptr<GCMemoryAllocator> memoryAllocator;
     std::unique_ptr<ThreadPoolExecutor> threadPool;
