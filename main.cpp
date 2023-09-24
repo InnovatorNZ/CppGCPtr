@@ -74,6 +74,7 @@ public:
     ~MyObject() {
         delete m;
         m = nullptr;
+        a = -1;
     }
 
 private:
@@ -219,7 +220,7 @@ int main() {
         GCPtr<MyObject> obj10 = gc::make_gc<MyObject>();
         {
             srand(time(0));
-            const int arr_size = 256;
+            const int arr_size = 128;
             GCPtr<MyObject> aobj[arr_size];
             GCPtr<vector<GCPtr<MyObject>>> gcptr_vec = gc::make_gc<vector<GCPtr<MyObject>>>();
             // gcptr_vec->reserve(100000);

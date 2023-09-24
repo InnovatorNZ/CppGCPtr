@@ -120,7 +120,7 @@ void GCWorker::mark(void* object_addr) {
 void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (gcptr == nullptr) return;
     if (gcptr->getInlineMarkState() == MarkState::DE_ALLOCATED) {
-        std::cerr << "mark_v2() try to mark a deallocated object, &gcptr=" << (void*)gcptr << std::endl;
+        std::clog << "mark_v2() try to mark a deallocated object, &gcptr=" << (void*)gcptr << std::endl;
         //throw std::exception();
         return;
     }
@@ -219,9 +219,9 @@ void GCWorker::GCThreadLoop() {
         if (stop_) break;
         {
             startGC();
+            beginMark();
             GCUtil::stop_the_world(GCPhase::getSTWLock(), threadPool.get(), GCParameter::suspendThreadsWhenSTW);
             auto start_time = std::chrono::high_resolution_clock::now();
-            beginMark();
             triggerSATBMark();
             selectRelocationSet();
             auto end_time = std::chrono::high_resolution_clock::now();
