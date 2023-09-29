@@ -40,6 +40,7 @@ public:
         c("Hello, GCPtr!"),
 #endif
         b(0), h(0), f(0) {
+        memset(l, 0, sizeof(l));
 #if DESTRUCTOR_TEST
         m = new MyObject2();
 #else
