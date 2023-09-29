@@ -4,9 +4,9 @@
 #include "GCPtr.h"
 
 #define TRIGGER_GC 1
-#define MULTITHREAD_TEST 0
+#define MULTITHREAD_TEST 1
 #define DESTRUCTOR_TEST 0
-#define WITH_STL_TEST 0
+#define WITH_STL_TEST 1
 
 #if !_WIN32
 void Sleep(int millisecond) {
@@ -67,7 +67,7 @@ public:
         this->f = other.f;
         this->e = std::move(other.e);
         this->h = other.h;
-        ::memcpy(this->l, other.l, sizeof(other.l));
+        memcpy(this->l, other.l, sizeof(other.l));
         this->m = other.m;
         other.m = nullptr;
     }
@@ -171,12 +171,12 @@ int main() {
             obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
             obj2->setG(gc::make_gc<MyObject>());
         }
-#if 0   // todo: investigate bug
+
         GCPtr<Base> polyTestVar = gc::make_gc<Derived>(3.14);
         for (int j = 0; j <= 100; j++) {
             GCPtr<Base> polytest2 = gc::make_gc<Derived>(2.71828);
         }
-#endif
+
         std::this_thread::yield();
 #if 0
         cout << &obj1 << " " << &obj2 << " " << &obj3 << " " << &obj3->d << " " <<
