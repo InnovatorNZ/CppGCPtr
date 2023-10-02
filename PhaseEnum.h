@@ -5,6 +5,7 @@
 #include <stdexcept>
 
 enum class MarkState {
+    //INVALID,
     REMAPPED,
     M0,
     M1,

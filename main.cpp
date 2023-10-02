@@ -10,7 +10,7 @@
 
 #if !_WIN32
 void Sleep(int millisecond) {
-    GCUtil::sleep((float)millisecond / 1000);
+    GCUtil::sleep((float) millisecond / 1000);
 }
 #endif
 
@@ -37,9 +37,9 @@ public:
 
     MyObject() : a(rand() % RAND_MAX),
 #if DESTRUCTOR_TEST
-        c("Hello, GCPtr!"),
+                 c("Hello, GCPtr!"),
 #endif
-        b(0), h(0), f(0) {
+                 b(0), h(0), f(0) {
         memset(l, 0, sizeof(l));
 #if DESTRUCTOR_TEST
         m = new MyObject2();
@@ -57,11 +57,11 @@ public:
         return h;
     }
 
-    MyObject(MyObject&& other) noexcept :
+    MyObject(MyObject&& other) noexcept:
 #if DESTRUCTOR_TEST
-        c(std::move(other.c)),
+            c(std::move(other.c)),
 #endif
-        d(std::move(other.d)) {
+            d(std::move(other.d)) {
         this->a = other.a;
         this->b = other.b;
         this->f = other.f;
@@ -139,6 +139,66 @@ bool in_aobj_func(void* gcptr, GCPtr<MyObject> _aobj[], int arr_size) {
         }
     }
     return false;
+}
+
+
+namespace DijkstraTest {
+    using namespace std;
+    const int INF = std::numeric_limits<int>::max();
+
+    struct Edge {
+        int to, weight;
+
+        Edge(int to, int weight) : to(to), weight(weight) {}
+    };
+
+    class Dijkstra {
+    private:
+        GCPtr<vector<vector<Edge>>> adj;
+
+        GCPtr<vector<int>> dijkstra(int start) {
+            int n = adj->size();
+            GCPtr<vector<int>> dist = gc::make_gc<vector<int>>(n, INF);
+            dist->at(start) = 0;
+            GCPtr<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>>> pque =
+                    gc::make_gc<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>>>();
+            pque->push(make_pair(0, start));
+            while (!pque->empty()) {
+                int u = pque->top().second;
+                pque->pop();
+                for (auto e : adj->at(u)) {
+                    int v = e.to, w = e.weight;
+                    if (dist->at(u) != INF && dist->at(u) + w < dist->at(v)) {
+                        dist->at(v) = dist->at(u) + w;
+                        pque->push(make_pair(dist->at(v), v));
+                    }
+                }
+            }
+            return dist;
+        }
+
+    public:
+        void run() {
+            freopen("../in.txt", "r", stdin);
+            int n, m, start;
+            cin >> n >> m >> start;
+            if (adj != nullptr) {
+                adj = gc::make_gc<vector<vector<Edge>>>();
+            }
+            adj->resize(n);
+            for (int i = 0; i < m; ++i) {
+                int u, v, w;
+                cin >> u >> v >> w;
+                adj->at(u).push_back(Edge(v, w));
+            }
+            fclose(stdin);
+            GCPtr<vector<int>> ans = dijkstra(start);
+            for (int i = 0; i < n; ++i) {
+                cout << ans->at(i) << " ";
+            }
+            cout << endl;
+        }
+    };
 }
 
 GCPtr<MyObject> obj3;
@@ -250,7 +310,7 @@ int main() {
                     double _b = aobj[r]->b;
                 }
             }
-            obj11->b = (double)obj10->a / 2;
+            obj11->b = (double) obj10->a / 2;
         }
         obj10->b = obj10->d->a * 2;
 

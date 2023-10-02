@@ -63,6 +63,10 @@ public:
         return ptr;
     }
 
+    T operator*() const {
+        return *ptr;
+    }
+
     T* value() const {
         return ptr;
     }
@@ -177,6 +181,10 @@ public:
 
     PtrGuard<T> operator->() const {
         return this->get();
+    }
+
+    T operator*() const {
+        return *(this->get());
     }
 
     void set(T* obj, const std::shared_ptr<GCRegion>& region = nullptr) {
