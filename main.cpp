@@ -159,7 +159,7 @@ namespace DijkstraTest {
         GCPtr<vector<int>> dijkstra(int start) {
             int n = adj->size();
             GCPtr<vector<int>> dist = gc::make_gc<vector<int>>(n, INF);
-            dist->at(start) = 0;
+            (*dist)[start] = 0;
             GCPtr<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>>> pque =
                     gc::make_gc<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>>>();
             pque->push(make_pair(0, start));
@@ -168,9 +168,9 @@ namespace DijkstraTest {
                 pque->pop();
                 for (auto e : adj->at(u)) {
                     int v = e.to, w = e.weight;
-                    if (dist->at(u) != INF && dist->at(u) + w < dist->at(v)) {
+                    if ((*dist)[u] != INF && dist->at(u) + w < dist->at(v)) {
                         dist->at(v) = dist->at(u) + w;
-                        pque->push(make_pair(dist->at(v), v));
+                        pque->emplace(dist->at(v), v);
                     }
                 }
             }

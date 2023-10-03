@@ -63,7 +63,7 @@ public:
         return ptr;
     }
 
-    T operator*() const {
+    T& operator*() const {
         return *ptr;
     }
 
@@ -73,9 +73,10 @@ public:
 };
 
 template<typename T>
-class GCPtr : public GCPtrBase {
+class GCPtr_ : public GCPtrBase {
     template<typename U>
-    friend class GCPtr;
+    friend
+    class GCPtr_;
 
 private:
     std::atomic<T*> obj;
@@ -116,7 +117,7 @@ private:
     }
 
 public:
-    GCPtr() : obj(nullptr), obj_size(0) {
+    GCPtr_() : obj(nullptr), obj_size(0) {
         initPtrLock();
         is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
@@ -124,14 +125,14 @@ public:
         }
     }
 
-    explicit GCPtr(bool is_root) : obj(nullptr), obj_size(0), is_root(is_root) {
+    explicit GCPtr_(bool is_root) : obj(nullptr), obj_size(0), is_root(is_root) {
         initPtrLock();
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
         }
     }
 
-    explicit GCPtr(T* obj, const std::shared_ptr<GCRegion>& region = nullptr, bool is_root = false) {
+    explicit GCPtr_(T* obj, const std::shared_ptr<GCRegion>& region = nullptr, bool is_root = false) {
         initPtrLock();
         GCPhase::EnterCriticalSection();
         if (!is_root && GCWorker::getWorker()->is_root(this))
@@ -175,18 +176,6 @@ public:
         return PtrGuard<T>(obj, region.get());
     }
 
-    PtrGuard<T> operator->() {
-        return this->get();
-    }
-
-    PtrGuard<T> operator->() const {
-        return this->get();
-    }
-
-    T operator*() const {
-        return *(this->get());
-    }
-
     void set(T* obj, const std::shared_ptr<GCRegion>& region = nullptr) {
         // 备注：当且仅当obj是新的、无中生有的时候才需要调用set()以注册析构函数和移动构造函数
         if (ptrLock != nullptr) ptrLock->lockWrite();
@@ -219,10 +208,10 @@ public:
         unsigned int obj_size = this->obj_size;
         GCRegion* region = this->region.get();
         if (ptrLock != nullptr) ptrLock->unlockRead();
-        return ObjectInfo{ obj_addr, obj_size, region };
+        return ObjectInfo{obj_addr, obj_size, region};
     }
 
-    GCPtr& operator=(const GCPtr& other) {
+    GCPtr_& operator=(const GCPtr_& other) {
         if (this != &other) {
             // GCPhase::EnterCriticalSection();
             if (this->obj != nullptr && this->obj != other.obj
@@ -234,7 +223,7 @@ public:
             if constexpr (GCParameter::useCopiedMarkstate)
                 this->obj.store(other.obj.load());
             else
-                this->obj = const_cast<GCPtr&>(other).getRaw();
+                this->obj = const_cast<GCPtr_&>(other).getRaw();
             this->obj_size = other.obj_size;
             this->region = other.region;
             if (ptrLock != nullptr) ptrLock->unlockWrite();
@@ -250,7 +239,7 @@ public:
         return *this;
     }
 
-    GCPtr& operator=(std::nullptr_t) {
+    GCPtr_& operator=(std::nullptr_t) {
         if (this->obj != nullptr) {
             if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
                 GCPhase::EnterCriticalSection();
@@ -266,7 +255,7 @@ public:
         return *this;
     }
 
-    bool operator==(GCPtr<T>& other) {
+    bool operator==(GCPtr_<T>& other) {
         return this->getRaw() == other.getRaw();
     }
 
@@ -274,7 +263,7 @@ public:
         return this->obj == nullptr;
     }
 
-    GCPtr(const GCPtr& other) : GCPtrBase(other), obj_size(other.obj_size) {
+    GCPtr_(const GCPtr_& other) : GCPtrBase(other), obj_size(other.obj_size) {
         // std::clog << "Copy constructor" << std::endl;
         initPtrLock();
         GCPhase::EnterCriticalSection();
@@ -283,7 +272,7 @@ public:
         if constexpr (GCParameter::useCopiedMarkstate)
             this->obj.store(other.obj.load());
         else
-            this->obj = const_cast<GCPtr&>(other).getRaw();
+            this->obj = const_cast<GCPtr_&>(other).getRaw();
         this->region = other.region;
         if (ptrLock != nullptr) ptrLock->unlockWrite();
         this->is_root = GCWorker::getWorker()->is_root(this);
@@ -294,7 +283,7 @@ public:
     }
 
 #if 0
-    GCPtr(GCPtr&& other) noexcept : GCPtrBase(other), obj_size(other.obj_size) {
+    GCPtr_(GCPtr_&& other) noexcept : GCPtrBase(other), obj_size(other.obj_size) {
         // std::clog << "Move constructor" << std::endl;
         GCPhase::EnterCriticalSection();
         this->obj.store(other.obj.load());
@@ -314,14 +303,14 @@ public:
 #endif
 
     template<typename U>
-    GCPtr(const GCPtr<U>& other) : GCPtrBase(other),
-                                   obj_size(other.obj_size) {
+    GCPtr_(const GCPtr_<U>& other) : GCPtrBase(other),
+                                     obj_size(other.obj_size) {
         // this->setInlineMarkState(other.getInlineMarkState());
         initPtrLock();
         if constexpr (GCParameter::useCopiedMarkstate)
             this->obj.store(other.obj.load());
         else
-            this->obj = static_cast<T*>(const_cast<GCPtr<U>&>(other).getRaw());
+            this->obj = static_cast<T*>(const_cast<GCPtr_<U>&>(other).getRaw());
         this->region = other.region;
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
@@ -335,7 +324,7 @@ public:
         */
     }
 
-    ~GCPtr() override {
+    ~GCPtr_() override {
         if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK && this->obj != nullptr) {
             GCPhase::EnterCriticalSection();
             GCWorker::getWorker()->addSATB(this->getObjectInfo());
@@ -344,6 +333,58 @@ public:
         if (is_root) {
             GCWorker::getWorker()->removeRoot(this);
         }
+    }
+};
+
+template<typename T>
+class GCPtr : public GCPtr_<T> {
+public:
+    using GCPtr_<T>::GCPtr_;
+
+    PtrGuard<T> operator->() {
+        return this->get();
+    }
+
+    PtrGuard<T> operator->() const {
+        return this->get();
+    }
+
+    T& operator*() const {
+        return *(this->get());
+    }
+
+    T& operator*() {
+        return *(this->get());
+    }
+
+    GCPtr& operator=(const GCPtr& other) {
+        if (this != &other) {
+            GCPtr_<T>::operator=(other);
+        }
+        return *this;
+    }
+
+    GCPtr& operator=(std::nullptr_t) {
+        GCPtr_<T>::operator=(nullptr);
+        return *this;
+    }
+};
+
+template<>
+class GCPtr<void> : public GCPtr_<void> {
+public:
+    using GCPtr_<void>::GCPtr_;
+
+    GCPtr& operator=(const GCPtr& other) {
+        if (this != &other) {
+            GCPtr_<void>::operator=(other);
+        }
+        return *this;
+    }
+
+    GCPtr& operator=(std::nullptr_t) {
+        GCPtr_<void>::operator=(nullptr);
+        return *this;
     }
 };
 
