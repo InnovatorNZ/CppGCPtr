@@ -39,7 +39,7 @@ public:
 
     PtrGuard(const PtrGuard&) = delete;
 
-    PtrGuard(PtrGuard&&) = delete;
+    PtrGuard(PtrGuard&&) noexcept = delete;
 
     void lock() {
         if (!owns) {

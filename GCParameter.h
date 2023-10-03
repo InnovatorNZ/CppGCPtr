@@ -22,5 +22,5 @@ public:
 	static constexpr bool useCopiedMarkstate = false;			// 是否引入无状态的内联标记（参见Solution 2.1 rev），可以解决当启用移动构造函数时的循环引用问题；不推荐，目前实现有问题，不要启用
 	static constexpr bool doNotRelocatePtrGuard = false;		// 禁止对任何存在PtrGuard引用的region重分配，若禁用，则会自旋等待析构后再重分配；建议当存在相当长生命周期的PtrGuard时启用该选项；前提条件：启用重分配
 	static constexpr bool enablePtrRWLock = true;				// 启用针对GCPtr的读写锁，启用该选项可以使GCPtr变得线程安全，无此需求请禁用
-    static constexpr bool waitingForGCFinished = false;          // disable gc thread, serializable gc
+	static constexpr bool waitingForGCFinished = false;			// 完全Stop-the-world的GC，若遇上线程安全问题，可启用此选项进行debug，否则请禁用
 };
