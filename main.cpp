@@ -141,7 +141,6 @@ bool in_aobj_func(void* gcptr, GCPtr<MyObject> _aobj[], int arr_size) {
     return false;
 }
 
-
 namespace DijkstraTest {
     using namespace std;
     const int INF = 0x7fffffff;
@@ -159,17 +158,17 @@ namespace DijkstraTest {
         GCPtr<vector<int>> dijkstra(int start) {
             int n = adj->size();
             GCPtr<vector<int>> dist = gc::make_gc<vector<int>>(n, INF);
-            (*dist)[start] = 0;
+            dist->at(start) = 0;
             GCPtr<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<>>> pque =
-                    gc::make_gc<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<>>>();
+                gc::make_gc<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<>>>();
             pque->emplace(0, start);
             while (!pque->empty()) {
                 int u = pque->top().second;
                 pque->pop();
-                for (auto e : adj->at(u)) {
+                for (auto& e : adj->at(u)) {
                     int v = e.to, w = e.weight;
-                    if ((*dist)[u] != INF && dist->at(u) + w < dist->at(v)) {
-                        dist->at(v) = dist->at(u) + w;
+                    if ((*dist)[u] != INF && (*dist)[u] + w < (*dist)[v]) {
+                        (*dist)[v] = (*dist)[u] + w;
                         pque->emplace(dist->at(v), v);
                     }
                 }
@@ -179,17 +178,16 @@ namespace DijkstraTest {
 
     public:
         void run() {
-            freopen("../in.txt", "r", stdin);
+            if (freopen("../in.txt", "r", stdin) == NULL)
+                throw std::runtime_error("in.txt not found");
             int n, m, start;
             cin >> n >> m >> start;
-            if (adj != nullptr) {
-                adj = gc::make_gc<vector<vector<Edge>>>();
-            }
+            adj = gc::make_gc<vector<vector<Edge>>>();
             adj->resize(n);
             for (int i = 0; i < m; ++i) {
                 int u, v, w;
                 cin >> u >> v >> w;
-                adj->at(u).push_back(Edge(v, w));
+                adj->at(u).emplace_back(v, w);
             }
             fclose(stdin);
             GCPtr<vector<int>> ans = dijkstra(start);
@@ -212,6 +210,7 @@ int main() {
     long long time_ = 0;
     Sleep(500);
 
+    DijkstraTest::Dijkstra dijkstra;
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::steady_clock::now();
         GCPtr<MyObject> obj2;
@@ -231,6 +230,7 @@ int main() {
             obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
             obj2->setG(gc::make_gc<MyObject>());
         }
+        dijkstra.run();
 
         GCPtr<Base> polyTestVar = gc::make_gc<Derived>(3.14);
         for (int j = 0; j <= 100; j++) {
