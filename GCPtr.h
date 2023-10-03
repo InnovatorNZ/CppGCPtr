@@ -340,6 +340,7 @@ template<typename T>
 class GCPtr : public GCPtr_<T> {
 public:
     using GCPtr_<T>::GCPtr_;
+    using GCPtr_<T>::operator=;
 
     PtrGuard<T> operator->() {
         return this->get();
@@ -356,36 +357,13 @@ public:
     T& operator*() {
         return *(this->get());
     }
-
-    GCPtr& operator=(const GCPtr& other) {
-        if (this != &other) {
-            GCPtr_<T>::operator=(other);
-        }
-        return *this;
-    }
-
-    GCPtr& operator=(std::nullptr_t) {
-        GCPtr_<T>::operator=(nullptr);
-        return *this;
-    }
 };
 
 template<>
 class GCPtr<void> : public GCPtr_<void> {
 public:
     using GCPtr_<void>::GCPtr_;
-
-    GCPtr& operator=(const GCPtr& other) {
-        if (this != &other) {
-            GCPtr_<void>::operator=(other);
-        }
-        return *this;
-    }
-
-    GCPtr& operator=(std::nullptr_t) {
-        GCPtr_<void>::operator=(nullptr);
-        return *this;
-    }
+    using GCPtr_<void>::operator=;
 };
 
 namespace gc {

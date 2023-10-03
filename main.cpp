@@ -144,7 +144,7 @@ bool in_aobj_func(void* gcptr, GCPtr<MyObject> _aobj[], int arr_size) {
 
 namespace DijkstraTest {
     using namespace std;
-    const int INF = std::numeric_limits<int>::max();
+    const int INF = 0x7fffffff;
 
     struct Edge {
         int to, weight;
@@ -160,9 +160,9 @@ namespace DijkstraTest {
             int n = adj->size();
             GCPtr<vector<int>> dist = gc::make_gc<vector<int>>(n, INF);
             (*dist)[start] = 0;
-            GCPtr<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>>> pque =
-                    gc::make_gc<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>>>();
-            pque->push(make_pair(0, start));
+            GCPtr<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<>>> pque =
+                    gc::make_gc<priority_queue<pair<int, int>, vector<pair<int, int>>, greater<>>>();
+            pque->emplace(0, start);
             while (!pque->empty()) {
                 int u = pque->top().second;
                 pque->pop();
