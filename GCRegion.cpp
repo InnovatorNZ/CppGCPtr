@@ -96,8 +96,10 @@ void GCRegion::free(void* addr, size_t size) {
                 bitmap->mark(addr, size, MarkStateBit::NOT_ALLOCATED);
             }
         }
-    } else
-        std::clog << "Free address out of range." << std::endl;
+    } else {
+        std::clog << "Free address out of range!" << std::endl;
+        throw std::exception();
+    }
 }
 
 float GCRegion::getFragmentRatio() const {
@@ -232,7 +234,8 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
                 this->relocateObject(object_addr, object_size, memoryAllocator);
             } else if (GCPhase::needSweep(markState)) { // 非存活对象，调用其析构函数
                 // 由于region触发重定位后是不会再被使用的，因此无需再次标记
-                // bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
+                // std::clog << "Freeing " << object_addr << " (" << MarkStateUtil::toString(markState) << ")" << std::endl;
+                bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
                 if constexpr (enable_destructor) {
                     callDestructor(object_addr);
                 }

@@ -167,8 +167,8 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         }
     } else {
         if (region == nullptr || region->isEvacuated() || !region->inside_region(object_addr, object_size)) {
-            std::clog << "Evacuated Region or Out of Range! " <<
-                "region= " << (void*)region << ", isEvacuated=" << (region == nullptr ? -1 : region->isEvacuated()) <<
+            std::cerr << "Exception occurred: Evacuated region or Out of range! " <<
+                "&region=" << (void*)region << ", isEvacuated=" << (region == nullptr ? -1 : region->isEvacuated()) <<
                 ", object_addr=" << object_addr << ", object_size=" << object_size << std::endl;
             throw std::exception();
             return;
