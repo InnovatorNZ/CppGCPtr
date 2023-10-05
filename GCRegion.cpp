@@ -207,6 +207,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
     if (this->canFree() && !enable_destructor) {      // 已经没有存活对象了
         return;
     }
+    while (use_count != 0);
     // std::clog << "Relocating region " << this << std::endl;
     if constexpr (use_regional_hashmap) {
         auto regionalMapIterator = regionalHashMap->getIterator();
