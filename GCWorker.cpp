@@ -178,18 +178,19 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
     }
 
     constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 64 : 40;
+    constexpr int vfptr_size = sizeof(void*);
     char* cptr = reinterpret_cast<char*>(object_addr);
-    for (char* n_addr = cptr; n_addr < cptr + object_size - SIZEOF_GCPTR; n_addr += sizeof(void*)) {
-        int identifier_head = *(reinterpret_cast<int*>(n_addr));
+    for (char* n_addr = cptr; n_addr <= cptr + object_size - SIZEOF_GCPTR; n_addr += sizeof(void*)) {
+        int identifier_head = *(reinterpret_cast<int*>(n_addr + vfptr_size));
         if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
             constexpr auto _max = [](int x, int y) constexpr { return x > y ? x : y; };
             constexpr int tail_offset =
                 sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
                 sizeof(std::shared_ptr<GCRegion>) + sizeof(std::unique_ptr<IReadWriteLock>);
-            char* tail_addr = n_addr + tail_offset;
+            char* tail_addr = n_addr + vfptr_size + tail_offset;
             int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {
-                GCPtrBase* next_ptr = reinterpret_cast<GCPtrBase*>(n_addr - sizeof(void*));
+                GCPtrBase* next_ptr = reinterpret_cast<GCPtrBase*>(n_addr);
 #if 0
                 // To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
                 void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState)));
@@ -201,7 +202,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
 #endif
                 mark_v2(next_ptr);
             } else {
-                std::clog << "Identifier head found at " << (void*) n_addr << " but not found tail" << std::endl;
+                std::clog << "Identifier head found at " << (void*)n_addr << " but not found tail" << std::endl;
             }
         }
     }
@@ -348,6 +349,10 @@ void GCWorker::addSATB(const ObjectInfo& objectInfo) {
         satb_queue.push_back(objectInfo.object_addr);
     } else {
         int pool_idx = getPoolIdx();
+        if (objectInfo.region == nullptr || objectInfo.region->isEvacuated()) {
+            std::cerr << "SATB for object with evacuated region, object_addr=" << objectInfo.object_addr << std::endl;
+            throw std::exception();
+        }
         std::unique_lock<std::mutex> lock(satb_queue_pool_mutex[pool_idx]);
         satb_queue_pool[pool_idx].emplace_back(objectInfo);
     }

@@ -319,7 +319,7 @@ bool GCRegion::needEvacuate() const {
 void GCRegion::free() {
     // 释放整个region，只保留转发表
     evacuated = true;
-    bitmap = nullptr;     // TODO: debug结束取消注释该行
+    bitmap = nullptr;
     regionalHashMap = nullptr;
     destructor_map = nullptr;
     move_constructor_map = nullptr;
