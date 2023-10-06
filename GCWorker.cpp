@@ -348,11 +348,11 @@ void GCWorker::addSATB(const ObjectInfo& objectInfo) {
         std::unique_lock<std::mutex> lock(this->satb_queue_mutex);
         satb_queue.push_back(objectInfo.object_addr);
     } else {
-        int pool_idx = getPoolIdx();
         if (objectInfo.region == nullptr || objectInfo.region->isEvacuated()) {
             std::cerr << "SATB for object with evacuated region, object_addr=" << objectInfo.object_addr << std::endl;
             throw std::exception();
         }
+        int pool_idx = getPoolIdx();
         std::unique_lock<std::mutex> lock(satb_queue_pool_mutex[pool_idx]);
         satb_queue_pool[pool_idx].emplace_back(objectInfo);
     }

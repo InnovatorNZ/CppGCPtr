@@ -87,6 +87,8 @@ public:
     int a;
     float b;
 
+    Base() : a(0), b(0.2) {}
+
     virtual ~Base() = default;
 
     virtual void print() = 0;
@@ -213,15 +215,18 @@ int main() {
     long long time_ = 0;
     Sleep(500);
 
-#if 0
-    std::thread dk_th([] {
-        GCPtr<DijkstraTest::Dijkstra> dijkstra = gc::make_gc<DijkstraTest::Dijkstra>();
-        for (int i = 0; i < n * 2; i++)
-            dijkstra->run(false);
-    });
-#endif
-
-    GCPtr<DijkstraTest::Dijkstra> dijkstra = gc::make_gc<DijkstraTest::Dijkstra>();
+    const bool testDKThread = false;
+    GCPtr<DijkstraTest::Dijkstra> dijkstra;
+    std::thread dk_th;
+    if (testDKThread) {
+        dk_th = std::thread([] {
+            GCPtr<DijkstraTest::Dijkstra> dijkstra = gc::make_gc<DijkstraTest::Dijkstra>();
+            for (int i = 0; i < n * 2; i++)
+                dijkstra->run(false);
+        });
+    } else {
+        dijkstra = gc::make_gc<DijkstraTest::Dijkstra>();
+    }
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::steady_clock::now();
         GCPtr<MyObject> obj2;
@@ -241,7 +246,8 @@ int main() {
             obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
             obj2->setG(gc::make_gc<MyObject>());
         }
-        dijkstra->run(false);
+        if (!testDKThread)
+            dijkstra->run(false);
 
         GCPtr<Base> polyTestVar = gc::make_gc<Derived>(3.14);
         for (int j = 0; j <= 100; j++) {
@@ -321,7 +327,7 @@ int main() {
                     double _b = aobj[r]->b;
                 }
             }
-            obj11->b = (double) obj10->a / 2;
+            obj11->b = (double)obj10->a / 2;
         }
         obj10->b = obj10->d->a * 2;
 
@@ -340,10 +346,11 @@ int main() {
 #endif
         Sleep(100);
     }
-    // dk_th.join();
+    if (testDKThread)
+        dk_th.join();
 
     Sleep(1000);
-    cout << "Average user thread duration: " << (double) time_ / (double) n << " ms" << endl;
+    cout << "Average user thread duration: " << (double)time_ / (double)n << " ms" << endl;
     Sleep(1000);
 
     return 0;
