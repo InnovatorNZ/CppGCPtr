@@ -241,7 +241,7 @@ namespace LRUCacheTest {
         }
 
         GCPtr<Node> get_tail() {
-            if (tail->prev == head) return GCPtr<Node>(nullptr);
+            if (tail->prev == head) return nullptr;
             return tail->prev;
         }
     };
@@ -279,7 +279,7 @@ namespace LRUCacheTest {
             if (map->size() >= capacity) {
                 GCPtr<Node> del = linkedList->get_tail();
                 if (del == nullptr)
-                    throw std::runtime_error("del is nullptr, bug founded");
+                    throw std::runtime_error("del is nullptr");
                 linkedList->remove(del);
                 map->erase(del->key);
             }
@@ -334,18 +334,22 @@ int main() {
     Sleep(500);
 
     const bool testDKThread = false;
-    GCPtr<DijkstraTest::Dijkstra> dijkstra;
     std::thread dk_th;
+    GCPtr<DijkstraTest::Dijkstra> dijkstra;
+    GCPtr<LRUCacheTest::LRUTest> lruTest;
     if (testDKThread) {
         dk_th = std::thread([] {
             GCPtr<DijkstraTest::Dijkstra> dijkstra = gc::make_gc<DijkstraTest::Dijkstra>();
-            for (int i = 0; i < n * 2; i++)
+            GCPtr<LRUCacheTest::LRUTest> lruTest = gc::make_gc<LRUCacheTest::LRUTest>();
+            for (int i = 0; i < n * 2; i++) {
                 dijkstra->run(false);
+                lruTest->run();
+            }
         });
     } else {
         dijkstra = gc::make_gc<DijkstraTest::Dijkstra>();
+        lruTest = gc::make_gc<LRUCacheTest::LRUTest>();
     }
-    LRUCacheTest::LRUTest lruTest;
 
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::steady_clock::now();
@@ -366,9 +370,10 @@ int main() {
             obj4->setG(obj5);     //还是要运行时判断是不是栈变量啊
             obj2->setG(gc::make_gc<MyObject>());
         }
-        if (!testDKThread)
+        if (!testDKThread) {
             dijkstra->run(false);
-        lruTest.run();
+            lruTest->run();
+        }
 
         GCPtr<Base> polyTestVar = gc::make_gc<Derived>(3.14);
         for (int j = 0; j <= 100; j++) {
@@ -473,6 +478,12 @@ int main() {
     Sleep(1000);
     cout << "Average user thread duration: " << (double)time_ / (double)n << " ms" << endl;
     Sleep(1000);
+
+#if 0
+    cout << "Last gc" << endl;
+    gc::triggerGC();
+    cout << "Ended last gc" << endl;
+#endif
 
     return 0;
 }

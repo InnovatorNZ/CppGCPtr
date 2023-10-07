@@ -62,6 +62,9 @@ public:
         }
     }
 
+    GCPtr_(std::nullptr_t) : GCPtr_() {
+    }
+
     explicit GCPtr_(bool is_root) : obj(nullptr), obj_size(0), is_root(is_root) {
         initPtrLock();
         if (is_root) {
@@ -122,6 +125,7 @@ public:
         this->obj_size = sizeof(*obj);
         this->region = region;
         if (ptrLock != nullptr) ptrLock->unlockWrite();
+        if (obj == nullptr) return;
         GCWorker::getWorker()->registerObject(obj, sizeof(*obj));
         if (GCWorker::getWorker()->destructorEnabled()) {
             GCWorker::getWorker()->registerDestructor(obj,
