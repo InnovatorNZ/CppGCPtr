@@ -6,71 +6,8 @@
 #include <unordered_map>
 #include <atomic>
 #include "GCPtrBase.h"
+#include "PtrGuard.h"
 #include "GCWorker.h"
-
-template<typename T>
-class PtrGuard {
-private:
-    T* ptr;
-    GCRegion* region;
-    bool owns;
-    const bool relocationEnabled;
-
-    struct DeferGuard_t {
-        explicit DeferGuard_t() = default;
-    };
-
-public:
-    static constexpr DeferGuard_t DeferGuard{};
-
-    PtrGuard(T* ptr, GCRegion* region, DeferGuard_t) :
-            ptr(ptr), region(region), owns(false),
-            relocationEnabled(GCWorker::getWorker()->relocationEnabled()) {
-    }
-
-    PtrGuard(T* ptr, GCRegion* region) : PtrGuard(ptr, region, DeferGuard) {
-        if (relocationEnabled)
-            lock();
-    }
-
-    ~PtrGuard() {
-        unlock();
-    }
-
-    PtrGuard(const PtrGuard&) = delete;
-
-    PtrGuard(PtrGuard&&) noexcept = delete;
-
-    void lock() {
-        if (!owns) {
-            region->inc_use_count();
-            owns = true;
-        }
-    }
-
-    void unlock() {
-        if (owns) {
-            region->dec_use_count();
-            owns = false;
-        }
-    }
-
-    T* get() const {
-        return ptr;
-    }
-
-    T* operator->() const {
-        return ptr;
-    }
-
-    T& operator*() const {
-        return *ptr;
-    }
-
-    T* value() const {
-        return ptr;
-    }
-};
 
 template<typename T>
 class GCPtr_ : public GCPtrBase {
@@ -163,7 +100,9 @@ public:
     }
 
     PtrGuard<T> get() {
-        return PtrGuard<T>(this->getRaw(), this->region.get());
+        T* obj = this->getRaw();
+        GCRegion* region = this->region.get();
+        return PtrGuard<T>(obj, region);
     }
 
     PtrGuard<T> get() const {

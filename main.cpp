@@ -204,6 +204,124 @@ namespace DijkstraTest {
     };
 }
 
+namespace LRUCacheTest {
+    struct Node {
+        int key, value;
+        GCPtr<Node> prev, next;
+
+        Node() : prev(nullptr), next(nullptr) {}
+
+        Node(int key, int value) : key(key), value(value), prev(nullptr), next(nullptr) {
+        }
+    };
+
+    class LinkedList {
+    private:
+        GCPtr<Node> head;
+        GCPtr<Node> tail;
+    public:
+        LinkedList() {
+            head = gc::make_gc<Node>(-2, 0);
+            tail = gc::make_gc<Node>(-3, 0);
+            head->next = tail;
+            tail->prev = head;
+        }
+
+        void remove(GCPtr<Node> node) {
+            node->prev->next = node->next;
+            node->next->prev = node->prev;
+        }
+
+        void insert_head(GCPtr<Node> node) {
+            GCPtr<Node> next = head->next;
+            node->next = next;
+            node->prev = head;
+            next->prev = node;
+            head->next = node;
+        }
+
+        GCPtr<Node> get_tail() {
+            if (tail->prev == head) return GCPtr<Node>(nullptr);
+            return tail->prev;
+        }
+    };
+
+    class LRUCache {
+    private:
+        const int capacity;
+        GCPtr<std::unordered_map<int, GCPtr<Node>>> map;
+        GCPtr<LinkedList> linkedList;
+
+    public:
+        LRUCache(int capacity) : capacity(capacity) {
+            map = gc::make_gc<std::unordered_map<int, GCPtr<Node>>>();
+            linkedList = gc::make_gc<LinkedList>();
+        }
+
+        int get(int key) {
+            auto it = map->find(key);
+            if (it == map->end()) return -1;
+            GCPtr<Node> node = it->second;
+            linkedList->remove(node);
+            linkedList->insert_head(node);
+            return node->value;
+        }
+
+        void put(int key, int value) {
+            auto it = map->find(key);
+            if (it != map->end()) {
+                GCPtr<Node> node = it->second;
+                node->value = value;
+                linkedList->remove(node);
+                linkedList->insert_head(node);
+                return;
+            }
+            if (map->size() >= capacity) {
+                GCPtr<Node> del = linkedList->get_tail();
+                if (del == nullptr)
+                    throw std::runtime_error("del is nullptr, bug founded");
+                linkedList->remove(del);
+                map->erase(del->key);
+            }
+            GCPtr<Node> node = gc::make_gc<Node>(key, value);
+            linkedList->insert_head(node);
+            map->emplace(key, node);
+        }
+    };
+
+    class LRUTest {
+    private:
+        const int MAXN = 997;
+        GCPtr<LRUCache> lruCache;
+
+        int get_random() {
+            return rand() % MAXN / 2 + 1;
+        }
+
+        void run_single_test() {
+            srand(time(0));
+            int size = rand() % MAXN + 1;
+            lruCache = gc::make_gc<LRUCache>(size);
+            for (int i = 0; i < size * 3; i++) {
+                int op = rand() % 2;
+                if (op == 0) {
+                    int ans = lruCache->get(get_random());
+                } else if (op == 1) {
+                    int v = get_random();
+                    lruCache->put(v, v);
+                }
+            }
+        }
+
+    public:
+        void run(int times = 1) {
+            for (int i = 0; i < times; i++) {
+                run_single_test();
+            }
+        }
+    };
+}
+
 GCPtr<MyObject> obj3;
 
 int main() {
@@ -227,6 +345,8 @@ int main() {
     } else {
         dijkstra = gc::make_gc<DijkstraTest::Dijkstra>();
     }
+    LRUCacheTest::LRUTest lruTest;
+
     for (int i = 0; i < n; i++) {
         auto start_time = chrono::steady_clock::now();
         GCPtr<MyObject> obj2;
@@ -248,6 +368,7 @@ int main() {
         }
         if (!testDKThread)
             dijkstra->run(false);
+        lruTest.run();
 
         GCPtr<Base> polyTestVar = gc::make_gc<Derived>(3.14);
         for (int j = 0; j <= 100; j++) {
