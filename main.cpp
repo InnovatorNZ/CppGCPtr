@@ -3,7 +3,6 @@
 #include <string>
 #include "GCPtr.h"
 
-#define TRIGGER_GC 1
 #define MULTITHREAD_TEST 1
 #define DESTRUCTOR_TEST 0
 #define WITH_STL_TEST 1
@@ -325,6 +324,9 @@ namespace LRUCacheTest {
 GCPtr<MyObject> obj3;
 
 int main() {
+    const bool triggerGC = true;
+    const bool testDKThread = false;
+
     using namespace std;
     cout << "Size of MyObject: " << sizeof(MyObject) << endl;
     cout << "Size of GCPtr: " << sizeof(GCPtr<void>) << endl;
@@ -333,7 +335,6 @@ int main() {
     long long time_ = 0;
     Sleep(500);
 
-    const bool testDKThread = false;
     std::thread dk_th;
     GCPtr<DijkstraTest::Dijkstra> dijkstra;
     GCPtr<LRUCacheTest::LRUTest> lruTest;
@@ -387,9 +388,8 @@ int main() {
             obj3->e->f << endl;
 #endif
 
-#if TRIGGER_GC
-        gc::triggerGC();
-#endif
+        if (triggerGC)
+            gc::triggerGC();
 
         obj3->e->f = 114.514;
         GCPtr<MyObject> obj5 = gc::make_gc<MyObject>();
@@ -467,9 +467,9 @@ int main() {
             th[tid].join();
 #endif
 
-#if TRIGGER_GC
-        gc::triggerGC();
-#endif
+        if (triggerGC)
+            gc::triggerGC();
+
         Sleep(100);
     }
     if (testDKThread)
