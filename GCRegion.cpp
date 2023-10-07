@@ -194,7 +194,12 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
-    {
+    if (GCParameter::zeroCountCondition) {
+        while (use_count != 0) {
+            std::unique_lock<std::mutex> lock(this->zero_count_mutex);
+            zero_count_condition.wait(lock, [this] { return zero_use_count(); });
+        }
+    } else {
         int wait_cnt = 0;
         while (use_count != 0) {
             wait_cnt++;
@@ -203,11 +208,13 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
         if (wait_cnt != 0)
             std::clog << "Info: Spin waiting for region use_count for " << wait_cnt << " times" << std::endl;
     }
-    evacuated = true;
+
+    evacuated.store(true);
     if (this->canFree() && !enable_destructor) {      // 已经没有存活对象了
         return;
     }
-    while (use_count != 0);
+    while (use_count != 0) std::this_thread::yield();
+
     // std::clog << "Relocating region " << this << std::endl;
     if constexpr (use_regional_hashmap) {
         auto regionalMapIterator = regionalHashMap->getIterator();
@@ -405,6 +412,8 @@ void GCRegion::inc_use_count() {
 
 void GCRegion::dec_use_count() {
     --use_count;
+    if (GCParameter::zeroCountCondition && use_count == 0)
+        zero_count_condition.notify_all();
 }
 
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {

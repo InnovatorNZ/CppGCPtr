@@ -23,4 +23,5 @@ public:
 	static constexpr bool doNotRelocatePtrGuard = false;		// 禁止对任何存在PtrGuard引用的region重分配，若禁用，则会自旋等待析构后再重分配；建议当存在相当长生命周期的PtrGuard时启用该选项；前提条件：启用重分配
 	static constexpr bool enablePtrRWLock = true;				// 启用针对GCPtr的读写锁，启用该选项可以使GCPtr变得线程安全，无此需求请禁用
 	static constexpr bool waitingForGCFinished = false;			// 完全Stop-the-world的GC，若遇上线程安全问题，可启用此选项进行debug，否则请禁用
+	static constexpr bool zeroCountCondition = true;			// 当需要转移的region存在PtrGuard时，GC线程会休眠直到计数归零，在PtrGuard较多时可以减少GC线程的自旋消耗的CPU，但会增加应用线程每次取出指针的性能消耗
 };
