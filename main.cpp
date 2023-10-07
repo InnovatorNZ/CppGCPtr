@@ -479,10 +479,13 @@ int main() {
     cout << "Average user thread duration: " << (double)time_ / (double)n << " ms" << endl;
     Sleep(1000);
 
-#if 0
+#if 1
+    dijkstra = nullptr;
+    lruTest = nullptr;
     cout << "Last gc" << endl;
     gc::triggerGC();
     cout << "Ended last gc" << endl;
+    Sleep(5000);
 #endif
 
     return 0;

@@ -570,6 +570,7 @@ void GCWorker::endGC() {
         GCPhase::SwitchToNextPhase();
         if (enableMemoryAllocator)
             memoryAllocator->resetLiveSize();
+        root_object_snapshot.clear();
     } else {
         std::clog << "Not started GC, or not finished sweeping yet" << std::endl;
     }

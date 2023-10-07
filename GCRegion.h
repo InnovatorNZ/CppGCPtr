@@ -6,6 +6,7 @@
 #include <vector>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
 #include <memory>
 #include <unordered_map>
 #include <functional>
