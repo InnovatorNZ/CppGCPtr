@@ -1,21 +1,26 @@
 #include "GCBitMap.h"
 
-GCBitMap::GCBitMap(void* region_start_addr, size_t region_size, bool mark_obj_size, int iterate_step_size, int region_to_bitmap_ratio) :
+GCBitMap::GCBitMap(void* region_start_addr, size_t region_size, IMemoryAllocator* memoryAllocator,
+                   bool mark_obj_size, int iterate_step_size, int region_to_bitmap_ratio) :
         region_start_addr(region_start_addr), region_to_bitmap_ratio(region_to_bitmap_ratio),
-        mark_obj_size(mark_obj_size), iterate_step_size(iterate_step_size) {
+        memoryAllocator(memoryAllocator), mark_obj_size(mark_obj_size), iterate_step_size(iterate_step_size) {
     int bitmap_size_ = ceil((double)region_size / (double)region_to_bitmap_ratio * SINGLE_OBJECT_MARKBIT / 8);
     this->bitmap_size = bitmap_size_;
-    this->bitmap_arr = static_cast<std::atomic<unsigned char>*>(::malloc(bitmap_size_ * sizeof(std::atomic<unsigned char>)));
+    this->bitmap_arr = static_cast<std::atomic<unsigned char>*>(
+        memoryAllocator->allocate_raw(bitmap_size_ * sizeof(std::atomic<unsigned char>))
+    );
 }
 
 GCBitMap::~GCBitMap() {
-    ::free(this->bitmap_arr);
+    memoryAllocator->free(this->bitmap_arr, bitmap_size * sizeof(std::atomic<unsigned char>));
     this->bitmap_arr = nullptr;
 }
 
 GCBitMap::GCBitMap(const GCBitMap& other) : region_to_bitmap_ratio(other.region_to_bitmap_ratio),
                                             mark_obj_size(other.mark_obj_size),
-                                            iterate_step_size(other.iterate_step_size) {
+                                            iterate_step_size(other.iterate_step_size),
+                                            memoryAllocator(other.memoryAllocator) {
+    std::clog << "GCBitMap(const GCBitMap&)" << std::endl;
     this->bitmap_size = other.bitmap_size;
     this->region_start_addr = other.region_start_addr;
     this->bitmap_arr = static_cast<std::atomic<unsigned char>*>(::malloc(bitmap_size * sizeof(std::atomic<unsigned char>)));
@@ -26,7 +31,8 @@ GCBitMap::GCBitMap(const GCBitMap& other) : region_to_bitmap_ratio(other.region_
 
 GCBitMap::GCBitMap(GCBitMap&& other) noexcept : region_to_bitmap_ratio(other.region_to_bitmap_ratio),
                                                 mark_obj_size(other.mark_obj_size),
-                                                iterate_step_size(other.iterate_step_size) {
+                                                iterate_step_size(other.iterate_step_size),
+                                                memoryAllocator(other.memoryAllocator) {
     this->bitmap_size = other.bitmap_size;
     this->region_start_addr = other.region_start_addr;
     this->bitmap_arr = std::move(other.bitmap_arr);

@@ -15,6 +15,8 @@ public:
 
     virtual std::pair<void*, std::shared_ptr<GCRegion>> allocate(size_t) = 0;
 
+    virtual void* allocate_raw(size_t) = 0;
+
     virtual void free(void*, size_t) = 0;
 };
 

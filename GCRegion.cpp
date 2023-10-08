@@ -7,18 +7,19 @@ const size_t GCRegion::SMALL_REGION_SIZE = 1 * 1024 * 1024;
 const size_t GCRegion::MEDIUM_OBJECT_THRESHOLD = 1 * 1024 * 1024;
 const size_t GCRegion::MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
 
-GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size) :
-        regionType(regionType), startAddress(startAddress), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
+GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size, IMemoryAllocator* memoryAllocator) :
+        regionType(regionType), startAddress(startAddress),
+        memoryAllocator(memoryAllocator), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
         total_size(total_size), allocated_offset(0), live_size(0), evacuated(false), use_count(0) {
     if (regionType != RegionEnum::LARGE) {
         if constexpr (!use_regional_hashmap) {
             switch (regionType) {
                 case RegionEnum::SMALL:
                 case RegionEnum::MEDIUM:
-                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size);
+                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size, memoryAllocator);
                     break;
                 case RegionEnum::TINY:
-                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size, false, TINY_OBJECT_THRESHOLD);
+                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size, memoryAllocator, false, TINY_OBJECT_THRESHOLD);
                     break;
             }
         } else {
@@ -189,7 +190,7 @@ void GCRegion::clearUnmarked() {
     }
 }
 
-void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
+void GCRegion::triggerRelocation() {
     if (regionType == RegionEnum::LARGE) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
@@ -224,7 +225,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
             void* object_addr = regionalMapIterator.getCurrentAddress();
             if (GCPhase::isLiveObject(markState)) {
                 size_t object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : gcStatus.objectSize;
-                this->relocateObject(object_addr, object_size, memoryAllocator);
+                this->relocateObject(object_addr, object_size);
             } else if (GCPhase::needSweep(markState)) {
                 if constexpr (enable_destructor) {
                     callDestructor(object_addr);
@@ -239,7 +240,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
             void* object_addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
             if (GCPhase::isLiveObject(markState)) {     // 存活对象，转移
                 unsigned int object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : bitStatus.objectSize;
-                this->relocateObject(object_addr, object_size, memoryAllocator);
+                this->relocateObject(object_addr, object_size);
             } else if (GCPhase::needSweep(markState)) { // 非存活对象，调用其析构函数
                 // 由于region触发重定位后是不会再被使用的，因此无需再次标记
                 // std::clog << "Freeing " << object_addr << " (" << MarkStateUtil::toString(markState) << ")" << std::endl;
@@ -252,7 +253,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
     }
 }
 
-void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllocator* memoryAllocator) {
+void GCRegion::relocateObject(void* object_addr, size_t object_size) {
     if (isFreed()) return;
     if (!inside_region(object_addr, object_size)) {
         std::clog << "The relocating object does not in current region." << std::endl;
@@ -323,14 +324,13 @@ bool GCRegion::needEvacuate() const {
     else return false;
 }
 
-void GCRegion::free(IMemoryAllocator* memoryAllocator) {
+void GCRegion::free() {
     // 释放整个region，只保留转发表
     evacuated = true;
     bitmap = nullptr;
     regionalHashMap = nullptr;
     destructor_map = nullptr;
     move_constructor_map = nullptr;
-    //::free(startAddress);
     memoryAllocator->free(startAddress, total_size);
     startAddress = nullptr;
     total_size = 0;
@@ -350,11 +350,11 @@ void GCRegion::reclaim() {
     evacuated = false;
 }
 
-GCRegion::GCRegion(GCRegion&& other) noexcept:
+GCRegion::GCRegion(GCRegion&& other) noexcept :
         regionType(other.regionType), startAddress(other.startAddress), total_size(other.total_size),
         bitmap(std::move(other.bitmap)), regionalHashMap(std::move(other.regionalHashMap)),
-        destructor_map(std::move(other.destructor_map)), move_constructor_map(std::move(other.move_constructor_map)),
-        largeRegionMarkState(other.largeRegionMarkState) {
+        memoryAllocator(other.memoryAllocator), largeRegionMarkState(other.largeRegionMarkState),
+        destructor_map(std::move(other.destructor_map)), move_constructor_map(std::move(other.move_constructor_map)) {
     this->allocated_offset.store(other.allocated_offset.load());
     this->live_size.store(other.live_size.load());
     this->evacuated.store(other.evacuated.load());

@@ -11,9 +11,12 @@
 #include <format>
 #include "PhaseEnum.h"
 #include "Iterator.h"
+#include "IMemoryAllocator.h"
 
 constexpr int SINGLE_OBJECT_MARKBIT = 2;     // 表示每两个bit标记一个对象
 #define USE_SINGLE_OBJECT_MAP false
+
+class IMemoryAllocator;
 
 class GCBitMap {
 private:
@@ -24,6 +27,7 @@ private:
     const bool mark_high_bit = false;       // 是否在位图中标记高位（已禁用）
     int iterate_step_size;                  // 若未启用在位图中标记对象大小，则指定迭代步长
     void* region_start_addr;
+    IMemoryAllocator* memoryAllocator;
     std::atomic<unsigned char>* bitmap_arr;
 #if USE_SINGLE_OBJECT_MAP
     std::unordered_set<void*> single_size_set;      // 存放size<=1byte的对象，由于其无法在bitmap占用头尾标识
@@ -57,8 +61,8 @@ public:
         int getCurrentOffset() const;
     };
 
-    GCBitMap(void* region_start_addr, size_t region_size, bool mark_obj_size = true,
-             int iterate_step_size = 0, int region_to_bitmap_ratio = 1);
+    GCBitMap(void* region_start_addr, size_t region_size, IMemoryAllocator* memoryAllocator,
+             bool mark_obj_size = true, int iterate_step_size = 0, int region_to_bitmap_ratio = 1);
 
     ~GCBitMap();
 

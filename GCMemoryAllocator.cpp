@@ -119,7 +119,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
         }
 
         void* new_region_memory = this->allocate_new_memory(regionSize);
-        std::shared_ptr<GCRegion> new_region = std::make_shared<GCRegion>(regionType, new_region_memory, regionSize);
+        std::shared_ptr<GCRegion> new_region = std::make_shared<GCRegion>(regionType, new_region_memory, regionSize, this);
 
         std::unique_lock<std::shared_mutex> region_map_lock(regionMapMtx, std::defer_lock);
         if (regionType != RegionEnum::SMALL) region_map_lock.lock();
@@ -233,7 +233,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                     }
                 } else {
                     region_map_lock.unlock();
-                    new_region->free(this);
+                    new_region->free();
                 }
 
                 break;
@@ -250,7 +250,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                     }
                 } else {
                     region_map_lock.unlock();
-                    new_region->free(this);
+                    new_region->free();
                 }
 
                 break;
@@ -274,6 +274,10 @@ void* GCMemoryAllocator::allocate_new_memory(size_t size) {
         return this->allocate_from_freelist(size);
     else
         return malloc(size);
+}
+
+void* GCMemoryAllocator::allocate_raw(size_t size) {
+    return allocate_new_memory(size);
 }
 
 void* GCMemoryAllocator::allocate_from_freelist(size_t size) {
@@ -421,7 +425,7 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
                 size_t startIndex = tid * snum;
                 size_t endIndex = (tid == gcThreadCount - 1) ? evacuationQue.size() : (tid + 1) * snum;
                 for (size_t j = startIndex; j < endIndex; j++) {
-                    evacuationQue[j]->triggerRelocation(this);
+                    evacuationQue[j]->triggerRelocation();
                 }
             });
         }
@@ -442,7 +446,7 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
         }
     } else {
         for (int i = 0; i < evacuationQue.size(); i++) {
-            evacuationQue[i]->triggerRelocation(this);
+            evacuationQue[i]->triggerRelocation();
         }
         if constexpr (immediateClear) {
             for (int i = 0; i < liveQue.size(); i++) {
@@ -517,14 +521,14 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
                     size_t startIndex = tid * snum;
                     size_t endIndex = (tid == gcThreadCount - 1) ? evacuationQue.size() : (tid + 1) * snum;
                     for (size_t j = startIndex; j < endIndex; j++) {
-                        evacuationQue[j]->free(this);
+                        evacuationQue[j]->free();
                     }
                 });
             }
             threadPool->waitForTaskComplete(gcThreadCount);
         } else {
             for (auto& region : evacuationQue) {
-                region->free(this);
+                region->free();
             }
         }
     }
@@ -550,7 +554,7 @@ void GCMemoryAllocator::triggerClear_v2() {
                 size_t endIndex = (tid == gcThreadCount - 1) ? clearQue.size() : (tid + 1) * snum;
                 for (size_t j = startIndex; j < endIndex; j++) {
                     clearQue[j]->clearUnmarked();
-                    clearQue[j]->free(this);
+                    clearQue[j]->free();
                 }
             });
         }
@@ -558,7 +562,7 @@ void GCMemoryAllocator::triggerClear_v2() {
     } else {
         for (int i = 0; i < clearQue.size(); i++) {
             clearQue[i]->clearUnmarked();
-            clearQue[i]->free(this);
+            clearQue[i]->free();
         }
     }
 
@@ -583,7 +587,7 @@ void GCMemoryAllocator::processClearQue() {
                 size_t endIndex = (tid == gcThreadCount - 1) ? clearQue.size() : (tid + 1) * snum;
                 for (size_t j = startIndex; j < endIndex; j++) {
                     clearQue[j]->clearUnmarked();
-                    clearQue[j]->free(this);
+                    clearQue[j]->free();
                 }
             });
         }
@@ -591,7 +595,7 @@ void GCMemoryAllocator::processClearQue() {
     } else {
         for (int i = 0; i < clearQue.size(); i++) {
             clearQue[i]->clearUnmarked();
-            clearQue[i]->free(this);
+            clearQue[i]->free();
         }
     }
     clearQue.clear();
@@ -731,7 +735,7 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
                         std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
                         regionMap.erase(region->getStartAddr());
                     }
-                    region->free(this);
+                    region->free();
                 }
             }
         } else {
@@ -747,7 +751,7 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
                                 std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
                                 regionMap.erase(region->getStartAddr());
                             }
-                            region->free(this);
+                            region->free();
                         }
                     }
                 });
@@ -778,7 +782,7 @@ void GCMemoryAllocator::clearFreeRegion(ConcurrentLinkedList<std::shared_ptr<GCR
                 std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
                 regionMap.erase(region->getStartAddr());
             }
-            region->free(this);
+            region->free();
             iterator->remove(region);
         }
     }

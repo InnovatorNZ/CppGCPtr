@@ -93,7 +93,13 @@ public:
     GCMemoryAllocator(bool useInternalMemoryManager = false, bool enableParallelClear = false,
                       int gcThreadCount = 0, ThreadPoolExecutor* = nullptr);
 
+    GCMemoryAllocator(const GCMemoryAllocator&) = delete;
+
+    GCMemoryAllocator(GCMemoryAllocator&&) noexcept = delete;
+
     std::pair<void*, std::shared_ptr<GCRegion>> allocate(size_t size) override;
+
+    void* allocate_raw(size_t) override;
 
     void free(void*, size_t) override;
 

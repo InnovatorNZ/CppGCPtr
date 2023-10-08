@@ -23,6 +23,8 @@
 
 class IMemoryAllocator;
 
+class GCBitMap;
+
 enum class RegionEnum {
     SMALL, MEDIUM, LARGE, TINY
 };
@@ -64,6 +66,7 @@ private:
     std::unique_ptr<std::unordered_map<void*, std::function<void(void*, void*)>>> move_constructor_map;
     std::shared_mutex move_constructor_map_mtx;
     std::recursive_mutex relocation_mutex;
+    IMemoryAllocator* memoryAllocator;
     std::atomic<bool> evacuated;
     std::atomic<int> use_count;             // 用于PtrGuard计数用，PtrGuard存在期间禁止重定位
     std::mutex zero_count_mutex;
@@ -83,7 +86,7 @@ public:
         size_t operator()(const GCRegion& p) const;
     };
 
-    GCRegion(RegionEnum regionType, void* startAddress, size_t total_size);
+    GCRegion(RegionEnum regionType, void* startAddress, size_t total_size, IMemoryAllocator* memoryAllocator);
 
     GCRegion(const GCRegion&) = delete;
 
@@ -107,7 +110,7 @@ public:
 
     bool canFree() const;
 
-    void free(IMemoryAllocator*);
+    void free();
 
     bool needEvacuate() const;
 
@@ -119,9 +122,9 @@ public:
 
     void resetLiveSize() { live_size = 0; }
 
-    void triggerRelocation(IMemoryAllocator*);
+    void triggerRelocation();
 
-    void relocateObject(void*, size_t, IMemoryAllocator*);
+    void relocateObject(void*, size_t);
 
     std::pair<void*, std::shared_ptr<GCRegion>> queryForwardingTable(void*);
 

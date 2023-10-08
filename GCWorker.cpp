@@ -542,7 +542,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr
     if (ret.first == nullptr) {
         if (region->isEvacuated()) {
             // region已被标识为需要转移，但尚未完成转移
-            region->relocateObject(ptr, obj_size, this->memoryAllocator.get());
+            region->relocateObject(ptr, obj_size);
             ret = region->queryForwardingTable(ptr);
             if (ret.first == nullptr)
                 throw std::exception();
