@@ -17,6 +17,7 @@ GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableP
     else
         this->poolCount = 1;
     if (useInternalMemoryManager) {
+        this->memoryPools.reserve(poolCount);
         size_t initialSize = INITIAL_SINGLE_SIZE * poolCount;
         void* initialMemory = malloc(initialSize);
         for (int i = 0; i < poolCount; i++) {
@@ -232,7 +233,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                     }
                 } else {
                     region_map_lock.unlock();
-                    new_region->free();
+                    new_region->free(this);
                 }
 
                 break;
@@ -249,7 +250,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
                     }
                 } else {
                     region_map_lock.unlock();
-                    new_region->free();
+                    new_region->free(this);
                 }
 
                 break;
@@ -289,9 +290,18 @@ void* GCMemoryAllocator::allocate_from_freelist(size_t size) {
         void* new_memory = malloc(malloc_size);
         memoryPools[pool_idx].free(new_memory, malloc_size);
         address = memoryPools[pool_idx].allocate(size);
-        std::clog << "Allocating more memory from OS" << std::endl;
+        std::clog << "Info: GCMemoryManager is allocating more memory from OS." << std::endl;
     } while (address == nullptr);
     return address;
+}
+
+void GCMemoryAllocator::free(void* address, size_t size) {
+    if (enableInternalMemoryManager) {
+        int pool_idx = getPoolIdx();
+        memoryPools[pool_idx].free(address, size);
+    } else {
+        ::free(address);
+    }
 }
 
 void GCMemoryAllocator::triggerClear() {
@@ -507,14 +517,14 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
                     size_t startIndex = tid * snum;
                     size_t endIndex = (tid == gcThreadCount - 1) ? evacuationQue.size() : (tid + 1) * snum;
                     for (size_t j = startIndex; j < endIndex; j++) {
-                        evacuationQue[j]->free();
+                        evacuationQue[j]->free(this);
                     }
                 });
             }
             threadPool->waitForTaskComplete(gcThreadCount);
         } else {
             for (auto& region : evacuationQue) {
-                region->free();
+                region->free(this);
             }
         }
     }
@@ -540,7 +550,7 @@ void GCMemoryAllocator::triggerClear_v2() {
                 size_t endIndex = (tid == gcThreadCount - 1) ? clearQue.size() : (tid + 1) * snum;
                 for (size_t j = startIndex; j < endIndex; j++) {
                     clearQue[j]->clearUnmarked();
-                    clearQue[j]->free();
+                    clearQue[j]->free(this);
                 }
             });
         }
@@ -548,7 +558,7 @@ void GCMemoryAllocator::triggerClear_v2() {
     } else {
         for (int i = 0; i < clearQue.size(); i++) {
             clearQue[i]->clearUnmarked();
-            clearQue[i]->free();
+            clearQue[i]->free(this);
         }
     }
 
@@ -573,7 +583,7 @@ void GCMemoryAllocator::processClearQue() {
                 size_t endIndex = (tid == gcThreadCount - 1) ? clearQue.size() : (tid + 1) * snum;
                 for (size_t j = startIndex; j < endIndex; j++) {
                     clearQue[j]->clearUnmarked();
-                    clearQue[j]->free();
+                    clearQue[j]->free(this);
                 }
             });
         }
@@ -581,7 +591,7 @@ void GCMemoryAllocator::processClearQue() {
     } else {
         for (int i = 0; i < clearQue.size(); i++) {
             clearQue[i]->clearUnmarked();
-            clearQue[i]->free();
+            clearQue[i]->free(this);
         }
     }
     clearQue.clear();
@@ -721,7 +731,7 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
                         std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
                         regionMap.erase(region->getStartAddr());
                     }
-                    region->free();
+                    region->free(this);
                 }
             }
         } else {
@@ -737,7 +747,7 @@ void GCMemoryAllocator::clearFreeRegion(std::deque<std::shared_ptr<GCRegion>>& r
                                 std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
                                 regionMap.erase(region->getStartAddr());
                             }
-                            region->free();
+                            region->free(this);
                         }
                     }
                 });
@@ -768,7 +778,7 @@ void GCMemoryAllocator::clearFreeRegion(ConcurrentLinkedList<std::shared_ptr<GCR
                 std::unique_lock<std::shared_mutex> lock2(regionMapMtx);
                 regionMap.erase(region->getStartAddr());
             }
-            region->free();
+            region->free(this);
             iterator->remove(region);
         }
     }

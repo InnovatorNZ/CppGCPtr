@@ -9,7 +9,7 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
                    bool useSecondaryMemoryManager, bool enableRelocation, bool enableParallel, bool enableReclaim) :
         stop_(false), ready_(false), enableConcurrentMark(concurrent), enableMemoryAllocator(enableMemoryAllocator) {
     std::clog << "GCWorker()" << std::endl;
-    if (enableReclaim || useSecondaryMemoryManager) {
+    if (enableReclaim) {
         // TODO: 重利用和空闲列表二级内存分配器尚未实现
         throw std::logic_error("Reclaim and secondary memory manager is not prepared yet. Please contact developer");
     }

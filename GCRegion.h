@@ -107,7 +107,7 @@ public:
 
     bool canFree() const;
 
-    void free();
+    void free(IMemoryAllocator*);
 
     bool needEvacuate() const;
 

@@ -323,17 +323,18 @@ bool GCRegion::needEvacuate() const {
     else return false;
 }
 
-void GCRegion::free() {
+void GCRegion::free(IMemoryAllocator* memoryAllocator) {
     // 释放整个region，只保留转发表
     evacuated = true;
     bitmap = nullptr;
     regionalHashMap = nullptr;
     destructor_map = nullptr;
     move_constructor_map = nullptr;
+    //::free(startAddress);
+    memoryAllocator->free(startAddress, total_size);
+    startAddress = nullptr;
     total_size = 0;
     allocated_offset = 0;
-    ::free(startAddress);
-    startAddress = nullptr;
 }
 
 void GCRegion::reclaim() {

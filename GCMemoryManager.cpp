@@ -5,12 +5,13 @@ GCMemoryManager::GCMemoryManager(void* memoryStart, size_t size) {
 }
 
 GCMemoryManager::GCMemoryManager(const GCMemoryManager& other) {
+    std::clog << "GCMemoryManager(const GCMemoryManager&)" << std::endl;
     this->freeList = other.freeList;
 }
 
 GCMemoryManager::GCMemoryManager(GCMemoryManager&& other) noexcept {
-    std::unique_lock<std::mutex> lock(other.allocate_mutex_);
     std::clog << "GCMemoryManager(GCMemoryManager&&)" << std::endl;
+    std::unique_lock<std::mutex> lock(other.allocate_mutex_);
     this->freeList = std::move(other.freeList);
 }
 
@@ -60,8 +61,11 @@ void* GCMemoryManager::allocate(size_t size) {
 void GCMemoryManager::free(void* start_address, size_t size) {
     std::unique_lock<std::mutex> lock(this->allocate_mutex_);
     char* end_address = reinterpret_cast<char*>(start_address) + size;
+    if (freeList.empty()) {
+        freeList.emplace_back(start_address, size);
+        return;
+    }
     MemoryBlock& start_block = *freeList.begin();
-    MemoryBlock& end_block = *freeList.end();
     if (end_address <= start_block.getStartAddress()) {
         if (end_address == start_block.getStartAddress()) {
             start_block.grow_from_head(size);
@@ -70,6 +74,7 @@ void GCMemoryManager::free(void* start_address, size_t size) {
         }
         return;
     }
+    MemoryBlock& end_block = *--freeList.end();
     if (start_address >= end_block.getEndAddress()) {
         if (start_address == end_block.getEndAddress()) {
             end_block.grow_from_back(size);
@@ -99,5 +104,6 @@ void GCMemoryManager::free(void* start_address, size_t size) {
             it_prev++;
         }
     }
-    std::cerr << "Invalid memory address to free. Please check." << std::endl;
+
+    std::cerr << "Warning: Invalid memory address to free. Please check." << std::endl;
 }

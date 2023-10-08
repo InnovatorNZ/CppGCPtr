@@ -472,21 +472,17 @@ int main() {
 
         Sleep(100);
     }
-    if (testDKThread)
+    if (testDKThread) {
         dk_th.join();
+    } else {
+        dijkstra = nullptr;
+        lruTest = nullptr;
+        if (triggerGC) gc::triggerGC();
+    }
 
     Sleep(1000);
     cout << "Average user thread duration: " << (double)time_ / (double)n << " ms" << endl;
     Sleep(1000);
-
-#if 1
-    dijkstra = nullptr;
-    lruTest = nullptr;
-    cout << "Last gc" << endl;
-    gc::triggerGC();
-    cout << "Ended last gc" << endl;
-    Sleep(5000);
-#endif
 
     return 0;
 }

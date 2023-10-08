@@ -95,6 +95,8 @@ public:
 
     std::pair<void*, std::shared_ptr<GCRegion>> allocate(size_t size) override;
 
+    void free(void*, size_t) override;
+
     void triggerClear();
 
     void SelectRelocationSet();
