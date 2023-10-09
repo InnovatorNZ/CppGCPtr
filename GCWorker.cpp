@@ -258,17 +258,12 @@ void GCWorker::triggerGC() {
     if (enableConcurrentMark) {
         wakeUpGCThread();
     } else {
-        using namespace std;
-        cout << "Triggered GC" << endl;
-        printMap();
         startGC();
         beginMark();
         GCPhase::SwitchToNextPhase();       // skip satb remark
-        printMap();
+        selectRelocationSet();
         beginSweep();
-        printMap();
         endGC();
-        cout << "End of GC" << endl;
     }
 }
 
