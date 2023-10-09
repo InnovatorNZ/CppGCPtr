@@ -500,12 +500,13 @@ void GCWorker::triggerSATBMark() {
 }
 
 void GCWorker::selectRelocationSet() {
-    if (!enableMemoryAllocator) return;
     if (GCPhase::getGCPhase() != eGCPhase::REMARK) {
         std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
         return;
     }
     GCPhase::SwitchToNextPhase();
+    if (!enableMemoryAllocator)
+        return;
     if (enableRelocation)
         memoryAllocator->SelectRelocationSet();
     else
@@ -514,7 +515,12 @@ void GCWorker::selectRelocationSet() {
 
 void GCWorker::beginSweep() {
     if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
-        if (!enableMemoryAllocator) {
+        if (enableMemoryAllocator) {
+            if (enableRelocation)
+                memoryAllocator->triggerRelocation(enableReclaim);
+            else
+                memoryAllocator->triggerClear();
+        } else {
             std::shared_lock<std::shared_mutex> lock(object_map_mutex);
             for (auto it = object_map.begin(); it != object_map.end();) {
                 if (GCPhase::needSweep(it->second.markState)) {
@@ -527,11 +533,6 @@ void GCWorker::beginSweep() {
                     ++it;
                 }
             }
-        } else {
-            if (enableRelocation)
-                memoryAllocator->triggerRelocation(enableReclaim);
-            else
-                memoryAllocator->triggerClear();
         }
     } else std::clog << "Invalid phase, should in sweep phase" << std::endl;
 }
@@ -562,6 +563,8 @@ void GCWorker::callDestructor(void* object_addr, bool remove_after_call) {
         destructor(object_addr);
         if (remove_after_call)
             destructor_map.erase(destructor_it);
+    } else {
+        std::clog << "Destructor not found for " << object_addr << std::endl;
     }
 }
 

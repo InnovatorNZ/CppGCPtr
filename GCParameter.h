@@ -3,7 +3,7 @@
 class GCParameter {
 public:
 	static constexpr bool enableConcurrentGC = true;			// 并发GC，即是否启用GC线程
-	static constexpr bool enableMemoryAllocator = true;			// 是否启用内存分配器；若否，所有内存分配使用内置new
+	static constexpr bool enableMemoryAllocator = false;		// 是否启用内存分配器；若否，所有内存分配使用内置new
 	static constexpr bool enableRelocation = true;				// 是否启用含内存压缩（对象重分配）的移动式回收；前提条件：启用内存分配器，启用内联标记
 	static constexpr bool enableParallelGC = true;				// 是否启用多线程回收；前提条件：启用内存分配器
 	static constexpr bool enableDestructorSupport = true;		// 是否在销毁对象时调用其析构函数
@@ -21,7 +21,7 @@ public:
 	static constexpr bool distinctSATB = false;					// 是否在对删除屏障引发的SATB去重；不推荐，因为没必要
 	static constexpr bool useCopiedMarkstate = false;			// 是否引入无状态的内联标记（参见Solution 2.1 rev），可以解决当启用移动构造函数时的循环引用问题；不推荐，目前实现有问题，不要启用
 	static constexpr bool doNotRelocatePtrGuard = false;		// 禁止对任何存在PtrGuard引用的region重分配，若禁用，则会自旋等待析构后再重分配；建议当存在相当长生命周期的PtrGuard时启用该选项；前提条件：启用重分配
-	static constexpr bool enablePtrRWLock = true;				// 启用针对GCPtr的读写锁，启用该选项可以使GCPtr变得线程安全，无此需求请禁用
+	static constexpr bool enablePtrRWLock = false;				// 启用针对GCPtr的读写锁，启用该选项可以使GCPtr变得线程安全，无此需求请禁用
 	static constexpr bool waitingForGCFinished = false;			// 完全Stop-the-world的GC，若遇上线程安全问题，可启用此选项进行debug，否则请禁用
 	static constexpr bool zeroCountCondition = true;			// 当需要转移的region存在PtrGuard时，GC线程会休眠直到计数归零，在PtrGuard较多时可以减少GC线程的自旋消耗的CPU，但会增加应用线程每次取出指针的性能消耗
 };
