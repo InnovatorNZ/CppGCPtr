@@ -2,8 +2,8 @@
 
 class GCParameter {
 public:
-	static constexpr bool enableConcurrentGC = false;			// 并发GC，即是否启用GC线程
-	static constexpr bool enableMemoryAllocator = false;		// 是否启用内存分配器；若否，所有内存分配使用内置new
+	static constexpr bool enableConcurrentGC = true;			// 并发GC，即是否启用GC线程
+	static constexpr bool enableMemoryAllocator = true;			// 是否启用内存分配器；若否，所有内存分配使用内置new
 	static constexpr bool enableRelocation = true;				// 是否启用含内存压缩（对象重分配）的移动式回收；前提条件：启用内存分配器，启用内联标记
 	static constexpr bool enableParallelGC = true;				// 是否启用多线程回收；前提条件：启用内存分配器
 	static constexpr bool enableDestructorSupport = true;		// 是否在销毁对象时调用其析构函数

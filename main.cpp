@@ -181,7 +181,8 @@ namespace DijkstraTest {
     public:
         void run(bool print_ans = true) {
             if (freopen("../in2.txt", "r", stdin) == NULL)
-                throw std::runtime_error("in.txt not found");
+                if (freopen("in2.txt", "r", stdin) == NULL)
+                    throw std::runtime_error("input test file not found");
             int n, m, start;
             cin >> n >> m >> start;
             adj = gc::make_gc<vector<vector<Edge>>>();
