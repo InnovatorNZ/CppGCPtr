@@ -356,6 +356,11 @@ namespace gc {
         GCWorker::getWorker()->triggerGC();
     }
 
+    void freeReservedMemory() {
+        // 该函数目前仅用于二级内存池的预留内存释放，后续可以添加更多释放的功能
+        GCWorker::getWorker()->freeGCReservedMemory();
+    }
+
 #ifdef OLD_MAKEGC
     template<class T, class... Args>
     GCPtr<T> make_static(Args&& ... args) {

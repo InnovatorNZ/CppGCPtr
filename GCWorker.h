@@ -148,6 +148,8 @@ public:
     bool relocationEnabled() const { return enableRelocation; }
 
     bool is_root(void* gcptr_addr);
+
+    void freeGCReservedMemory();
 };
 
 #endif //CPPGCPTR_GCWORKER_H

@@ -478,7 +478,10 @@ int main() {
     } else {
         dijkstra = nullptr;
         lruTest = nullptr;
-        if (triggerGC) gc::triggerGC();
+    }
+    if (triggerGC) {
+        gc::triggerGC();
+        gc::freeReservedMemory();
     }
 
     Sleep(1000);

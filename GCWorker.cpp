@@ -598,3 +598,8 @@ bool GCWorker::is_root(void* gcptr_addr) {
         return GCUtil::is_stack_pointer(gcptr_addr);
     }
 }
+
+void GCWorker::freeGCReservedMemory() {
+    if (enableMemoryAllocator)
+        memoryAllocator->freeReservedMemory();
+}

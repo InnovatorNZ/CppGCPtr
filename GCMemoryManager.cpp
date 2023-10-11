@@ -123,8 +123,8 @@ void GCMemoryManager::return_reserved() {
         size_t newMemSize = lower->second;
         char* newMemEndAddr = newMemStartAddr + newMemSize;
         if (newMemEndAddr <= block->getEndAddress()) {
-            const size_t firstHalfSize = newMemStartAddr - (char*) block->getStartAddress();
-            const size_t secondHalfSize = (char*) block->getEndAddress() - newMemEndAddr;
+            const size_t firstHalfSize = newMemStartAddr - (char*)block->getStartAddress();
+            const size_t secondHalfSize = (char*)block->getEndAddress() - newMemEndAddr;
             if (firstHalfSize > 0 && secondHalfSize > 0) {
                 block->size = firstHalfSize;
                 freeList.emplace(block + 1, newMemEndAddr, secondHalfSize);

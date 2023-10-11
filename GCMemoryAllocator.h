@@ -118,6 +118,8 @@ public:
     bool inside_allocated_regions(void*);
 
     void flushRegionMapBuffer();
+
+    void freeReservedMemory();
 };
 
 

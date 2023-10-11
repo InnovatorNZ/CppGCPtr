@@ -893,6 +893,14 @@ void GCMemoryAllocator::flushRegionMapBuffer() {
     }
 }
 
+void GCMemoryAllocator::freeReservedMemory() {
+    if (enableInternalMemoryManager) {
+        for (auto& memoryPool : memoryPools) {
+            memoryPool.return_reserved();
+        }
+    }
+}
+
 int GCMemoryAllocator::getPoolIdx() const {
     if (poolCount == 1) return 0;
     return GCUtil::getPoolIdx(poolCount);
