@@ -17,12 +17,17 @@ GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableP
     else
         this->poolCount = 1;
     if (useInternalMemoryManager) {
-        this->memoryPools.reserve(poolCount);
+        this->memoryPools.resize(poolCount);
+        /*
         size_t initialSize = INITIAL_SINGLE_SIZE * poolCount;
         void* initialMemory = malloc(initialSize);
         for (int i = 0; i < poolCount; i++) {
             void* c_address = reinterpret_cast<void*>(reinterpret_cast<char*>(initialMemory) + i * INITIAL_SINGLE_SIZE);
             this->memoryPools.emplace_back(c_address, INITIAL_SINGLE_SIZE);
+        }
+        */
+        for (int i = 0; i < poolCount; i++) {
+            this->memoryPools[i].add_memory(GCParameter::secondaryMallocSize);
         }
     }
     // this->smallAllocatingRegions = std::make_unique<std::atomic<std::shared_ptr<GCRegion>>[]>(poolCount);
@@ -290,11 +295,11 @@ void* GCMemoryAllocator::allocate_from_freelist(size_t size) {
         if (address != nullptr) return address;
     }
     do {
-        size_t malloc_size = max(INITIAL_SINGLE_SIZE, size);
-        void* new_memory = malloc(malloc_size);
-        memoryPools[pool_idx].free(new_memory, malloc_size);
+        // size_t malloc_size = max(INITIAL_SINGLE_SIZE, size);
+        // void* new_memory = malloc(malloc_size);
+        // memoryPools[pool_idx].free(new_memory, malloc_size);
+        memoryPools[pool_idx].add_memory(size);
         address = memoryPools[pool_idx].allocate(size);
-        std::clog << "Info: GCMemoryManager is allocating more memory from OS." << std::endl;
     } while (address == nullptr);
     return address;
 }

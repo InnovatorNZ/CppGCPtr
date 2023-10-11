@@ -1,18 +1,10 @@
 #include "GCMemoryManager.h"
 
-GCMemoryManager::GCMemoryManager(void* memoryStart, size_t size) {
-    freeList.emplace_back(memoryStart, size);
-}
-
-GCMemoryManager::GCMemoryManager(const GCMemoryManager& other) {
-    std::clog << "GCMemoryManager(const GCMemoryManager&)" << std::endl;
-    this->freeList = other.freeList;
-}
-
 GCMemoryManager::GCMemoryManager(GCMemoryManager&& other) noexcept {
     std::clog << "GCMemoryManager(GCMemoryManager&&)" << std::endl;
-    std::unique_lock<std::mutex> lock(other.allocate_mutex_);
+    std::unique_lock<std::recursive_mutex> lock(other.allocate_mutex_);
     this->freeList = std::move(other.freeList);
+    this->new_mem_map = std::move(other.new_mem_map);
 }
 
 void MemoryBlock::shrink_from_head(size_t _size) {
@@ -42,7 +34,7 @@ void MemoryBlock::grow_from_back(size_t _size) {
 }
 
 void* GCMemoryManager::allocate(size_t size) {
-    std::unique_lock<std::mutex> lock(this->allocate_mutex_);
+    std::unique_lock<std::recursive_mutex> lock(this->allocate_mutex_);
     void* ret_addr = nullptr;
     for (auto it = freeList.begin(); it != freeList.end(); it++) {
         MemoryBlock& memoryBlock = *it;
@@ -59,7 +51,7 @@ void* GCMemoryManager::allocate(size_t size) {
 }
 
 void GCMemoryManager::free(void* start_address, size_t size) {
-    std::unique_lock<std::mutex> lock(this->allocate_mutex_);
+    std::unique_lock<std::recursive_mutex> lock(this->allocate_mutex_);
     char* end_address = reinterpret_cast<char*>(start_address) + size;
     if (freeList.empty()) {
         freeList.emplace_back(start_address, size);
@@ -106,4 +98,44 @@ void GCMemoryManager::free(void* start_address, size_t size) {
     }
 
     std::cerr << "Warning: Invalid memory address to free. Please check." << std::endl;
+}
+
+void GCMemoryManager::add_memory(size_t size) {
+    size_t malloc_size = std::max(size, GCParameter::secondaryMallocSize);
+    void* new_memory = malloc(malloc_size);
+    if (new_memory == nullptr) {
+        std::clog << "Warning: GCMemoryManager fails to allocate more memory from OS." << std::endl;
+        return;
+    }
+    std::unique_lock<std::recursive_mutex> lock(this->allocate_mutex_);
+    new_mem_map.emplace(new_memory, malloc_size);
+    this->free(new_memory, malloc_size);
+    std::clog << "Info: GCMemoryManager allocated " << malloc_size << " bytes from OS." << std::endl;
+}
+
+void GCMemoryManager::return_reserved() {
+    std::unique_lock<std::recursive_mutex> lock(this->allocate_mutex_);
+    for (auto block = freeList.begin(); block != freeList.end(); ++block) {
+        // 大于等于当前块起始位置的
+        auto lower = new_mem_map.lower_bound(block->getStartAddress());
+        if (lower == new_mem_map.end()) continue;
+        char* newMemStartAddr = reinterpret_cast<char*>(lower->first);
+        size_t newMemSize = lower->second;
+        char* newMemEndAddr = newMemStartAddr + newMemSize;
+        if (newMemEndAddr <= block->getEndAddress()) {
+            const size_t firstHalfSize = newMemStartAddr - (char*) block->getStartAddress();
+            const size_t secondHalfSize = (char*) block->getEndAddress() - newMemEndAddr;
+            if (firstHalfSize > 0 && secondHalfSize > 0) {
+                block->size = firstHalfSize;
+                freeList.emplace(block + 1, newMemEndAddr, secondHalfSize);
+            } else if (firstHalfSize > 0) {
+                block->size = firstHalfSize;
+            } else if (secondHalfSize > 0) {
+                block->shrink_from_head(block->size - secondHalfSize);
+            }
+            new_mem_map.erase(lower);
+            ::free(newMemStartAddr);
+            std::clog << "Info: GCMemoryManager returned " << newMemSize << " bytes to OS." << std::endl;
+        }
+    }
 }
