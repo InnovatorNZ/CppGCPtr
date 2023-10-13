@@ -16,7 +16,7 @@ class GCPtr_ : public GCPtrBase {
     class GCPtr_;
 
 private:
-    std::atomic<T*> obj;
+    T* obj;
     unsigned int obj_size;
     bool is_root;
     std::shared_ptr<GCRegion> region;
@@ -164,7 +164,7 @@ public:
             setInlineMarkState(other);
             if (ptrLock != nullptr) ptrLock->lockWrite();
             if constexpr (GCParameter::useCopiedMarkstate)
-                this->obj.store(other.obj.load());
+                this->obj = other.obj;
             else
                 this->obj = const_cast<GCPtr_&>(other).getRaw();
             this->obj_size = other.obj_size;
@@ -213,7 +213,7 @@ public:
         // this->setInlineMarkState(other.getInlineMarkState());
         if (ptrLock != nullptr) ptrLock->lockWrite(true);
         if constexpr (GCParameter::useCopiedMarkstate)
-            this->obj.store(other.obj.load());
+            this->obj = other.obj;
         else
             this->obj = const_cast<GCPtr_&>(other).getRaw();
         this->region = other.region;
@@ -251,7 +251,7 @@ public:
         // this->setInlineMarkState(other.getInlineMarkState());
         initPtrLock();
         if constexpr (GCParameter::useCopiedMarkstate)
-            this->obj.store(other.obj.load());
+            this->obj = other.obj;
         else
             this->obj = static_cast<T*>(const_cast<GCPtr_<U>&>(other).getRaw());
         this->region = other.region;
