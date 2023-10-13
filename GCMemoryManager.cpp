@@ -107,14 +107,28 @@ void GCMemoryManager::add_memory(size_t size) {
         std::clog << "Warning: GCMemoryManager fails to allocate more memory from OS." << std::endl;
         return;
     }
-    std::unique_lock<std::recursive_mutex> lock(this->allocate_mutex_);
-    new_mem_map.emplace(new_memory, malloc_size);
+    std::unique_lock<std::recursive_mutex> lock(this->allocate_mutex_, std::defer_lock);
+    if constexpr (GCParameter::recordNewMemMap) {
+        lock.lock();
+        new_mem_map.emplace(new_memory, malloc_size);
+    }
     this->free(new_memory, malloc_size);
     std::clog << "Info: GCMemoryManager allocated " << malloc_size << " bytes from OS." << std::endl;
 }
 
 void GCMemoryManager::return_reserved() {
+    if constexpr (!GCParameter::recordNewMemMap) return;
     std::unique_lock<std::recursive_mutex> lock(this->allocate_mutex_);
+    constexpr bool check_merge = true;
+    if constexpr (check_merge) {
+        if (!freeList.empty()) {
+            for (auto it = freeList.begin() + 1; it != freeList.end(); ++it) {
+                if (it->getStartAddress() == (it - 1)->getEndAddress()) {
+                    std::clog << "Info: Freelist " << it->getStartAddress() << " can be merged" << std::endl;
+                }
+            }
+        }
+    }
     for (auto block = freeList.begin(); block != freeList.end(); ++block) {
         // 大于等于当前块起始位置的
         auto lower = new_mem_map.lower_bound(block->getStartAddress());
