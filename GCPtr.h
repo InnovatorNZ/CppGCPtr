@@ -15,7 +15,7 @@ class GCPtr_ : public GCPtrBase {
     friend
     class GCPtr_;
 
-private:
+protected:
     T* obj;
     unsigned int obj_size;
     bool is_root;
@@ -72,6 +72,7 @@ public:
         }
     }
 
+#if 0
     explicit GCPtr_(T* obj, const std::shared_ptr<GCRegion>& region = nullptr, bool is_root = false) {
         initPtrLock();
         GCPhase::EnterCriticalSection();
@@ -84,6 +85,7 @@ public:
         this->set(obj, region);
         GCPhase::LeaveCriticalSection();
     }
+#endif
 
     T* getRaw() {
         MarkState mark_state = getInlineMarkState();
@@ -116,29 +118,6 @@ public:
             }
         }
         return PtrGuard<T>(obj, region.get());
-    }
-
-    void set(T* obj, const std::shared_ptr<GCRegion>& region = nullptr) {
-        // 备注：当且仅当obj是新的、无中生有的时候才需要调用set()以注册析构函数和移动构造函数
-        if (ptrLock != nullptr) ptrLock->lockWrite();
-        this->obj = obj;
-        this->obj_size = sizeof(*obj);
-        this->region = region;
-        if (ptrLock != nullptr) ptrLock->unlockWrite();
-        if (obj == nullptr) return;
-        GCWorker::getWorker()->registerObject(obj, sizeof(*obj));
-        if (GCWorker::getWorker()->destructorEnabled()) {
-            GCWorker::getWorker()->registerDestructor(obj,
-                                                      [](void* self) { static_cast<T*>(self)->~T(); },
-                                                      region.get());
-        }
-        if constexpr (GCParameter::enableMoveConstructor) {
-            region->registerMoveConstructor(obj,
-                                            [](void* source_addr, void* target_addr) {
-                                                T* target = static_cast<T*>(target_addr);
-                                                new(target) T(std::move(*static_cast<T*>(source_addr)));
-                                            });
-        }
     }
 
     void* getVoidPtr() override {
@@ -300,6 +279,31 @@ public:
     T& operator*() {
         return *(this->get());
     }
+
+    void set(T* obj, const std::shared_ptr<GCRegion>& region = nullptr) {
+        // 备注：当且仅当obj是新的、无中生有的时候才需要调用set()以注册析构函数和移动构造函数
+        if (this->ptrLock != nullptr)
+            this->ptrLock->lockWrite();
+        this->obj = obj;
+        this->obj_size = sizeof(*obj);
+        this->region = region;
+        if (this->ptrLock != nullptr)
+            this->ptrLock->unlockWrite();
+        if (obj == nullptr) return;
+        GCWorker::getWorker()->registerObject(obj, sizeof(*obj));
+        if (GCWorker::getWorker()->destructorEnabled()) {
+            GCWorker::getWorker()->registerDestructor(obj,
+                                                      [](void* self) { static_cast<T*>(self)->~T(); },
+                                                      region.get());
+        }
+        if (GCParameter::enableMoveConstructor && region != nullptr) {
+            region->registerMoveConstructor(obj,
+                                            [](void* source_addr, void* target_addr) {
+                T* target = static_cast<T*>(target_addr);
+                new(target) T(std::move(*static_cast<T*>(source_addr)));
+            });
+        }
+    }
 };
 
 template<>
@@ -307,6 +311,23 @@ class GCPtr<void> : public GCPtr_<void> {
 public:
     using GCPtr_<void>::GCPtr_;
     using GCPtr_<void>::operator=;
+
+    void set(void* obj, unsigned int obj_size,
+             const std::shared_ptr<GCRegion>& region = nullptr,
+             const std::function<void(void*)>& destructor = nullptr) {
+        if (ptrLock != nullptr) ptrLock->lockWrite();
+        this->obj = obj;
+        this->obj_size = obj_size;
+        this->region = region;
+        if (ptrLock != nullptr) ptrLock->unlockWrite();
+        if (obj == nullptr) return;
+        GCWorker::getWorker()->registerObject(obj, obj_size);
+        if (GCWorker::getWorker()->destructorEnabled() && destructor != nullptr) {
+            GCWorker::getWorker()->registerDestructor(obj,
+                                                      destructor,
+                                                      region.get());
+        }
+    }
 };
 
 namespace gc {
