@@ -391,7 +391,6 @@ int main() {
 
         if (triggerGC) {
             gc::triggerGC();
-            gc::freeReservedMemory();
         }
 
         obj3->e->f = 114.514;
@@ -472,7 +471,6 @@ int main() {
 
         if (triggerGC) {
             gc::triggerGC();
-            gc::freeReservedMemory();
         }
 
         Sleep(100);
@@ -485,7 +483,9 @@ int main() {
     }
     if (triggerGC) {
         gc::triggerGC();
+#if ENABLE_FREE_RESERVED
         gc::freeReservedMemory();
+#endif
     }
 
     Sleep(1000);

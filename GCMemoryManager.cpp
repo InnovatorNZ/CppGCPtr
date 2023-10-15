@@ -119,7 +119,7 @@ void GCMemoryManager::add_memory(size_t size) {
 void GCMemoryManager::return_reserved() {
     if constexpr (!GCParameter::recordNewMemMap) return;
     std::unique_lock<std::recursive_mutex> lock(this->allocate_mutex_);
-    constexpr bool check_merge = true;
+    constexpr bool check_merge = false;
     if constexpr (check_merge) {
         if (!freeList.empty()) {
             for (auto it = std::next(freeList.begin()); it != freeList.end(); ++it) {
@@ -140,8 +140,8 @@ void GCMemoryManager::return_reserved() {
         size_t newMemSize = new_mem_it->second;
         char* newMemEndAddr = newMemStartAddr + newMemSize;
         if (newMemEndAddr <= block->getEndAddress()) {
-            const int firstHalfSize = newMemStartAddr - (char*)block->getStartAddress();
-            const int secondHalfSize = (char*)block->getEndAddress() - newMemEndAddr;
+            const size_t firstHalfSize = newMemStartAddr - (char*)block->getStartAddress();
+            const size_t secondHalfSize = (char*)block->getEndAddress() - newMemEndAddr;
             if (firstHalfSize > 0 && secondHalfSize > 0) {
                 block->size = firstHalfSize;
                 free_new_mem(new_mem_it);
@@ -158,7 +158,7 @@ void GCMemoryManager::return_reserved() {
                 free_new_mem(new_mem_it);
                 block = freeList.erase(block);
             } else {
-                throw std::runtime_error("???");
+                throw std::runtime_error("Split memblock size is invalid");
             }
         } else {
             ++block;

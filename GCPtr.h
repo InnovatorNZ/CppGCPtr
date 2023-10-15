@@ -9,6 +9,8 @@
 #include "PtrGuard.h"
 #include "GCWorker.h"
 
+#define ENABLE_FREE_RESERVED 0
+
 template<typename T>
 class GCPtr_ : public GCPtrBase {
     template<typename U>
@@ -376,11 +378,13 @@ namespace gc {
     void triggerGC() {
         GCWorker::getWorker()->triggerGC();
     }
-
+    
+#if ENABLE_FREE_RESERVED
     void freeReservedMemory() {
-        // 该函数目前仅用于二级内存池的预留内存释放，后续可以添加更多释放的功能
+        // 该函数目前仅用于二级内存池的预留内存释放
         GCWorker::getWorker()->freeGCReservedMemory();
     }
+#endif
 
 #ifdef OLD_MAKEGC
     template<class T, class... Args>
