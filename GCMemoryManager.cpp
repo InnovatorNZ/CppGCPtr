@@ -122,34 +122,54 @@ void GCMemoryManager::return_reserved() {
     constexpr bool check_merge = true;
     if constexpr (check_merge) {
         if (!freeList.empty()) {
-            for (auto it = freeList.begin() + 1; it != freeList.end(); ++it) {
-                if (it->getStartAddress() == (it - 1)->getEndAddress()) {
+            for (auto it = std::next(freeList.begin()); it != freeList.end(); ++it) {
+                if (it->getStartAddress() == std::prev(it)->getEndAddress()) {
                     std::clog << "Info: Freelist " << it->getStartAddress() << " can be merged" << std::endl;
                 }
             }
         }
     }
-    for (auto block = freeList.begin(); block != freeList.end(); ++block) {
+    for (auto block = freeList.begin(); block != freeList.end(); ) {
         // 大于等于当前块起始位置的
-        auto lower = new_mem_map.lower_bound(block->getStartAddress());
-        if (lower == new_mem_map.end()) continue;
-        char* newMemStartAddr = reinterpret_cast<char*>(lower->first);
-        size_t newMemSize = lower->second;
+        auto new_mem_it = new_mem_map.lower_bound(block->getStartAddress());
+        if (new_mem_it == new_mem_map.end()) {
+            ++block;
+            continue;
+        }
+        char* newMemStartAddr = reinterpret_cast<char*>(new_mem_it->first);
+        size_t newMemSize = new_mem_it->second;
         char* newMemEndAddr = newMemStartAddr + newMemSize;
         if (newMemEndAddr <= block->getEndAddress()) {
-            const size_t firstHalfSize = newMemStartAddr - (char*)block->getStartAddress();
-            const size_t secondHalfSize = (char*)block->getEndAddress() - newMemEndAddr;
+            const int firstHalfSize = newMemStartAddr - (char*)block->getStartAddress();
+            const int secondHalfSize = (char*)block->getEndAddress() - newMemEndAddr;
             if (firstHalfSize > 0 && secondHalfSize > 0) {
                 block->size = firstHalfSize;
-                freeList.emplace(block + 1, newMemEndAddr, secondHalfSize);
+                free_new_mem(new_mem_it);
+                block = std::next(freeList.emplace(std::next(block), newMemEndAddr, secondHalfSize));
             } else if (firstHalfSize > 0) {
                 block->size = firstHalfSize;
+                free_new_mem(new_mem_it);
+                ++block;
             } else if (secondHalfSize > 0) {
                 block->shrink_from_head(block->size - secondHalfSize);
+                free_new_mem(new_mem_it);
+                ++block;
+            } else if (firstHalfSize == 0 && secondHalfSize == 0) {
+                free_new_mem(new_mem_it);
+                block = freeList.erase(block);
+            } else {
+                throw std::runtime_error("???");
             }
-            new_mem_map.erase(lower);
-            ::free(newMemStartAddr);
-            std::clog << "Info: GCMemoryManager returned " << newMemSize << " bytes to OS." << std::endl;
+        } else {
+            ++block;
         }
     }
+}
+
+void GCMemoryManager::free_new_mem(const decltype(new_mem_map)::iterator& it) {
+    void* new_mem_addr = it->first;
+    size_t new_mem_size = it->second;
+    this->new_mem_map.erase(it);
+    ::free(new_mem_addr);
+    std::clog << "Info: GCMemoryManager returned " << new_mem_size << " bytes to OS." << std::endl;
 }

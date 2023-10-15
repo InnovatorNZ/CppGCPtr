@@ -389,8 +389,10 @@ int main() {
             obj3->e->f << endl;
 #endif
 
-        if (triggerGC)
+        if (triggerGC) {
             gc::triggerGC();
+            gc::freeReservedMemory();
+        }
 
         obj3->e->f = 114.514;
         GCPtr<MyObject> obj5 = gc::make_gc<MyObject>();
@@ -468,8 +470,10 @@ int main() {
             th[tid].join();
 #endif
 
-        if (triggerGC)
+        if (triggerGC) {
             gc::triggerGC();
+            gc::freeReservedMemory();
+        }
 
         Sleep(100);
     }

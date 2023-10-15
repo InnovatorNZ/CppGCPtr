@@ -6,6 +6,7 @@
 #include <queue>
 #include <stack>
 #include <deque>
+#include <list>
 #include <map>
 #include <mutex>
 #include "IAllocatable.h"
@@ -41,9 +42,11 @@ public:
 
 class GCMemoryManager : public IAllocatable {
 private:
-    std::deque<MemoryBlock> freeList;
+    std::list<MemoryBlock> freeList;
     std::map<void*, size_t> new_mem_map;
     std::recursive_mutex allocate_mutex_;
+
+    void free_new_mem(const decltype(new_mem_map)::iterator&);
 public:
     GCMemoryManager() = default;
 
