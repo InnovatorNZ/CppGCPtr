@@ -6,13 +6,19 @@ GCBitMap::GCBitMap(void* region_start_addr, size_t region_size, IMemoryAllocator
         memoryAllocator(memoryAllocator), mark_obj_size(mark_obj_size), iterate_step_size(iterate_step_size) {
     int bitmap_size_ = ceil((double)region_size / (double)region_to_bitmap_ratio * SINGLE_OBJECT_MARKBIT / 8);
     this->bitmap_size = bitmap_size_;
-    this->bitmap_arr = static_cast<std::atomic<unsigned char>*>(
-        memoryAllocator->allocate_raw(bitmap_size_ * sizeof(std::atomic<unsigned char>))
-    );
+    void* bitmap_arr_memory;
+    if (GCParameter::bitmapMemoryFromSecondary)
+        bitmap_arr_memory = memoryAllocator->allocate_raw(bitmap_size_ * sizeof(std::atomic<unsigned char>));
+    else
+        bitmap_arr_memory = ::malloc(bitmap_size_ * sizeof(std::atomic<unsigned char>));
+    this->bitmap_arr = static_cast<std::atomic<unsigned char>*>(bitmap_arr_memory);
 }
 
 GCBitMap::~GCBitMap() {
-    memoryAllocator->free(this->bitmap_arr, bitmap_size * sizeof(std::atomic<unsigned char>));
+    if (GCParameter::bitmapMemoryFromSecondary)
+        memoryAllocator->free(this->bitmap_arr, bitmap_size * sizeof(std::atomic<unsigned char>));
+    else
+        ::free(this->bitmap_arr);
     this->bitmap_arr = nullptr;
 }
 

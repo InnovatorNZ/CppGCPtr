@@ -9,12 +9,13 @@
 #include <memory>
 #include <stdexcept>
 #include <format>
+#include "GCParameter.h"
 #include "PhaseEnum.h"
 #include "Iterator.h"
 #include "IMemoryAllocator.h"
 
 constexpr int SINGLE_OBJECT_MARKBIT = 2;     // 表示每两个bit标记一个对象
-#define USE_SINGLE_OBJECT_MAP false
+#define USE_SINGLE_OBJECT_MAP 0
 
 class IMemoryAllocator;
 
@@ -29,6 +30,7 @@ private:
     void* region_start_addr;
     IMemoryAllocator* memoryAllocator;
     std::atomic<unsigned char>* bitmap_arr;
+
 #if USE_SINGLE_OBJECT_MAP
     std::unordered_set<void*> single_size_set;      // 存放size<=1byte的对象，由于其无法在bitmap占用头尾标识
     std::mutex single_size_set_mtx;
