@@ -3,7 +3,6 @@
 
 #include <cstddef>
 #include <memory>
-#include "GCRegion.h"
 
 class GCRegion;
 

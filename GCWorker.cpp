@@ -42,6 +42,14 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
             root_set[i].reserve(64);
     }
     root_set_mutex = std::make_unique<std::shared_mutex[]>(poolCount);
+    if constexpr (GCParameter::useGCPtrSet) {
+        gcPtrSet = std::make_unique<std::unordered_set<GCPtrBase*>>();
+        gcPtrSet->reserve(128);
+        gcPtrSetMtx = std::make_unique<std::shared_mutex>();
+    } else {
+        gcPtrSet = nullptr;
+        gcPtrSetMtx = nullptr;
+    }
     if (enableParallel) {
         this->gcThreadCount = 4;
         this->threadPool = std::make_unique<ThreadPoolExecutor>(gcThreadCount, gcThreadCount, 0,
@@ -119,9 +127,14 @@ void GCWorker::mark(void* object_addr) {
 
 void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (gcptr == nullptr) return;
+    if constexpr (GCParameter::useGCPtrSet) {
+        if (!inside_gcptr_set(gcptr)) {
+            std::clog << "Marking a gcptr which not in gcptr set " << (void*)gcptr << std::endl;
+            return;
+        }
+    }
     if (gcptr->getInlineMarkState() == MarkState::DE_ALLOCATED) {
-        std::clog << "mark_v2() try to mark a deallocated object, &gcptr=" << (void*)gcptr << std::endl;
-        //throw std::exception();
+        std::clog << "mark_v2() try to mark a deallocated object " << (void*)gcptr << std::endl;
         return;
     }
 
@@ -281,6 +294,24 @@ void GCWorker::registerObject(void* object_addr, size_t object_size) {
         object_map.emplace(object_addr, GCStatus(GCPhase::getCurrentMarkState(), object_size));
     else
         object_map.emplace(object_addr, GCStatus(MarkState::REMAPPED, object_size));
+}
+
+void GCWorker::addGCPtr(GCPtrBase* gcptr_addr) {
+    if constexpr (GCParameter::useGCPtrSet) {
+        std::unique_lock<std::shared_mutex> lock(*gcPtrSetMtx);
+        gcPtrSet->emplace(gcptr_addr);
+    }
+}
+
+void GCWorker::removeGCPtr(GCPtrBase* gcptr_addr) {
+    if constexpr (!GCParameter::useGCPtrSet)
+        return;
+
+    std::unique_lock<std::shared_mutex> lock(*gcPtrSetMtx);
+    if (gcPtrSet->erase(gcptr_addr))
+        return;
+    else
+        std::clog << "Warning: removeGCPtr() didn't find contains" << std::endl;
 }
 
 void GCWorker::addRoot(GCPtrBase* from) {
@@ -597,6 +628,30 @@ bool GCWorker::is_root(void* gcptr_addr) {
     } else {
         return GCUtil::is_stack_pointer(gcptr_addr);
     }
+}
+
+bool GCWorker::inside_gcptr_set(GCPtrBase* gcptr_addr, bool include_root_set) {
+    if (GCParameter::useGCPtrSet) {
+        std::shared_lock<std::shared_mutex> lock(*gcPtrSetMtx);
+        if (gcPtrSet->contains(gcptr_addr))
+            return true;
+    }
+    if (include_root_set) {
+        for (int i = 0; i < poolCount; i++) {
+            std::shared_lock<std::shared_mutex> lock(root_set_mutex[i]);
+            if constexpr (GCParameter::deferRemoveRoot) {
+                if (root_map[i].contains(gcptr_addr))
+                    return true;
+            } else {
+                if (root_set[i].contains(gcptr_addr))
+                    return true;
+            }
+        }
+    } else if (!GCParameter::useGCPtrSet) {
+        std::clog << "Warning: GCParameter::useGCPtrSet is not enabled, return true of is_gcptr() by default." << std::endl;
+        return true;
+    }
+    return false;
 }
 
 void GCWorker::freeGCReservedMemory() {

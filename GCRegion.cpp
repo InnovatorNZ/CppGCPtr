@@ -302,11 +302,21 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size) {
                     new_region->registerMoveConstructor(new_object_addr, it->second);
                 }
             }
+            // 在GCPtrSet中重新注册
+            if constexpr (GCParameter::useGCPtrSet && !enable_move_constructor) {
+                for (int offset = 0; offset < object_size; offset += sizeof(void*)) {
+                    GCPtrBase* c_addr = reinterpret_cast<GCPtrBase*>((char*)object_addr + offset);
+                    GCPtrBase* n_addr = reinterpret_cast<GCPtrBase*>((char*)new_object_addr + offset);
+                    if (GCWorker::getWorker()->inside_gcptr_set(c_addr)) {
+                        GCWorker::getWorker()->addGCPtr(n_addr);
+                        GCWorker::getWorker()->removeGCPtr(c_addr);
+                    }
+                }
+            }
             return;
         }
     }
     // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
-    // std::clog << "Undoing forwarding for " << object_addr << std::endl;
     new_region->free(new_object_addr, object_size);
 }
 

@@ -61,6 +61,8 @@ public:
         is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
+        } else {
+            GCWorker::getWorker()->addGCPtr(this);
         }
     }
 
@@ -71,6 +73,8 @@ public:
         initPtrLock();
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
+        } else {
+            GCWorker::getWorker()->addGCPtr(this);
         }
     }
 
@@ -202,6 +206,8 @@ public:
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
+        } else {
+            GCWorker::getWorker()->addGCPtr(this);
         }
         GCPhase::LeaveCriticalSection();
     }
@@ -239,6 +245,8 @@ public:
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
+        } else {
+            GCWorker::getWorker()->addGCPtr(this);
         }
         /*
         other.obj = nullptr;
@@ -256,6 +264,8 @@ public:
         }
         if (is_root) {
             GCWorker::getWorker()->removeRoot(this);
+        } else {
+            GCWorker::getWorker()->removeGCPtr(this);
         }
     }
 };

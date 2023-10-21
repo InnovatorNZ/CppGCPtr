@@ -18,6 +18,10 @@
 #include "ConcurrentLinkedList.h"
 #include "CppExecutor/ThreadPoolExecutor.h"
 
+class GCRegion;
+
+enum class RegionEnum;
+
 class GCMemoryAllocator : public IMemoryAllocator {
 private:
     static const size_t INITIAL_SINGLE_SIZE;

@@ -12,6 +12,7 @@
 #include <functional>
 #include <cstring>
 #include <stdexcept>
+#include "GCWorker.h"
 #include "GCBitMap.h"
 #include "GCRegionalHashMap.h"
 #include "GCPhase.h"
@@ -20,6 +21,8 @@
 #include "PhaseEnum.h"
 #include "IAllocatable.h"
 #include "IMemoryAllocator.h"
+
+class GCWorker;
 
 class IMemoryAllocator;
 
