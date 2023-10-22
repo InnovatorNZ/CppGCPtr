@@ -3,7 +3,6 @@
 #define max(a, b)            (((a) > (b)) ? (a) : (b))
 #define min(a, b)            (((a) < (b)) ? (a) : (b))
 
-const size_t GCMemoryAllocator::INITIAL_SINGLE_SIZE = 8 * 1024 * 1024;
 thread_local std::shared_ptr<GCRegion> GCMemoryAllocator::smallAllocatingRegion;
 
 GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableParallelClear,

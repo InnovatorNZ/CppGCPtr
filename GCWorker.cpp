@@ -129,12 +129,12 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (gcptr == nullptr) return;
     if constexpr (GCParameter::useGCPtrSet) {
         if (!inside_gcptr_set(gcptr)) {
-            std::clog << "Marking a gcptr which not in gcptr set " << (void*)gcptr << std::endl;
+            std::clog << "Warning: Skipping marking a gcptr which not in gcptr set " << (void*)gcptr << std::endl;
             return;
         }
     }
     if (gcptr->getInlineMarkState() == MarkState::DE_ALLOCATED) {
-        std::clog << "mark_v2() try to mark a deallocated object " << (void*)gcptr << std::endl;
+        std::clog << "Warning: Skipping marking a deallocated gcptr " << (void*)gcptr << std::endl;
         return;
     }
 
@@ -143,7 +143,6 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     MarkState c_markstate = GCPhase::getCurrentMarkState();
     if (useInlineMarkstate) {
         if (gcptr->getInlineMarkState() == c_markstate) {     // 标记过了
-            // std::clog << "Skipping " << gcptr << " as it already marked" << std::endl;
             return;
         }
         // 客观地说，指针自愈确实应该在标记对象前面
@@ -165,7 +164,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         std::shared_lock<std::shared_mutex> read_lock(this->object_map_mutex);
         auto it = object_map.find(object_addr);
         if (it == object_map.end()) {
-            std::clog << "Object not found at " << object_addr << std::endl;
+            std::clog << "Warning: Object not found at " << object_addr << std::endl;
             return;
         }
         read_lock.unlock();
@@ -174,16 +173,15 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
             return;
         it->second.markState = c_markstate;
         if (object_size != it->second.objectSize) {
-            std::clog << "Object size doesn't equal!" << std::endl;
-            throw std::exception();
+            std::clog << "Warning: Object size doesn't equal, " << object_size << " vs " << it->second.objectSize << std::endl;
             object_size = it->second.objectSize;
         }
     } else {
         if (region == nullptr || region->isEvacuated() || !region->inside_region(object_addr, object_size)) {
-            std::cerr << "Exception occurred: Evacuated region or Out of range! " <<
+            std::cerr << "Error: Evacuated region or Out of range! " <<
                 "&region=" << (void*)region << ", isEvacuated=" << (region == nullptr ? -1 : region->isEvacuated()) <<
                 ", object_addr=" << object_addr << ", object_size=" << object_size << std::endl;
-            throw std::exception();
+            throw std::logic_error("mark_v2(): Evacuated region or out of range");
             return;
         }
         if (region->marked(object_addr)) return;
@@ -215,7 +213,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
 #endif
                 mark_v2(next_ptr);
             } else {
-                std::clog << "Identifier head found at " << (void*)n_addr << " but not found tail" << std::endl;
+                std::clog << "Warning: Identifier head found at " << (void*)n_addr << " but not found tail, skipped." << std::endl;
             }
         }
     }
@@ -311,7 +309,7 @@ void GCWorker::removeGCPtr(GCPtrBase* gcptr_addr) {
     if (gcPtrSet->erase(gcptr_addr))
         return;
     else
-        std::clog << "Warning: removeGCPtr() didn't find contains" << std::endl;
+        std::clog << "Warning: GCPtr not found when erasing" << std::endl;
 }
 
 void GCWorker::addRoot(GCPtrBase* from) {
@@ -342,7 +340,7 @@ void GCWorker::removeRoot(GCPtrBase* from) {
                     return;
                 }
             }
-            std::cerr << "Root not found when delete?" << std::endl;
+            std::cerr << "Warning: Root not found when erasing" << std::endl;
         }
     } else {
         std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);
@@ -354,7 +352,7 @@ void GCWorker::removeRoot(GCPtrBase* from) {
                 if (root_set[i].erase(from))
                     return;
             }
-            std::cerr << "Root not found when delete?" << std::endl;
+            std::cerr << "Warning: Root not found when erasing" << std::endl;
         }
     }
 }
@@ -375,8 +373,8 @@ void GCWorker::addSATB(const ObjectInfo& objectInfo) {
         satb_queue.push_back(objectInfo.object_addr);
     } else {
         if (objectInfo.region == nullptr || objectInfo.region->isEvacuated()) {
-            std::cerr << "SATB for object with evacuated region, object_addr=" << objectInfo.object_addr << std::endl;
-            throw std::exception();
+            std::cerr << "Error: SATB for object with evacuated region, object_addr=" << objectInfo.object_addr << std::endl;
+            throw std::logic_error("addSATB(): SATB for object with evacuated region");
         }
         int pool_idx = getPoolIdx();
         std::unique_lock<std::mutex> lock(satb_queue_pool_mutex[pool_idx]);
@@ -402,7 +400,7 @@ void GCWorker::startGC() {
         if (enableConcurrentMark)
             GCUtil::sleep(0.1);       // 防止gc root尚未来得及加入root_set
     } else {
-        std::cerr << "GC already started" << std::endl;
+        std::clog << "GC already started" << std::endl;
     }
 }
 
@@ -522,12 +520,12 @@ void GCWorker::triggerSATBMark() {
         if constexpr (GCParameter::distinctSATB)
             satb_set.clear();
     } else
-        std::clog << "Already in remark phase or in other invalid phase" << std::endl;
+        std::clog << "Warning: Already in remark phase or in other invalid phase" << std::endl;
 }
 
 void GCWorker::selectRelocationSet() {
     if (GCPhase::getGCPhase() != eGCPhase::REMARK) {
-        std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
+        std::clog << "Warning: Already in sweeping phase or in other invalid phase" << std::endl;
         return;
     }
     GCPhase::SwitchToNextPhase();
@@ -560,7 +558,7 @@ void GCWorker::beginSweep() {
                 }
             }
         }
-    } else std::clog << "Invalid phase, should in sweep phase" << std::endl;
+    } else std::clog << "Warning: Invalid phase, should in sweep phase" << std::endl;
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr, size_t obj_size, GCRegion* region) const {
@@ -572,7 +570,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr
             region->relocateObject(ptr, obj_size);
             ret = region->queryForwardingTable(ptr);
             if (ret.first == nullptr)
-                throw std::exception();
+                throw std::logic_error("getHealedPointer(): Entry not found twice in forwarding table.");
             return ret;
         } else {
             return std::make_pair(nullptr, nullptr);
@@ -590,7 +588,7 @@ void GCWorker::callDestructor(void* object_addr, bool remove_after_call) {
         if (remove_after_call)
             destructor_map.erase(destructor_it);
     } else {
-        std::clog << "Destructor not found for " << object_addr << std::endl;
+        std::clog << "Warning: Destructor not found for " << object_addr << std::endl;
     }
 }
 
@@ -601,7 +599,7 @@ void GCWorker::endGC() {
             memoryAllocator->resetLiveSize();
         root_object_snapshot.clear();
     } else {
-        std::clog << "Not started GC, or not finished sweeping yet" << std::endl;
+        std::clog << "Warning: Not started GC, or not finished sweeping yet" << std::endl;
     }
 }
 

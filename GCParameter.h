@@ -24,8 +24,8 @@ public:
 	static constexpr bool enablePtrRWLock = false;				// 启用针对GCPtr的读写锁，启用该选项可以使GCPtr变得线程安全，无此需求请禁用
 	static constexpr bool waitingForGCFinished = false;			// 完全Stop-the-world的GC，若遇上线程安全问题，可启用此选项进行debug，否则请禁用
 	static constexpr bool zeroCountCondition = true;			// 当需要转移的region存在PtrGuard时，GC线程会休眠直到计数归零，在PtrGuard较多时可以减少GC线程的自旋消耗的CPU，但会增加应用线程每次取出指针的性能消耗
-	static constexpr bool recordNewMemMap = true;				// 是否在分配新内存时记录其起始位置和大小，用于二级内存池释放预留内存用；没什么用，不启用
+	static constexpr bool recordNewMemMap = false;				// 是否在分配新内存时记录其起始位置和大小，用于二级内存池释放预留内存用，没什么用，不建议启用；前提条件：启用二级内存分配器，启用释放预留内存
 	static constexpr bool bitmapMemoryFromSecondary = true;		// 位图的内存是否从二级分配器分配；启用该选项可以加快位图的内存分配，但可能会导致二级分配器的内存碎片；前提条件：启用二级内存分配器
-	static constexpr bool useGCPtrSet = true;					// 是否启用记录所有GCPtr的集合，可能在崩溃的情况下有用
+	static constexpr bool useGCPtrSet = false;					// 是否启用记录所有GCPtr的集合，若你的程序由于未对新分配内存进行初始化而在GC时崩溃可启用该选项，请谨慎这会导致较大的性能下降；前提条件：启用析构函数
 	static constexpr size_t secondaryMallocSize = 8 * 1024 * 1024;	// 二级内存分配器单次向操作系统请求分配预留内存的大小
 };
