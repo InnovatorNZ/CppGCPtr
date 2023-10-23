@@ -43,8 +43,8 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
     }
     root_set_mutex = std::make_unique<std::shared_mutex[]>(poolCount);
     if constexpr (GCParameter::useGCPtrSet) {
-        gcPtrSet = std::make_unique<std::unordered_set<GCPtrBase*>>();
-        gcPtrSet->reserve(128);
+        gcPtrSet = std::make_unique<std::set<GCPtrBase*>>();
+        //gcPtrSet->reserve(128);
         gcPtrSetMtx = std::make_unique<std::shared_mutex>();
     } else {
         gcPtrSet = nullptr;
@@ -650,6 +650,22 @@ bool GCWorker::inside_gcptr_set(GCPtrBase* gcptr_addr, bool include_root_set) {
         return true;
     }
     return false;
+}
+
+std::vector<GCPtrBase*> GCWorker::inside_gcptr_set(GCPtrBase* gcptr_addr, size_t object_size) {
+    std::vector<GCPtrBase*> ret;
+    if (GCParameter::useGCPtrSet) {
+        std::shared_lock<std::shared_mutex> lock(*gcPtrSetMtx);
+        auto it = gcPtrSet->lower_bound(gcptr_addr);
+        while (it != gcPtrSet->end()) {
+            GCPtrBase* c_addr = *it;
+            size_t offset = (char*)c_addr - (char*)gcptr_addr;
+            if (offset >= object_size) break;
+            ret.push_back(c_addr);
+            ++it;
+        }
+    }
+    return ret;
 }
 
 void GCWorker::freeGCReservedMemory() {
