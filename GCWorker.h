@@ -147,6 +147,8 @@ public:
 
     void removeGCPtr(GCPtrBase*);
 
+    void replaceGCPtr(GCPtrBase* original, GCPtrBase* replacement);
+
     void registerDestructor(void* object_addr, const std::function<void(void*)>&, GCRegion* = nullptr);
 
     std::pair<void*, std::shared_ptr<GCRegion>> getHealedPointer(void*, size_t, GCRegion*) const;

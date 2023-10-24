@@ -312,6 +312,15 @@ void GCWorker::removeGCPtr(GCPtrBase* gcptr_addr) {
         std::clog << "Warning: GCPtr not found when erasing" << std::endl;
 }
 
+void GCWorker::replaceGCPtr(GCPtrBase* original, GCPtrBase* replacement) {
+    if constexpr (GCParameter::useGCPtrSet) {
+        std::unique_lock<std::shared_mutex> lock(*gcPtrSetMtx);
+        if (!gcPtrSet->erase(original))
+            std::clog << "Warning: GCPtr not found when erasing" << std::endl;
+        gcPtrSet->emplace(replacement);
+    }
+}
+
 void GCWorker::addRoot(GCPtrBase* from) {
     int poolIdx = getPoolIdx();
     std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);

@@ -309,8 +309,9 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size) {
                 for (GCPtrBase* c_addr : inside_set) {
                     size_t offset = (char*)c_addr - (char*)object_addr;
                     GCPtrBase* n_addr = reinterpret_cast<GCPtrBase*>(reinterpret_cast<char*>(new_object_addr) + offset);
-                    GCWorker::getWorker()->addGCPtr(n_addr);
-                    GCWorker::getWorker()->removeGCPtr(c_addr);
+                    GCWorker::getWorker()->replaceGCPtr(c_addr, n_addr);
+                    // GCWorker::getWorker()->addGCPtr(n_addr);
+                    // GCWorker::getWorker()->removeGCPtr(c_addr);
                 }
 #if 0
                 for (int offset = 0; offset < object_size; offset += sizeof(void*)) {
