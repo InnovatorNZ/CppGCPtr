@@ -3,6 +3,8 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <map>
+#include <set>
 #include <vector>
 #include <memory>
 #include <thread>
@@ -41,7 +43,7 @@ private:
     std::unique_ptr<std::mutex[]> satb_queue_pool_mutex;
     std::mutex satb_queue_mutex;
     std::unordered_set<void*> satb_set;
-    std::unique_ptr<std::unordered_set<GCPtrBase*>> gcPtrSet;
+    std::unique_ptr<std::set<GCPtrBase*>> gcPtrSet;
     std::unique_ptr<std::shared_mutex> gcPtrSetMtx;
     std::unordered_map<void*, std::function<void(void*)>> destructor_map;
     std::mutex destructor_map_mutex;
@@ -145,6 +147,8 @@ public:
 
     void removeGCPtr(GCPtrBase*);
 
+    void replaceGCPtr(GCPtrBase* original, GCPtrBase* replacement);
+
     void registerDestructor(void* object_addr, const std::function<void(void*)>&, GCRegion* = nullptr);
 
     std::pair<void*, std::shared_ptr<GCRegion>> getHealedPointer(void*, size_t, GCRegion*) const;
@@ -160,6 +164,8 @@ public:
     bool is_root(void* gcptr_addr);
 
     bool inside_gcptr_set(GCPtrBase* gcptr_addr, bool include_root_set = false);
+
+    std::vector<GCPtrBase*> inside_gcptr_set(GCPtrBase* gcptr_addr, size_t object_size);
 
     void freeGCReservedMemory();
 };

@@ -304,6 +304,16 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size) {
             }
             // 在GCPtrSet中重新注册
             if constexpr (GCParameter::useGCPtrSet && !enable_move_constructor) {
+                std::vector<GCPtrBase*> inside_set =
+                    GCWorker::getWorker()->inside_gcptr_set((GCPtrBase*)object_addr, object_size);
+                for (GCPtrBase* c_addr : inside_set) {
+                    size_t offset = (char*)c_addr - (char*)object_addr;
+                    GCPtrBase* n_addr = reinterpret_cast<GCPtrBase*>(reinterpret_cast<char*>(new_object_addr) + offset);
+                    GCWorker::getWorker()->replaceGCPtr(c_addr, n_addr);
+                    // GCWorker::getWorker()->addGCPtr(n_addr);
+                    // GCWorker::getWorker()->removeGCPtr(c_addr);
+                }
+#if 0
                 for (int offset = 0; offset < object_size; offset += sizeof(void*)) {
                     GCPtrBase* c_addr = reinterpret_cast<GCPtrBase*>((char*)object_addr + offset);
                     GCPtrBase* n_addr = reinterpret_cast<GCPtrBase*>((char*)new_object_addr + offset);
@@ -312,6 +322,7 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size) {
                         GCWorker::getWorker()->removeGCPtr(c_addr);
                     }
                 }
+#endif
             }
             return;
         }
