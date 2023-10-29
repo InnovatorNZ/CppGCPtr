@@ -47,6 +47,7 @@ private:
     std::recursive_mutex allocate_mutex_;
 
     void free_new_mem(const decltype(new_mem_map)::iterator&);
+
 public:
     GCMemoryManager() = default;
 

@@ -53,7 +53,7 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
     int offset = static_cast<int>(reinterpret_cast<char*>(object_addr) - reinterpret_cast<char*>(region_start_addr));
     int offset_end = static_cast<int>(reinterpret_cast<char*>(object_addr) + object_size - reinterpret_cast<char*>(region_start_addr)) - 1;
     if (offset < 0 || offset_end >= bitmap_size * region_to_bitmap_ratio * 8 / SINGLE_OBJECT_MARKBIT || offset % region_to_bitmap_ratio != 0) {
-        std::clog << "Object address out of bitmap range, or is not divided exactly by ratio" << std::endl;
+        std::clog << "Warning: Object address out of bitmap range, or is not divided exactly by ratio" << std::endl;
         return false;
     }
     unsigned char ch_state = MarkStateUtil::toChar(state);
@@ -94,7 +94,7 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
             if (!overwrite) {
                 unsigned int ori_obj_size = *reinterpret_cast<unsigned int*>(bitmap_arr + offset_byte + 1);
                 if (ori_obj_size != 0 && ori_obj_size != object_size) {
-                    std::string errorMsg = std::format("Different object size found in bitmap. Original: {}, Target: {}",
+                    std::string errorMsg = std::format("GCBitMap::mark(): Different object size found in bitmap. Original: {}, Target: {}",
                                                        ori_obj_size, object_size);
                     throw std::runtime_error(errorMsg);
                 } else {

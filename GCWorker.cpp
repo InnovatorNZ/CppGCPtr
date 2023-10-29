@@ -10,8 +10,7 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
         stop_(false), ready_(false), enableConcurrentMark(concurrent), enableMemoryAllocator(enableMemoryAllocator) {
     std::clog << "GCWorker()" << std::endl;
     if (enableReclaim) {
-        // TODO: 重利用和空闲列表二级内存分配器尚未实现
-        throw std::logic_error("Reclaim and secondary memory manager is not prepared yet. Please contact developer");
+        throw std::invalid_argument("GCWorker::GCWorker(): Reclaim is no longer supported.");
     }
     if (!enableMemoryAllocator) {
         enableParallel = false;             // 必须启用内存分配器以支持并行垃圾回收
@@ -44,7 +43,6 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
     root_set_mutex = std::make_unique<std::shared_mutex[]>(poolCount);
     if constexpr (GCParameter::useGCPtrSet) {
         gcPtrSet = std::make_unique<std::set<GCPtrBase*>>();
-        //gcPtrSet->reserve(128);
         gcPtrSetMtx = std::make_unique<std::shared_mutex>();
     } else {
         gcPtrSet = nullptr;
@@ -117,7 +115,6 @@ void GCWorker::mark(void* object_addr) {
     for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(void*) * 2; n_addr += sizeof(void*)) {
         int identifier = *(reinterpret_cast<int*>(n_addr));
         if (identifier == GCPTR_IDENTIFIER_HEAD) {
-            // std::clog << "Identifer found at " << (void*) n_addr << std::endl;
             void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState)));
             if (next_addr != nullptr)
                 mark(next_addr);
@@ -181,7 +178,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
             std::cerr << "Error: Evacuated region or Out of range! " <<
                 "&region=" << (void*)region << ", isEvacuated=" << (region == nullptr ? -1 : region->isEvacuated()) <<
                 ", object_addr=" << object_addr << ", object_size=" << object_size << std::endl;
-            throw std::logic_error("mark_v2(): Evacuated region or out of range");
+            throw std::logic_error("GCWorker::mark_v2(): Evacuated region or out of range");
             return;
         }
         if (region->marked(object_addr)) return;
@@ -202,15 +199,6 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
             int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {
                 GCPtrBase* next_ptr = reinterpret_cast<GCPtrBase*>(n_addr);
-#if 0
-                // To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
-                void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState)));
-                if (next_addr != nullptr) {
-                    auto markstate = static_cast<MarkState>(*(n_addr + sizeof(void*) * 2));
-                    if (markstate != GCPhase::getCurrentMarkState())
-                        mark(next_addr);
-                }
-#endif
                 mark_v2(next_ptr);
             } else {
                 std::clog << "Warning: Identifier head found at " << (void*)n_addr << " but not found tail, skipped." << std::endl;
@@ -383,7 +371,7 @@ void GCWorker::addSATB(const ObjectInfo& objectInfo) {
     } else {
         if (objectInfo.region == nullptr || objectInfo.region->isEvacuated()) {
             std::cerr << "Error: SATB for object with evacuated region, object_addr=" << objectInfo.object_addr << std::endl;
-            throw std::logic_error("addSATB(): SATB for object with evacuated region");
+            throw std::logic_error("GCWorker::addSATB(): SATB for object with evacuated region");
         }
         int pool_idx = getPoolIdx();
         std::unique_lock<std::mutex> lock(satb_queue_pool_mutex[pool_idx]);
@@ -579,7 +567,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr
             region->relocateObject(ptr, obj_size);
             ret = region->queryForwardingTable(ptr);
             if (ret.first == nullptr)
-                throw std::logic_error("getHealedPointer(): Entry not found twice in forwarding table.");
+                throw std::logic_error("GCWorker::getHealedPointer(): Entry not found twice in forwarding table.");
             return ret;
         } else {
             return std::make_pair(nullptr, nullptr);

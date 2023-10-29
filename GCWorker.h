@@ -71,7 +71,6 @@ private:
         MarkState c_markstate = GCPhase::getCurrentMarkState();
         if (useInlineMarkstate) {
             if (gcptr->getInlineMarkState() == c_markstate) {
-                // std::clog << "Skipping " << gcptr << " as it already marked" << std::endl;
                 return;
             }
             gcptr->setInlineMarkState(c_markstate);
