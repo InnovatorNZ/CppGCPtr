@@ -20,8 +20,12 @@ bool GCUtil::is_stack_pointer(void* ptr) {
 }
 
 int GCUtil::getPoolIdx(int poolCount) {
+    thread_local int pool_idx_cached = -1;
+    if (pool_idx_cached != -1 && pool_idx_cached < poolCount)
+        return pool_idx_cached;
     std::thread::id tid = std::this_thread::get_id();
     int pool_idx = static_cast<int>(std::hash<std::thread::id>()(tid) % poolCount);
+    pool_idx_cached = pool_idx;
     return pool_idx;
 }
 
