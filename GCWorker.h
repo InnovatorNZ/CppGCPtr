@@ -56,7 +56,7 @@ private:
     std::unique_ptr<ThreadPoolExecutor> threadPool;
     int gcThreadCount;
     bool enableConcurrentMark, enableParallelGC, enableMemoryAllocator, useInlineMarkstate,
-        enableRelocation, enableDestructorSupport, enableReclaim;
+        enableRelocation, enableDestructorSupport;
     volatile bool stop_, ready_;
 
     void mark(void*);
@@ -114,7 +114,7 @@ public:
 
     GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestructorSupport = true,
              bool useInlineMarkState = true, bool useSecondaryMemoryManager = false,
-             bool enableRelocation = false, bool enableParallel = false, bool enableReclaim = false);
+             bool enableRelocation = false, bool enableParallel = false);
 
     GCWorker(const GCWorker&) = delete;
 

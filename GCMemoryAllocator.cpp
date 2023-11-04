@@ -331,7 +331,7 @@ void GCMemoryAllocator::triggerClear() {
     }
 }
 
-void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
+void GCMemoryAllocator::triggerRelocation() {
     if (GCPhase::getGCPhase() != eGCPhase::SWEEP) {
         std::cerr << "Wrong phase, should in sweeping phase to trigger relocation." << std::endl;
         return;
@@ -375,25 +375,21 @@ void GCMemoryAllocator::triggerRelocation(bool enableReclaim) {
         }
     }
 
-    if (enableReclaim) {
-        throw std::invalid_argument("GCMemoryAllocator::triggerRelocation(): Reclaim is no longer supported.");
+    if (enableParallelClear) {
+        size_t snum = evacuationQue.size() / gcThreadCount;
+        for (int tid = 0; tid < gcThreadCount; tid++) {
+            threadPool->execute([this, tid, snum] {
+                size_t startIndex = tid * snum;
+                size_t endIndex = (tid == gcThreadCount - 1) ? evacuationQue.size() : (tid + 1) * snum;
+                for (size_t j = startIndex; j < endIndex; j++) {
+                    evacuationQue[j]->free();
+                }
+            });
+        }
+        threadPool->waitForTaskComplete(gcThreadCount);
     } else {
-        if (enableParallelClear) {
-            size_t snum = evacuationQue.size() / gcThreadCount;
-            for (int tid = 0; tid < gcThreadCount; tid++) {
-                threadPool->execute([this, tid, snum] {
-                    size_t startIndex = tid * snum;
-                    size_t endIndex = (tid == gcThreadCount - 1) ? evacuationQue.size() : (tid + 1) * snum;
-                    for (size_t j = startIndex; j < endIndex; j++) {
-                        evacuationQue[j]->free();
-                    }
-                });
-            }
-            threadPool->waitForTaskComplete(gcThreadCount);
-        } else {
-            for (auto& region : evacuationQue) {
-                region->free();
-            }
+        for (auto& region : evacuationQue) {
+            region->free();
         }
     }
 

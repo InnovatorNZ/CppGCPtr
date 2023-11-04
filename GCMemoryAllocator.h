@@ -111,7 +111,7 @@ public:
 
     void SelectClearSet();
 
-    void triggerRelocation(bool enableReclaim = false);
+    void triggerRelocation();
 
     void triggerClear_v2();
 

@@ -6,22 +6,17 @@ GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
 
 GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestructorSupport, bool useInlineMarkState,
-                   bool useSecondaryMemoryManager, bool enableRelocation, bool enableParallel, bool enableReclaim) :
+                   bool useSecondaryMemoryManager, bool enableRelocation, bool enableParallel) :
         stop_(false), ready_(false), enableConcurrentMark(concurrent), enableMemoryAllocator(enableMemoryAllocator) {
     std::clog << "GCWorker()" << std::endl;
-    if (enableReclaim) {
-        throw std::invalid_argument("GCWorker::GCWorker(): Reclaim is no longer supported.");
-    }
     if (!enableMemoryAllocator) {
         enableParallel = false;             // 必须启用内存分配器以支持并行垃圾回收
         enableRelocation = false;           // 必须启用内存分配器以支持移动式回收
         useSecondaryMemoryManager = false;
-        enableReclaim = false;
     }
     this->enableParallelGC = enableParallel;
     this->enableRelocation = enableRelocation;
     this->enableDestructorSupport = enableDestructorSupport;
-    this->enableReclaim = enableReclaim;
     if (enableRelocation) useInlineMarkstate = true;
     this->useInlineMarkstate = useInlineMarkState;
 
@@ -90,7 +85,7 @@ GCWorker* GCWorker::getWorker() {
             GCWorker* pGCWorker = new GCWorker
                     (GCParameter::enableConcurrentGC, GCParameter::enableMemoryAllocator, GCParameter::enableDestructorSupport,
                      GCParameter::useInlineMarkState, GCParameter::useSecondaryMemoryManager, GCParameter::enableRelocation,
-                     GCParameter::enableParallelGC, GCParameter::enableReclaim);
+                     GCParameter::enableParallelGC);
             instance = std::unique_ptr<GCWorker>(pGCWorker);
         }
     }
@@ -538,7 +533,7 @@ void GCWorker::beginSweep() {
     if (GCPhase::getGCPhase() == eGCPhase::SWEEP) {
         if (enableMemoryAllocator) {
             if (enableRelocation)
-                memoryAllocator->triggerRelocation(enableReclaim);
+                memoryAllocator->triggerRelocation();
             else
                 memoryAllocator->triggerClear();
         } else {
