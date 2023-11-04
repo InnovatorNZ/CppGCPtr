@@ -15,13 +15,17 @@ bool GCUtil::is_stack_pointer(void* ptr) {
     if constexpr (GCParameter::enableDestructorSupport) {
         return true;
     } else {
-        throw std::runtime_error("is_stack_pointer() is not supported on current system");
+        throw std::invalid_argument("GCUtil::is_stack_pointer() is not supported on current system");
     }
 }
 
 int GCUtil::getPoolIdx(int poolCount) {
+    thread_local int pool_idx_cached = -1;
+    if (pool_idx_cached != -1 && pool_idx_cached < poolCount)
+        return pool_idx_cached;
     std::thread::id tid = std::this_thread::get_id();
     int pool_idx = static_cast<int>(std::hash<std::thread::id>()(tid) % poolCount);
+    pool_idx_cached = pool_idx;
     return pool_idx;
 }
 
@@ -64,7 +68,7 @@ void GCUtil::suspend_user_threads(std::vector<DWORD>& suspendedThreadIDs, Thread
         CloseHandle(hSnapshot);
     }
 #else
-    throw std::invalid_argument("suspend user threads is not supported on your operating system");
+    throw std::invalid_argument("GCUtil::suspend_user_threads() is not supported on current system");
 #endif
 }
 
@@ -102,7 +106,8 @@ void GCUtil::resume_the_world(IReadWriteLock* stwLock) {
         GCUtil::user_threads_suspended = false;
         _suspendedThreadIDs.clear();
     } else {
-        if (stwLock == nullptr) throw std::invalid_argument("stwLock cannot be nullptr");
+        if (stwLock == nullptr)
+            throw std::logic_error("GCUtil::resume_the_world(): stwLock cannot be nullptr");
         stwLock->unlockWrite();
     }
 }

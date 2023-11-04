@@ -61,6 +61,8 @@ public:
         is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
+        } else {
+            GCWorker::getWorker()->addGCPtr(this);
         }
     }
 
@@ -71,23 +73,10 @@ public:
         initPtrLock();
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
+        } else {
+            GCWorker::getWorker()->addGCPtr(this);
         }
     }
-
-#if 0
-    explicit GCPtr_(T* obj, const std::shared_ptr<GCRegion>& region = nullptr, bool is_root = false) {
-        initPtrLock();
-        GCPhase::EnterCriticalSection();
-        if (!is_root && GCWorker::getWorker()->is_root(this))
-            is_root = true;
-        this->is_root = is_root;
-        if (is_root) {
-            GCWorker::getWorker()->addRoot(this);
-        }
-        this->set(obj, region);
-        GCPhase::LeaveCriticalSection();
-    }
-#endif
 
     T* getRaw() {
         MarkState mark_state = getInlineMarkState();
@@ -137,7 +126,6 @@ public:
 
     GCPtr_& operator=(const GCPtr_& other) {
         if (this != &other) {
-            // GCPhase::EnterCriticalSection();
             if (this->obj != nullptr && this->obj != other.obj
                 && GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
                 GCWorker::getWorker()->addSATB(this->getObjectInfo());
@@ -158,7 +146,6 @@ public:
                 GCWorker::getWorker()->addRoot(this);
             }
             */
-            // GCPhase::LeaveCriticalSection();
         }
         return *this;
     }
@@ -188,10 +175,8 @@ public:
     }
 
     GCPtr_(const GCPtr_& other) : GCPtrBase(other), obj_size(other.obj_size) {
-        // std::clog << "Copy constructor" << std::endl;
         initPtrLock();
         GCPhase::EnterCriticalSection();
-        // this->setInlineMarkState(other.getInlineMarkState());
         if (ptrLock != nullptr) ptrLock->lockWrite(true);
         if constexpr (GCParameter::useCopiedMarkstate)
             this->obj = other.obj;
@@ -202,34 +187,15 @@ public:
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
+        } else {
+            GCWorker::getWorker()->addGCPtr(this);
         }
         GCPhase::LeaveCriticalSection();
     }
-
-#if 0
-    GCPtr_(GCPtr_&& other) noexcept : GCPtrBase(other), obj_size(other.obj_size) {
-        // std::clog << "Move constructor" << std::endl;
-        GCPhase::EnterCriticalSection();
-        this->obj.store(other.obj.load());
-        this->region = other.region;
-        this->is_root = GCWorker::getWorker()->is_root(this);
-        if (is_root) {
-            GCWorker::getWorker()->addRoot(this);
-        }
-        /*
-        other.obj = nullptr;
-        other.obj_size = 0;
-        other.region = nullptr;
-        other.setInlineMarkState(MarkState::REMAPPED);
-        */
-        GCPhase::LeaveCriticalSection();
-    }
-#endif
 
     template<typename U>
     GCPtr_(const GCPtr_<U>& other) : GCPtrBase(other),
                                      obj_size(other.obj_size) {
-        // this->setInlineMarkState(other.getInlineMarkState());
         initPtrLock();
         if constexpr (GCParameter::useCopiedMarkstate)
             this->obj = other.obj;
@@ -239,13 +205,9 @@ public:
         this->is_root = GCWorker::getWorker()->is_root(this);
         if (is_root) {
             GCWorker::getWorker()->addRoot(this);
+        } else {
+            GCWorker::getWorker()->addGCPtr(this);
         }
-        /*
-        other.obj = nullptr;
-        other.obj_size = 0;
-        other.region = nullptr;
-        other.setInlineMarkState(MarkState::REMAPPED);
-        */
     }
 
     ~GCPtr_() override {
@@ -256,6 +218,8 @@ public:
         }
         if (is_root) {
             GCWorker::getWorker()->removeRoot(this);
+        } else {
+            GCWorker::getWorker()->removeGCPtr(this);
         }
     }
 };
@@ -386,74 +350,6 @@ namespace gc {
     }
 #endif
 
-#ifdef OLD_MAKEGC
-    template<class T, class... Args>
-    GCPtr<T> make_static(Args&& ... args) {
-        GCPhase::EnterCriticalSection();
-        T* obj = nullptr;
-        std::shared_ptr<GCRegion> region = nullptr;
-        if (GCWorker::getWorker()->memoryAllocatorEnabled()) {
-            auto pair = GCWorker::getWorker()->allocate(sizeof(T));
-            obj = static_cast<T*>(pair.first);
-            region = pair.second;
-            new(obj) T(std::forward<Args>(args)...);
-        } else {
-            obj = new T(std::forward<Args>(args)...);
-        }
-        GCPhase::LeaveCriticalSection();
-
-        if (obj == nullptr) throw std::exception();
-        return GCPtr<T>(obj, region, true);
-    }
-
-    template<typename T>
-    GCPtr <T> make_gc(T* obj) {
-        GCPtr<T> ret(obj);
-        return ret;
-    }
-
-    template<typename T>
-    GCPtr <T> make_root(T* obj) {
-        GCPtr<T> ret(obj, true);
-        return ret;
-    }
-
-    template<typename T>
-    GCPtr <T> make_gc() {
-        GCPhase::EnterCriticalSection();
-        T* obj = new T();
-        GCPhase::LeaveCriticalSection();
-        GCPtr<T> ret(obj);
-        return ret;
-    }
-
-    template<typename T>
-    GCPtr <T> make_root() {
-        GCPhase::EnterCriticalSection();
-        T* obj = new T();
-        GCPhase::LeaveCriticalSection();
-        GCPtr<T> ret(obj, true);
-        return ret;
-    }
-#endif
-
-#ifdef MORE_USERFRIENDLY
-    template<typename T>
-    GCPtr<T> make_static() {
-        return make_root<T>();
-    }
-
-    template<typename T>
-    GCPtr<T> make_local() {
-        return make_root<T>();
-    }
-
-    template<typename T>
-    GCPtr<T> make_const() {
-        const T* t = new T();
-        return GCPtr<T>(t);
-    }
-#endif
 }
 
 #endif //CPPGCPTR_GCPTR_H

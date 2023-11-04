@@ -18,9 +18,12 @@
 #include "ConcurrentLinkedList.h"
 #include "CppExecutor/ThreadPoolExecutor.h"
 
+class GCRegion;
+
+enum class RegionEnum;
+
 class GCMemoryAllocator : public IMemoryAllocator {
 private:
-    static const size_t INITIAL_SINGLE_SIZE;
     static constexpr bool useConcurrentLinkedList = GCParameter::useConcurrentLinkedList;
     static constexpr bool enableRegionMapBuffer =
             GCParameter::enableRegionMapBuffer && GCParameter::enableMoveConstructor && GCParameter::enableDestructorSupport;
@@ -31,7 +34,7 @@ private:
     unsigned int poolCount;
     std::vector<GCMemoryManager> memoryPools;
     ThreadPoolExecutor* threadPool;
-    // 能否使用无锁链表管理region？ TODO: 似乎使用链表管理region会导致多线程优化较为困难
+    // 能否使用无锁链表管理region？似乎使用链表管理region会导致多线程优化较为困难
 // #if USE_CONCURRENT_LINKEDLIST
     std::unique_ptr<ConcurrentLinkedList<std::shared_ptr<GCRegion>>[]> smallRegionLists;
     ConcurrentLinkedList<std::shared_ptr<GCRegion>> mediumRegionList;
@@ -47,7 +50,6 @@ private:
     std::shared_mutex largeRegionQueMtx;
     std::shared_mutex tinyRegionQueMtx;
 // #endif
-    // std::unique_ptr<std::atomic<std::shared_ptr<GCRegion>>[]> smallAllocatingRegions;
     static thread_local std::shared_ptr<GCRegion> smallAllocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> mediumAllocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> tinyAllocatingRegion;
@@ -55,7 +57,7 @@ private:
     std::vector<std::shared_ptr<GCRegion>> evacuationQue;
     std::vector<std::shared_ptr<GCRegion>> clearQue;
     std::vector<GCRegion*> liveQue;
-    // 用于判定是否在被管理区域内的root的红黑树及其缓冲区
+    // 用于判定gc root，是否在被管理区域内的红黑树
     std::map<void*, GCRegion*> regionMap;
     std::shared_mutex regionMapMtx;
     std::vector<std::vector<GCRegion*>> regionMapBuffer0, regionMapBuffer1;

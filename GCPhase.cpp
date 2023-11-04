@@ -66,7 +66,7 @@ bool GCPhase::needSelfHeal(MarkState markState) {
     else if (markState == MarkState::COPIED)        // GC期间新分配，需要自愈
         return true;
     else if (markState == MarkState::DE_ALLOCATED)  // 已被释放，不应调用此函数
-        throw std::invalid_argument("DE_ALLOCATED needn't call needSelfHeal()");
+        throw std::invalid_argument("GCPhase::needSelfHeal(): DE_ALLOCATED needn't call needSelfHeal().");
 
     gcPhaseLock->lockRead();
     const MarkState currentMarkState = getCurrentMarkState();

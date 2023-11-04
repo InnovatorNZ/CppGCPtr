@@ -279,7 +279,7 @@ namespace LRUCacheTest {
             if (map->size() >= capacity) {
                 GCPtr<Node> del = linkedList->get_tail();
                 if (del == nullptr)
-                    throw std::runtime_error("del is nullptr");
+                    throw std::logic_error("del is nullptr");
                 linkedList->remove(del);
                 map->erase(del->key);
             }

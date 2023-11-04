@@ -12,6 +12,7 @@
 #include <functional>
 #include <cstring>
 #include <stdexcept>
+#include "GCWorker.h"
 #include "GCBitMap.h"
 #include "GCRegionalHashMap.h"
 #include "GCPhase.h"
@@ -20,6 +21,8 @@
 #include "PhaseEnum.h"
 #include "IAllocatable.h"
 #include "IMemoryAllocator.h"
+
+class GCWorker;
 
 class IMemoryAllocator;
 
@@ -49,14 +52,14 @@ public:
     static constexpr bool use_regional_hashmap = GCParameter::useRegionalHashmap;
     static constexpr bool enable_destructor = GCParameter::enableDestructorSupport;
     static constexpr bool enable_move_constructor = GCParameter::enableMoveConstructor;
+
 private:
     void* startAddress;
     size_t total_size;
     std::atomic<size_t> allocated_offset;
-    // std::atomic<size_t> frag_size;
     std::atomic<size_t> live_size;
     RegionEnum regionType;
-    MarkStateBit largeRegionMarkState;      // only used in large region
+    MarkStateBit largeRegionMarkState;                  // only used in large region
     std::unique_ptr<GCBitMap> bitmap;                       // bitmap
     std::unique_ptr<GCRegionalHashMap> regionalHashMap;     // regional hash map
     std::unordered_map<void*, std::pair<void*, std::shared_ptr<GCRegion>>> forwarding_table;

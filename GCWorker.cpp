@@ -10,8 +10,7 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
         stop_(false), ready_(false), enableConcurrentMark(concurrent), enableMemoryAllocator(enableMemoryAllocator) {
     std::clog << "GCWorker()" << std::endl;
     if (enableReclaim) {
-        // TODO: 重利用和空闲列表二级内存分配器尚未实现
-        throw std::logic_error("Reclaim and secondary memory manager is not prepared yet. Please contact developer");
+        throw std::invalid_argument("GCWorker::GCWorker(): Reclaim is no longer supported.");
     }
     if (!enableMemoryAllocator) {
         enableParallel = false;             // 必须启用内存分配器以支持并行垃圾回收
@@ -42,6 +41,13 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
             root_set[i].reserve(64);
     }
     root_set_mutex = std::make_unique<std::shared_mutex[]>(poolCount);
+    if constexpr (GCParameter::useGCPtrSet) {
+        gcPtrSet = std::make_unique<std::set<GCPtrBase*>>();
+        gcPtrSetMtx = std::make_unique<std::shared_mutex>();
+    } else {
+        gcPtrSet = nullptr;
+        gcPtrSetMtx = nullptr;
+    }
     if (enableParallel) {
         this->gcThreadCount = 4;
         this->threadPool = std::make_unique<ThreadPoolExecutor>(gcThreadCount, gcThreadCount, 0,
@@ -109,7 +115,6 @@ void GCWorker::mark(void* object_addr) {
     for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(void*) * 2; n_addr += sizeof(void*)) {
         int identifier = *(reinterpret_cast<int*>(n_addr));
         if (identifier == GCPTR_IDENTIFIER_HEAD) {
-            // std::clog << "Identifer found at " << (void*) n_addr << std::endl;
             void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState)));
             if (next_addr != nullptr)
                 mark(next_addr);
@@ -119,9 +124,14 @@ void GCWorker::mark(void* object_addr) {
 
 void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (gcptr == nullptr) return;
+    if constexpr (GCParameter::useGCPtrSet) {
+        if (!inside_gcptr_set(gcptr)) {
+            std::clog << "Warning: Skipping marking a gcptr which not in gcptr set " << (void*)gcptr << std::endl;
+            return;
+        }
+    }
     if (gcptr->getInlineMarkState() == MarkState::DE_ALLOCATED) {
-        std::clog << "mark_v2() try to mark a deallocated object, &gcptr=" << (void*)gcptr << std::endl;
-        //throw std::exception();
+        std::clog << "Warning: Skipping marking a deallocated gcptr " << (void*)gcptr << std::endl;
         return;
     }
 
@@ -130,7 +140,6 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     MarkState c_markstate = GCPhase::getCurrentMarkState();
     if (useInlineMarkstate) {
         if (gcptr->getInlineMarkState() == c_markstate) {     // 标记过了
-            // std::clog << "Skipping " << gcptr << " as it already marked" << std::endl;
             return;
         }
         // 客观地说，指针自愈确实应该在标记对象前面
@@ -152,7 +161,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         std::shared_lock<std::shared_mutex> read_lock(this->object_map_mutex);
         auto it = object_map.find(object_addr);
         if (it == object_map.end()) {
-            std::clog << "Object not found at " << object_addr << std::endl;
+            std::clog << "Warning: Object not found at " << object_addr << std::endl;
             return;
         }
         read_lock.unlock();
@@ -161,16 +170,15 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
             return;
         it->second.markState = c_markstate;
         if (object_size != it->second.objectSize) {
-            std::clog << "Object size doesn't equal!" << std::endl;
-            throw std::exception();
+            std::clog << "Warning: Object size doesn't equal, " << object_size << " vs " << it->second.objectSize << std::endl;
             object_size = it->second.objectSize;
         }
     } else {
         if (region == nullptr || region->isEvacuated() || !region->inside_region(object_addr, object_size)) {
-            std::cerr << "Exception occurred: Evacuated region or Out of range! " <<
+            std::cerr << "Error: Evacuated region or Out of range! " <<
                 "&region=" << (void*)region << ", isEvacuated=" << (region == nullptr ? -1 : region->isEvacuated()) <<
                 ", object_addr=" << object_addr << ", object_size=" << object_size << std::endl;
-            throw std::exception();
+            throw std::logic_error("GCWorker::mark_v2(): Evacuated region or out of range");
             return;
         }
         if (region->marked(object_addr)) return;
@@ -191,18 +199,9 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
             int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {
                 GCPtrBase* next_ptr = reinterpret_cast<GCPtrBase*>(n_addr);
-#if 0
-                // To convert to GCPtrBase*, or continue using void* but with size_t, this is a question
-                void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState)));
-                if (next_addr != nullptr) {
-                    auto markstate = static_cast<MarkState>(*(n_addr + sizeof(void*) * 2));
-                    if (markstate != GCPhase::getCurrentMarkState())
-                        mark(next_addr);
-                }
-#endif
                 mark_v2(next_ptr);
             } else {
-                std::clog << "Identifier head found at " << (void*)n_addr << " but not found tail" << std::endl;
+                std::clog << "Warning: Identifier head found at " << (void*)n_addr << " but not found tail, skipped." << std::endl;
             }
         }
     }
@@ -283,6 +282,33 @@ void GCWorker::registerObject(void* object_addr, size_t object_size) {
         object_map.emplace(object_addr, GCStatus(MarkState::REMAPPED, object_size));
 }
 
+void GCWorker::addGCPtr(GCPtrBase* gcptr_addr) {
+    if constexpr (GCParameter::useGCPtrSet) {
+        std::unique_lock<std::shared_mutex> lock(*gcPtrSetMtx);
+        gcPtrSet->emplace(gcptr_addr);
+    }
+}
+
+void GCWorker::removeGCPtr(GCPtrBase* gcptr_addr) {
+    if constexpr (!GCParameter::useGCPtrSet)
+        return;
+
+    std::unique_lock<std::shared_mutex> lock(*gcPtrSetMtx);
+    if (gcPtrSet->erase(gcptr_addr))
+        return;
+    else
+        std::clog << "Warning: GCPtr not found when erasing" << std::endl;
+}
+
+void GCWorker::replaceGCPtr(GCPtrBase* original, GCPtrBase* replacement) {
+    if constexpr (GCParameter::useGCPtrSet) {
+        std::unique_lock<std::shared_mutex> lock(*gcPtrSetMtx);
+        if (!gcPtrSet->erase(original))
+            std::clog << "Warning: GCPtr not found when erasing" << std::endl;
+        gcPtrSet->emplace(replacement);
+    }
+}
+
 void GCWorker::addRoot(GCPtrBase* from) {
     int poolIdx = getPoolIdx();
     std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);
@@ -311,7 +337,7 @@ void GCWorker::removeRoot(GCPtrBase* from) {
                     return;
                 }
             }
-            std::cerr << "Root not found when delete?" << std::endl;
+            std::cerr << "Warning: Root not found when erasing" << std::endl;
         }
     } else {
         std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);
@@ -323,7 +349,7 @@ void GCWorker::removeRoot(GCPtrBase* from) {
                 if (root_set[i].erase(from))
                     return;
             }
-            std::cerr << "Root not found when delete?" << std::endl;
+            std::cerr << "Warning: Root not found when erasing" << std::endl;
         }
     }
 }
@@ -344,8 +370,8 @@ void GCWorker::addSATB(const ObjectInfo& objectInfo) {
         satb_queue.push_back(objectInfo.object_addr);
     } else {
         if (objectInfo.region == nullptr || objectInfo.region->isEvacuated()) {
-            std::cerr << "SATB for object with evacuated region, object_addr=" << objectInfo.object_addr << std::endl;
-            throw std::exception();
+            std::cerr << "Error: SATB for object with evacuated region, object_addr=" << objectInfo.object_addr << std::endl;
+            throw std::logic_error("GCWorker::addSATB(): SATB for object with evacuated region");
         }
         int pool_idx = getPoolIdx();
         std::unique_lock<std::mutex> lock(satb_queue_pool_mutex[pool_idx]);
@@ -371,7 +397,7 @@ void GCWorker::startGC() {
         if (enableConcurrentMark)
             GCUtil::sleep(0.1);       // 防止gc root尚未来得及加入root_set
     } else {
-        std::cerr << "GC already started" << std::endl;
+        std::clog << "GC already started" << std::endl;
     }
 }
 
@@ -491,12 +517,12 @@ void GCWorker::triggerSATBMark() {
         if constexpr (GCParameter::distinctSATB)
             satb_set.clear();
     } else
-        std::clog << "Already in remark phase or in other invalid phase" << std::endl;
+        std::clog << "Warning: Already in remark phase or in other invalid phase" << std::endl;
 }
 
 void GCWorker::selectRelocationSet() {
     if (GCPhase::getGCPhase() != eGCPhase::REMARK) {
-        std::clog << "Already in sweeping phase or in other invalid phase" << std::endl;
+        std::clog << "Warning: Already in sweeping phase or in other invalid phase" << std::endl;
         return;
     }
     GCPhase::SwitchToNextPhase();
@@ -529,7 +555,7 @@ void GCWorker::beginSweep() {
                 }
             }
         }
-    } else std::clog << "Invalid phase, should in sweep phase" << std::endl;
+    } else std::clog << "Warning: Invalid phase, should in sweep phase" << std::endl;
 }
 
 std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr, size_t obj_size, GCRegion* region) const {
@@ -541,7 +567,7 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCWorker::getHealedPointer(void* ptr
             region->relocateObject(ptr, obj_size);
             ret = region->queryForwardingTable(ptr);
             if (ret.first == nullptr)
-                throw std::exception();
+                throw std::logic_error("GCWorker::getHealedPointer(): Entry not found twice in forwarding table.");
             return ret;
         } else {
             return std::make_pair(nullptr, nullptr);
@@ -559,7 +585,7 @@ void GCWorker::callDestructor(void* object_addr, bool remove_after_call) {
         if (remove_after_call)
             destructor_map.erase(destructor_it);
     } else {
-        std::clog << "Destructor not found for " << object_addr << std::endl;
+        std::clog << "Warning: Destructor not found for " << object_addr << std::endl;
     }
 }
 
@@ -570,7 +596,7 @@ void GCWorker::endGC() {
             memoryAllocator->resetLiveSize();
         root_object_snapshot.clear();
     } else {
-        std::clog << "Not started GC, or not finished sweeping yet" << std::endl;
+        std::clog << "Warning: Not started GC, or not finished sweeping yet" << std::endl;
     }
 }
 
@@ -597,6 +623,46 @@ bool GCWorker::is_root(void* gcptr_addr) {
     } else {
         return GCUtil::is_stack_pointer(gcptr_addr);
     }
+}
+
+bool GCWorker::inside_gcptr_set(GCPtrBase* gcptr_addr, bool include_root_set) {
+    if (GCParameter::useGCPtrSet) {
+        std::shared_lock<std::shared_mutex> lock(*gcPtrSetMtx);
+        if (gcPtrSet->contains(gcptr_addr))
+            return true;
+    }
+    if (include_root_set) {
+        for (int i = 0; i < poolCount; i++) {
+            std::shared_lock<std::shared_mutex> lock(root_set_mutex[i]);
+            if constexpr (GCParameter::deferRemoveRoot) {
+                if (root_map[i].contains(gcptr_addr))
+                    return true;
+            } else {
+                if (root_set[i].contains(gcptr_addr))
+                    return true;
+            }
+        }
+    } else if (!GCParameter::useGCPtrSet) {
+        std::clog << "Warning: GCParameter::useGCPtrSet is not enabled, return true of is_gcptr() by default." << std::endl;
+        return true;
+    }
+    return false;
+}
+
+std::vector<GCPtrBase*> GCWorker::inside_gcptr_set(GCPtrBase* gcptr_addr, size_t object_size) {
+    std::vector<GCPtrBase*> ret;
+    if (GCParameter::useGCPtrSet) {
+        std::shared_lock<std::shared_mutex> lock(*gcPtrSetMtx);
+        auto it = gcPtrSet->lower_bound(gcptr_addr);
+        while (it != gcPtrSet->end()) {
+            GCPtrBase* c_addr = *it;
+            size_t offset = (char*)c_addr - (char*)gcptr_addr;
+            if (offset >= object_size) break;
+            ret.push_back(c_addr);
+            ++it;
+        }
+    }
+    return ret;
 }
 
 void GCWorker::freeGCReservedMemory() {

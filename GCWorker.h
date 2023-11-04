@@ -3,6 +3,8 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <map>
+#include <set>
 #include <vector>
 #include <memory>
 #include <thread>
@@ -21,6 +23,10 @@
 #include "CppExecutor/ThreadPoolExecutor.h"
 #include "CppExecutor/ArrayBlockingQueue.h"
 
+class GCMemoryAllocator;
+
+class GCRegion;
+
 class GCWorker {
 private:
     static std::unique_ptr<GCWorker> instance;
@@ -37,6 +43,8 @@ private:
     std::unique_ptr<std::mutex[]> satb_queue_pool_mutex;
     std::mutex satb_queue_mutex;
     std::unordered_set<void*> satb_set;
+    std::unique_ptr<std::set<GCPtrBase*>> gcPtrSet;
+    std::unique_ptr<std::shared_mutex> gcPtrSetMtx;
     std::unordered_map<void*, std::function<void(void*)>> destructor_map;
     std::mutex destructor_map_mutex;
     std::mutex thread_mutex;
@@ -48,7 +56,7 @@ private:
     std::unique_ptr<ThreadPoolExecutor> threadPool;
     int gcThreadCount;
     bool enableConcurrentMark, enableParallelGC, enableMemoryAllocator, useInlineMarkstate,
-            enableRelocation, enableDestructorSupport, enableReclaim;
+        enableRelocation, enableDestructorSupport, enableReclaim;
     volatile bool stop_, ready_;
 
     void mark(void*);
@@ -63,7 +71,6 @@ private:
         MarkState c_markstate = GCPhase::getCurrentMarkState();
         if (useInlineMarkstate) {
             if (gcptr->getInlineMarkState() == c_markstate) {
-                // std::clog << "Skipping " << gcptr << " as it already marked" << std::endl;
                 return;
             }
             gcptr->setInlineMarkState(c_markstate);
@@ -135,6 +142,12 @@ public:
 
     void addSATB(const ObjectInfo&);
 
+    void addGCPtr(GCPtrBase*);
+
+    void removeGCPtr(GCPtrBase*);
+
+    void replaceGCPtr(GCPtrBase* original, GCPtrBase* replacement);
+
     void registerDestructor(void* object_addr, const std::function<void(void*)>&, GCRegion* = nullptr);
 
     std::pair<void*, std::shared_ptr<GCRegion>> getHealedPointer(void*, size_t, GCRegion*) const;
@@ -148,6 +161,10 @@ public:
     bool relocationEnabled() const { return enableRelocation; }
 
     bool is_root(void* gcptr_addr);
+
+    bool inside_gcptr_set(GCPtrBase* gcptr_addr, bool include_root_set = false);
+
+    std::vector<GCPtrBase*> inside_gcptr_set(GCPtrBase* gcptr_addr, size_t object_size);
 
     void freeGCReservedMemory();
 };

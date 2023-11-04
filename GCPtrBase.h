@@ -5,6 +5,7 @@
 #include <atomic>
 #include "ObjectInfo.h"
 #include "GCPhase.h"
+#include "GCParameter.h"
 
 constexpr int GCPTR_IDENTIFIER_HEAD = 0x1f1e33fc;
 constexpr int GCPTR_IDENTIFIER_TAIL = 0x03e0e1cc;
