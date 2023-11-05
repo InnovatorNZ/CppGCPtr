@@ -155,8 +155,14 @@ bool GCBitMap::mark_noCAS(void* object_addr, unsigned int object_size, MarkState
 
     if (mark_obj_size) {
         auto mark_obj_size_func = [this, offset_byte, object_size] {
-            // (std::atomic<unsigned int>&) bitmap_arr[offset_byte + 1] = object_size;
-            reinterpret_cast<unsigned int&>(bitmap_arr[offset_byte + 1]) = object_size;
+            unsigned char s0 = object_size & 0xff;
+            unsigned char s1 = object_size >> 8 & 0xff;
+            unsigned char s2 = object_size >> 16 & 0xff;
+            unsigned char s3 = object_size >> 24 & 0xff;
+            bitmap_arr[offset_byte + 1] = s0;
+            bitmap_arr[offset_byte + 2] = s1;
+            bitmap_arr[offset_byte + 3] = s2;
+            bitmap_arr[offset_byte + 4] = s3;
         };
         if (!overwrite) {
             unsigned int ori_obj_size = *reinterpret_cast<unsigned int*>(bitmap_arr + offset_byte + 1);
@@ -189,15 +195,11 @@ unsigned int GCBitMap::getObjectSize(void* object_addr) const {
     if (!mark_obj_size || bitmap_arr == nullptr) return 0;
     int offset_byte, offset_bit;
     addr_to_bit(object_addr, offset_byte, offset_bit);
-    unsigned int objSize = reinterpret_cast<unsigned int&>(bitmap_arr[offset_byte + 1]);
-    /*
     unsigned int s0 = static_cast<unsigned int>(bitmap_arr[offset_byte + 1].load());
     unsigned int s1 = static_cast<unsigned int>(bitmap_arr[offset_byte + 2].load());
     unsigned int s2 = static_cast<unsigned int>(bitmap_arr[offset_byte + 3].load());
     unsigned int s3 = static_cast<unsigned int>(bitmap_arr[offset_byte + 4].load());
-    unsigned int objSize2 = s0 | s1 << 8 | s2 << 16 | s3 << 24;
-    assert(objSize == objSize2);
-    */
+    unsigned int objSize = s0 | s1 << 8 | s2 << 16 | s3 << 24;
     return objSize;
 }
 
@@ -245,9 +247,12 @@ unsigned int GCBitMap::BitMapIterator::getCurrentObjectSize() const {
     unsigned int s2 = static_cast<unsigned int>(bitmap.bitmap_arr[byte_offset + 3].load());
     unsigned int s3 = static_cast<unsigned int>(bitmap.bitmap_arr[byte_offset + 4].load());
     unsigned int objSize = s0 | s1 << 8 | s2 << 16 | s3 << 24;
-    unsigned int obj_size = bitmap.getObjectSize((char*)bitmap.region_start_addr + getCurrentOffset());
-    if (obj_size != objSize) {
-        throw std::runtime_error(std::format("Object size verified failed in bitmap, {} vs {}", obj_size, objSize));
+    constexpr bool verify_obj_size = true;
+    if constexpr (verify_obj_size) {
+        unsigned int obj_size = bitmap.getObjectSize((char*)bitmap.region_start_addr + getCurrentOffset());
+        if (obj_size != objSize) {
+            throw std::runtime_error(std::format("Object size verified failed in bitmap, {} vs {}", obj_size, objSize));
+        }
     }
     return objSize;
 }
