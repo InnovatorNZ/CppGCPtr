@@ -155,7 +155,8 @@ bool GCBitMap::mark_noCAS(void* object_addr, unsigned int object_size, MarkState
 
     if (mark_obj_size) {
         auto mark_obj_size_func = [this, offset_byte, object_size] {
-            (std::atomic<unsigned int>&) bitmap_arr[offset_byte + 1] = object_size;
+            // (std::atomic<unsigned int>&) bitmap_arr[offset_byte + 1] = object_size;
+            reinterpret_cast<unsigned int&>(bitmap_arr[offset_byte + 1]) = object_size;
         };
         if (!overwrite) {
             unsigned int ori_obj_size = *reinterpret_cast<unsigned int*>(bitmap_arr + offset_byte + 1);
@@ -188,7 +189,7 @@ unsigned int GCBitMap::getObjectSize(void* object_addr) const {
     if (!mark_obj_size || bitmap_arr == nullptr) return 0;
     int offset_byte, offset_bit;
     addr_to_bit(object_addr, offset_byte, offset_bit);
-    unsigned int objSize = reinterpret_cast<std::atomic<unsigned int>&>(bitmap_arr[offset_byte + 1]).load();
+    unsigned int objSize = reinterpret_cast<unsigned int&>(bitmap_arr[offset_byte + 1]);
     /*
     unsigned int s0 = static_cast<unsigned int>(bitmap_arr[offset_byte + 1].load());
     unsigned int s1 = static_cast<unsigned int>(bitmap_arr[offset_byte + 2].load());
