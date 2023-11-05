@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <memory>
 #include <stdexcept>
+#include <cassert>
 #include <format>
 #include "GCParameter.h"
 #include "PhaseEnum.h"
@@ -73,6 +74,8 @@ public:
     GCBitMap(GCBitMap&&) noexcept;
 
     bool mark(void* object_addr, unsigned int object_size, MarkStateBit state, bool overwrite = false);
+
+    bool mark_noCAS(void* object_addr, unsigned int object_size, MarkStateBit state, bool overwrite = false);
 
     MarkStateBit getMarkState(void* object_addr) const;
 

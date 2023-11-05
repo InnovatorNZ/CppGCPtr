@@ -130,6 +130,52 @@ bool GCBitMap::mark(void* object_addr, unsigned int object_size, MarkStateBit st
     return true;
 }
 
+bool GCBitMap::mark_noCAS(void* object_addr, unsigned int object_size, MarkStateBit state, bool overwrite) {
+    if (bitmap_arr == nullptr) return false;
+    object_size = alignUpSize(object_size);
+    int offset = (char*)object_addr - (char*)region_start_addr;
+    if (offset < 0 || offset % region_to_bitmap_ratio != 0) {
+        std::clog << "Warning: Object address out of bitmap range, or is not divided exactly by ratio" << std::endl;
+        return false;
+    }
+    unsigned char ch_state = MarkStateUtil::toChar(state);
+    if (region_to_bitmap_ratio > 1) offset /= region_to_bitmap_ratio;
+    offset *= SINGLE_OBJECT_MARKBIT;
+    int offset_byte = offset / 8;
+    int offset_bit = offset % 8;
+    if (!overwrite) {
+        unsigned char c_value = bitmap_arr[offset_byte].load();
+        unsigned char c_markstate = c_value >> offset_bit & 3;
+        if (c_markstate == ch_state) {
+            std::clog << "Info: Bitmap found already marked at " << object_addr << std::endl;
+            return false;
+        }
+    }
+    bitmap_arr[offset_byte] = ch_state << offset_bit;
+
+    if (mark_obj_size) {
+        auto mark_obj_size_func = [this, offset_byte, object_size] {
+            (std::atomic<unsigned int>&) bitmap_arr[offset_byte + 1] = object_size;
+        };
+        if (!overwrite) {
+            unsigned int ori_obj_size = *reinterpret_cast<unsigned int*>(bitmap_arr + offset_byte + 1);
+            if (ori_obj_size != 0 && ori_obj_size != object_size) {
+                std::string errorMsg = std::format("GCBitMap::mark(): Different object size found in bitmap. Original: {}, Target: {}",
+                                                   ori_obj_size, object_size);
+                throw std::runtime_error(errorMsg);
+            } else {
+                mark_obj_size_func();
+            }
+        } else {
+            mark_obj_size_func();
+        }
+    } else {
+        std::clog << "Warning: GCBitMap::mark_v2() is triggered with marking object size disabled." << std::endl;
+    }
+
+    return true;
+}
+
 MarkStateBit GCBitMap::getMarkState(void* object_addr) const {
     if (bitmap_arr == nullptr) return MarkStateBit::NOT_ALLOCATED;
     int offset_byte, offset_bit;
@@ -142,11 +188,15 @@ unsigned int GCBitMap::getObjectSize(void* object_addr) const {
     if (!mark_obj_size || bitmap_arr == nullptr) return 0;
     int offset_byte, offset_bit;
     addr_to_bit(object_addr, offset_byte, offset_bit);
+    unsigned int objSize = reinterpret_cast<std::atomic<unsigned int>&>(bitmap_arr[offset_byte + 1]).load();
+    /*
     unsigned int s0 = static_cast<unsigned int>(bitmap_arr[offset_byte + 1].load());
     unsigned int s1 = static_cast<unsigned int>(bitmap_arr[offset_byte + 2].load());
     unsigned int s2 = static_cast<unsigned int>(bitmap_arr[offset_byte + 3].load());
     unsigned int s3 = static_cast<unsigned int>(bitmap_arr[offset_byte + 4].load());
-    unsigned int objSize = s0 | s1 << 8 | s2 << 16 | s3 << 24;
+    unsigned int objSize2 = s0 | s1 << 8 | s2 << 16 | s3 << 24;
+    assert(objSize == objSize2);
+    */
     return objSize;
 }
 

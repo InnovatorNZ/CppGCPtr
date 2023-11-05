@@ -57,7 +57,10 @@ void* GCRegion::allocate(size_t size) {
         if constexpr (use_regional_hashmap) {
             regionalHashMap->mark(object_addr, size, GCPhase::getCurrentMarkState(), true);
         } else {
-            bitmap->mark(object_addr, size, GCPhase::getCurrentMarkStateBit(), true);
+            if (regionType == RegionEnum::TINY)
+                bitmap->mark(object_addr, size, GCPhase::getCurrentMarkStateBit(), true);
+            else
+                bitmap->mark_noCAS(object_addr, size, GCPhase::getCurrentMarkStateBit(), true);
         }
         live_size += size;
     } else {
@@ -65,7 +68,10 @@ void* GCRegion::allocate(size_t size) {
             if constexpr (enable_destructor)
                 regionalHashMap->mark(object_addr, size, MarkState::REMAPPED, true);    // 若启用析构函数需要标记，否则不需要
         } else {
-            bitmap->mark(object_addr, size, MarkStateBit::REMAPPED, true);
+            if (regionType == RegionEnum::TINY)
+                bitmap->mark(object_addr, size, MarkStateBit::REMAPPED, true);
+            else
+                bitmap->mark_noCAS(object_addr, size, MarkStateBit::REMAPPED, true);
         }
     }
     return object_addr;
@@ -93,7 +99,10 @@ void GCRegion::free(void* addr, size_t size) {
             if constexpr (use_regional_hashmap) {
                 regionalHashMap->mark(addr, size, MarkState::DE_ALLOCATED, false, false);
             } else {
-                bitmap->mark(addr, size, MarkStateBit::NOT_ALLOCATED);
+                if (regionType == RegionEnum::TINY)
+                    bitmap->mark(addr, size, MarkStateBit::NOT_ALLOCATED);
+                else
+                    bitmap->mark_noCAS(addr, size, MarkStateBit::NOT_ALLOCATED);
             }
         }
     } else {
@@ -120,7 +129,12 @@ void GCRegion::mark(void* object_addr, size_t object_size) {
             if (regionalHashMap->mark(object_addr, object_size, GCPhase::getCurrentMarkState()))
                 live_size += object_size;
         } else {
-            if (bitmap->mark(object_addr, object_size, GCPhase::getCurrentMarkStateBit()))
+            bool m;
+            if (regionType == RegionEnum::TINY)
+                m = bitmap->mark(object_addr, object_size, GCPhase::getCurrentMarkStateBit());
+            else
+                m = bitmap->mark_noCAS(object_addr, object_size, GCPhase::getCurrentMarkStateBit());
+            if (m)
                 live_size += object_size;
         }
     }
@@ -173,7 +187,10 @@ void GCRegion::clearUnmarked() {
                 if (GCPhase::needSweep(markState)) {    // 非存活对象，调用其析构函数，并标记为未分配，防止因M0/M1重复使用致后续误判存活
                     // 非存活对象统一标记为REMAPPED，因为仍然需要size信息遍历bitmap，并避免markState重复
                     // 但是这似乎会导致本来就是REMAPPED的对象不会被调用析构函数，现改为标记为NOT_ALLOCATED
-                    bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
+                    if (regionType == RegionEnum::TINY)
+                        bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
+                    else
+                        bitmap->mark_noCAS(addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
                     if constexpr (enable_destructor) {
                         callDestructor(addr);
                     }
