@@ -6,8 +6,11 @@
 #include <queue>
 #include <stack>
 #include <deque>
+#include <list>
+#include <map>
 #include <mutex>
 #include "IAllocatable.h"
+#include "GCParameter.h"
 
 class MemoryBlock {
 private:
@@ -17,6 +20,8 @@ public:
 
     MemoryBlock(void* start_address, size_t size_) : address(start_address), size(size_) {
     }
+
+    MemoryBlock() = delete;
 
     void* getEndAddress() {
         return reinterpret_cast<void*>(reinterpret_cast<char*>(address) + size);
@@ -37,20 +42,26 @@ public:
 
 class GCMemoryManager : public IAllocatable {
 private:
-    std::deque<MemoryBlock> freeList;
-    std::mutex allocate_mutex_;
-public:
-    GCMemoryManager() = delete;
+    std::list<MemoryBlock> freeList;
+    std::map<void*, size_t> new_mem_map;
+    std::recursive_mutex allocate_mutex_;
 
-    GCMemoryManager(const GCMemoryManager&);
+    void free_new_mem(const decltype(new_mem_map)::iterator&);
+
+public:
+    GCMemoryManager() = default;
+
+    GCMemoryManager(const GCMemoryManager&) = delete;
 
     GCMemoryManager(GCMemoryManager&&) noexcept;
-
-    GCMemoryManager(void* memoryStart, size_t size);
 
     void* allocate(size_t size) override;
 
     void free(void* address, size_t size) override;
+
+    void add_memory(size_t size);
+
+    void return_reserved();
 };
 
 

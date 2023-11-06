@@ -2,10 +2,13 @@
 
 std::atomic<eGCPhase> GCPhase::gcPhase = eGCPhase::NONE;
 std::atomic<MarkState> GCPhase::currentMarkState = MarkState::REMAPPED;
-#if USE_SPINLOCK
-IReadWriteLock* GCPhase::stwLock = new SpinReadWriteLock();
-#else
+IReadWriteLock* GCPhase::gcPhaseLock = new WeakSpinReadWriteLock();
+#if USE_SPINLOCK == 0
 IReadWriteLock* GCPhase::stwLock = new MutexReadWriteLock();
+#elif USE_SPINLOCK == 1
+IReadWriteLock* GCPhase::stwLock = new SpinReadWriteLock();
+#elif USE_SPINLOCK == 2
+IReadWriteLock* GCPhase::stwLock = new WeakSpinReadWriteLock();
 #endif
 
 eGCPhase GCPhase::getGCPhase() {
@@ -14,9 +17,12 @@ eGCPhase GCPhase::getGCPhase() {
 
 void GCPhase::SwitchToNextPhase() {
     switch (gcPhase) {
-        case eGCPhase::NONE:
-            currentMarkState = MarkStateUtil::switchState(currentMarkState);
+        case eGCPhase::NONE: {
+            gcPhaseLock->lockWrite();
             gcPhase = eGCPhase::CONCURRENT_MARK;
+            currentMarkState = MarkStateUtil::switchState(currentMarkState);
+            gcPhaseLock->unlockWrite();
+        }
             break;
         case eGCPhase::CONCURRENT_MARK:
             gcPhase = eGCPhase::REMARK;
@@ -45,30 +51,34 @@ MarkStateBit GCPhase::getCurrentMarkStateBit() {
 }
 
 bool GCPhase::needSweep(MarkState markState) {
-    if (gcPhase != eGCPhase::SWEEP) {
-        std::cerr << "Sweeping in non-sweeping phase" << std::endl;
-        return false;
-    }
+    if (markState == MarkState::DE_ALLOCATED) return false;
     return currentMarkState != markState;
 }
 
 bool GCPhase::needSweep(MarkStateBit markState) {
-    if (gcPhase != eGCPhase::SWEEP) {
-        std::cerr << "Sweeping in non-sweeping phase" << std::endl;
-        return false;
-    }
     if (markState == MarkStateBit::NOT_ALLOCATED) return false;
     return markState != getCurrentMarkStateBit();
 }
 
 bool GCPhase::needSelfHeal(MarkState markState) {
-    if (markState == MarkState::REMAPPED) return false;
-    if (duringMarking()) {
+    if (markState == MarkState::REMAPPED)           // 已重分配，无需指针自愈
+        return false;
+    else if (markState == MarkState::COPIED)        // GC期间新分配，需要自愈
+        return true;
+    else if (markState == MarkState::DE_ALLOCATED)  // 已被释放，不应调用此函数
+        throw std::invalid_argument("GCPhase::needSelfHeal(): DE_ALLOCATED needn't call needSelfHeal().");
+
+    gcPhaseLock->lockRead();
+    const MarkState currentMarkState = getCurrentMarkState();
+    const eGCPhase currentGCPhase = getGCPhase();
+    gcPhaseLock->unlockRead();
+
+    if (duringMarking(currentGCPhase)) {
         // 若在标记阶段，需要完成指针自愈的是上一轮存活的对象
-        return markState != getCurrentMarkState();
+        return markState != currentMarkState;
     } else {
         // 若在转移阶段或非垃圾回收阶段，需要完成指针自愈的是本轮存活的对象
-        return markState == getCurrentMarkState();
+        return markState == currentMarkState;
     }
 }
 
@@ -92,5 +102,24 @@ std::string GCPhase::getGCPhaseString() {
             return "Sweeping";
         default:
             return "Invalid";
+    }
+}
+
+GCPhase::RAIISTWLock::RAIISTWLock() {
+    GCPhase::EnterCriticalSection();
+    owns = true;
+}
+
+GCPhase::RAIISTWLock::RAIISTWLock(bool doNotLockAtRemarkPhase) : owns(false) {
+    if (doNotLockAtRemarkPhase && GCPhase::getGCPhase() == eGCPhase::REMARK)
+        return;
+    GCPhase::EnterCriticalSection();
+    owns = true;
+}
+
+GCPhase::RAIISTWLock::~RAIISTWLock() {
+    if (owns) {
+        GCPhase::LeaveCriticalSection();
+        owns = false;
     }
 }

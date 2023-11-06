@@ -17,8 +17,7 @@ public:
                 continue;
             if (lock_state.compare_exchange_weak(c_read_cnt, c_read_cnt + 1))
                 break;
-            else
-                std::clog << "CAS read lock failed" << std::endl;
+            // else std::clog << "CAS read lock failed" << std::endl;
         }
     }
 
@@ -40,8 +39,7 @@ public:
             }
             if (lock_state.compare_exchange_weak(c_lock_state, -1))
                 break;
-            else
-                std::clog << "CAS write lock failed" << std::endl;
+            // else std::clog << "CAS write lock failed" << std::endl;
         }
     }
 

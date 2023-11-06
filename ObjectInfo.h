@@ -2,7 +2,8 @@
 #define CPPGCPTR_OBJECTINFO_H
 
 #include <cstddef>
-#include "GCRegion.h"
+
+class GCRegion;
 
 struct ObjectInfo {
     void* object_addr;

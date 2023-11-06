@@ -1,24 +1,25 @@
 #include "GCRegion.h"
 
-const size_t GCRegion::TINY_OBJECT_THRESHOLD = 24;
-const size_t GCRegion::TINY_REGION_SIZE = 256 * 1024;
-const size_t GCRegion::SMALL_OBJECT_THRESHOLD = 16 * 1024;
-const size_t GCRegion::SMALL_REGION_SIZE = 1 * 1024 * 1024;
-const size_t GCRegion::MEDIUM_OBJECT_THRESHOLD = 1 * 1024 * 1024;
-const size_t GCRegion::MEDIUM_REGION_SIZE = 32 * 1024 * 1024;
+const size_t GCRegion::TINY_OBJECT_THRESHOLD = GCParameter::TINY_OBJECT_THRESHOLD;
+const size_t GCRegion::TINY_REGION_SIZE = GCParameter::TINY_REGION_SIZE;
+const size_t GCRegion::SMALL_OBJECT_THRESHOLD = GCParameter::SMALL_OBJECT_THRESHOLD;
+const size_t GCRegion::SMALL_REGION_SIZE = GCParameter::SMALL_REGION_SIZE;
+const size_t GCRegion::MEDIUM_OBJECT_THRESHOLD = GCParameter::MEDIUM_OBJECT_THRESHOLD;
+const size_t GCRegion::MEDIUM_REGION_SIZE = GCParameter::MEDIUM_REGION_SIZE;
 
-GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size) :
-        regionType(regionType), startAddress(startAddress), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
-        total_size(total_size), allocated_offset(0), live_size(0), evacuated(false) {
+GCRegion::GCRegion(RegionEnum regionType, void* startAddress, size_t total_size, IMemoryAllocator* memoryAllocator) :
+        regionType(regionType), startAddress(startAddress),
+        memoryAllocator(memoryAllocator), largeRegionMarkState(MarkStateBit::NOT_ALLOCATED),
+        total_size(total_size), allocated_offset(0), live_size(0), evacuated(false), use_count(0) {
     if (regionType != RegionEnum::LARGE) {
         if constexpr (!use_regional_hashmap) {
             switch (regionType) {
                 case RegionEnum::SMALL:
                 case RegionEnum::MEDIUM:
-                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size);
+                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size, memoryAllocator);
                     break;
                 case RegionEnum::TINY:
-                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size, false);
+                    bitmap = std::make_unique<GCBitMap>(startAddress, total_size, memoryAllocator, false, TINY_OBJECT_THRESHOLD);
                     break;
             }
         } else {
@@ -44,7 +45,9 @@ void* GCRegion::allocate(size_t size) {
         size = bitmap->alignUpSize(size);
     while (true) {
         size_t p_offset = allocated_offset;
-        if (p_offset + size > total_size) return nullptr;
+        if (p_offset + size > total_size) {
+            return nullptr;
+        }
         if (allocated_offset.compare_exchange_weak(p_offset, p_offset + size)) {
             object_addr = reinterpret_cast<void*>(reinterpret_cast<char*>(startAddress) + p_offset);
             break;
@@ -59,7 +62,8 @@ void* GCRegion::allocate(size_t size) {
         live_size += size;
     } else {
         if constexpr (use_regional_hashmap) {
-            // regionalHashMap->mark(object_addr, size, MarkState::REMAPPED, true);     // 有可能这里不需要
+            if constexpr (enable_destructor)
+                regionalHashMap->mark(object_addr, size, MarkState::REMAPPED, true);    // 若启用析构函数需要标记，否则不需要
         } else {
             bitmap->mark(object_addr, size, MarkStateBit::REMAPPED, true);
         }
@@ -70,8 +74,7 @@ void* GCRegion::allocate(size_t size) {
 void GCRegion::free(void* addr, size_t size) {
     if (inside_region(addr, size)) {
         // free()要不要调用mark(addr, size, MarkStateBit::NOT_ALLOCATED)？好像还是要的
-        // 现已改为mark的时候统计live_size，而不是frag_size，因此free时不能再mark为NOT_ALLOCATED，而是mark为REMAPPED
-        // frag_size += size;
+        // 现已改为mark的时候统计live_size，而不是frag_size
         bool recently_assigned;
         while (true) {
             size_t c_allocated_offset = allocated_offset.load();
@@ -88,13 +91,14 @@ void GCRegion::free(void* addr, size_t size) {
         }
         if (!recently_assigned) {
             if constexpr (use_regional_hashmap) {
-                regionalHashMap->mark(addr, size, MarkState::REMAPPED, false, false);
+                regionalHashMap->mark(addr, size, MarkState::DE_ALLOCATED, false, false);
             } else {
                 bitmap->mark(addr, size, MarkStateBit::NOT_ALLOCATED);
             }
         }
-    } else
-        std::clog << "Free address out of range." << std::endl;
+    } else {
+        throw std::invalid_argument("GCRegion::free(void*, size_t): Free address out of range.");
+    }
 }
 
 float GCRegion::getFragmentRatio() const {
@@ -148,10 +152,9 @@ void GCRegion::clearUnmarked() {
         while (regionalMapIterator.MoveNext()) {
             GCStatus gcStatus = regionalMapIterator.current();
             const MarkState& markState = gcStatus.markState;
-            if (GCPhase::needSweep(markState) && markState != MarkState::REMAPPED) {
-                // 非存活对象统一标记为REMAPPED（或者从hashmap中删除也可以），不然会导致markState经过两轮回收后重复
-                // TODO: 需要改为从hashmap中删除？
-                regionalMapIterator.setCurrentMarkState(MarkState::REMAPPED);
+            if (GCPhase::needSweep(markState)) {
+                // 非存活对象统一标记为DE_ALLOCATED（或者从hashmap中删除也可以），不然会导致markState经过两轮回收后重复
+                regionalMapIterator.setCurrentMarkState(MarkState::DE_ALLOCATED);
                 if constexpr (enable_destructor) {
                     void* addr = regionalMapIterator.getCurrentAddress();
                     callDestructor(addr);
@@ -159,37 +162,58 @@ void GCRegion::clearUnmarked() {
             }
         }
     } else {
+        size_t _allocated_offset = allocated_offset.load();
+        std::this_thread::yield();
         auto bitMapIterator = bitmap->getIterator();
-        while (bitMapIterator.MoveNext() && bitMapIterator.getCurrentOffset() < allocated_offset) {
-            GCBitMap::BitStatus bitStatus = bitMapIterator.current();
-            MarkStateBit& markState = bitStatus.markState;
-            void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
-            if (GCPhase::needSweep(markState)) {    //非存活对象，调用其析构函数，并标记为未分配，防止因M0/M1重复使用致后续误判存活
-                // 非存活对象统一标记为REMAPPED（不能标记为NOT_ALLOCATED），因为仍然需要size信息遍历bitmap，并避免markState重复
-                // TODO: 但是这似乎会导致本来就是REMAPPED的对象不会被调用析构函数
-                // 现改为标记为NOT_ALLOCATED
-                bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
-                if constexpr (enable_destructor) {
-                    callDestructor(addr);
+        try {
+            while (bitMapIterator.MoveNext() && bitMapIterator.getCurrentOffset() < _allocated_offset) {
+                GCBitMap::BitStatus bitStatus = bitMapIterator.current();
+                MarkStateBit& markState = bitStatus.markState;
+                void* addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
+                if (GCPhase::needSweep(markState)) {    // 非存活对象，调用其析构函数，并标记为未分配，防止因M0/M1重复使用致后续误判存活
+                    // 非存活对象统一标记为REMAPPED，因为仍然需要size信息遍历bitmap，并避免markState重复
+                    // 但是这似乎会导致本来就是REMAPPED的对象不会被调用析构函数，现改为标记为NOT_ALLOCATED
+                    bitmap->mark(addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
+                    if constexpr (enable_destructor) {
+                        callDestructor(addr);
+                    }
+                } else if (bitStatus.objectSize == 0 && regionType != RegionEnum::TINY) {
+                    throw std::runtime_error("Object size found 0 in bitmap");
                 }
-            } else if (bitStatus.objectSize == 0 && regionType != RegionEnum::TINY) {
-                // break;
-                throw std::exception();    // 多线程情况下可能会误判
             }
+        } catch (std::runtime_error& e) {
+            // 线程安全可能造成的bitmap迭代过程中抛出的异常都catch住
+            std::clog << "Info: GCRegion::clearUnmarked() caught an exception thrown by GCBitmap: " << e.what() << std::endl;
         }
     }
 }
 
-void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
+void GCRegion::triggerRelocation() {
     if (regionType == RegionEnum::LARGE) {
         std::clog << "Large region doesn't need to trigger this function." << std::endl;
         return;
     }
-    evacuated = true;
+    if (GCParameter::zeroCountCondition) {
+        while (use_count != 0) {
+            std::unique_lock<std::mutex> lock(this->zero_count_mutex);
+            zero_count_condition.wait(lock, [this] { return zero_use_count(); });
+        }
+    } else {
+        int wait_cnt = 0;
+        while (use_count != 0) {
+            wait_cnt++;
+            std::this_thread::yield();
+        }
+        if (wait_cnt != 0)
+            std::clog << "Info: Spin waiting for region use_count for " << wait_cnt << " times" << std::endl;
+    }
+
+    evacuated.store(true);
     if (this->canFree() && !enable_destructor) {      // 已经没有存活对象了
         return;
     }
-    // std::clog << "Relocating region " << this << std::endl;
+    while (use_count != 0) std::this_thread::yield();
+
     if constexpr (use_regional_hashmap) {
         auto regionalMapIterator = regionalHashMap->getIterator();
         while (regionalMapIterator.MoveNext()) {
@@ -198,7 +222,7 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
             void* object_addr = regionalMapIterator.getCurrentAddress();
             if (GCPhase::isLiveObject(markState)) {
                 size_t object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : gcStatus.objectSize;
-                this->relocateObject(object_addr, object_size, memoryAllocator);
+                this->relocateObject(object_addr, object_size);
             } else if (GCPhase::needSweep(markState)) {
                 if constexpr (enable_destructor) {
                     callDestructor(object_addr);
@@ -213,10 +237,10 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
             void* object_addr = reinterpret_cast<char*>(startAddress) + bitMapIterator.getCurrentOffset();
             if (GCPhase::isLiveObject(markState)) {     // 存活对象，转移
                 unsigned int object_size = regionType == RegionEnum::TINY ? TINY_OBJECT_THRESHOLD : bitStatus.objectSize;
-                this->relocateObject(object_addr, object_size, memoryAllocator);
+                this->relocateObject(object_addr, object_size);
             } else if (GCPhase::needSweep(markState)) { // 非存活对象，调用其析构函数
                 // 由于region触发重定位后是不会再被使用的，因此无需再次标记
-                // bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::REMAPPED);
+                // bitmap->mark(object_addr, bitStatus.objectSize, MarkStateBit::NOT_ALLOCATED);
                 if constexpr (enable_destructor) {
                     callDestructor(object_addr);
                 }
@@ -225,13 +249,13 @@ void GCRegion::triggerRelocation(IMemoryAllocator* memoryAllocator) {
     }
 }
 
-void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllocator* memoryAllocator) {
+void GCRegion::relocateObject(void* object_addr, size_t object_size) {
     if (isFreed()) return;
     if (!inside_region(object_addr, object_size)) {
-        std::clog << "The relocating object does not in current region." << std::endl;
+        std::cerr << "Warning: The relocating object does not in current region " << object_addr << std::endl;
         return;
     }
-    std::unique_lock<std::mutex> relocate_lock(this->relocation_mutex, std::defer_lock);
+    std::unique_lock<std::recursive_mutex> relocate_lock(this->relocation_mutex, std::defer_lock);
     if constexpr (enable_move_constructor) {
         // 使用移动构造函数会有潜在线程安全问题，即，重分配竞争失败有可能会导致原有数据丢失
         // 因此启用移动构造函数的情况下只要触发转移对象就上锁，防止上述情况发生
@@ -256,7 +280,6 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
         // 如果在转移过程中，有应用线程访问了旧地址上的原对象并产生了写入怎么办？参考shenandoah解决方案
         std::unique_lock<std::shared_mutex> fwdtb_lock(this->forwarding_table_mutex);
         if (!forwarding_table.contains(object_addr)) {
-            // std::clog << "Forwarded " << object_addr << " to " << new_object_addr << std::endl;
             forwarding_table.emplace(object_addr, new_addr);
             fwdtb_lock.unlock();
             // 将析构函数和移动构造函数注册到新region中去
@@ -265,7 +288,7 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
                 auto it = destructor_map->find(object_addr);
                 if (it != destructor_map->end()) {
                     new_region->registerDestructor(new_object_addr, it->second);
-                } else std::cerr << "destructor not found!" << std::endl;
+                }
             }
             if constexpr (enable_move_constructor) {
                 std::shared_lock<std::shared_mutex> lock2(move_constructor_map_mtx);
@@ -274,11 +297,20 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size, IMemoryAllo
                     new_region->registerMoveConstructor(new_object_addr, it->second);
                 }
             }
+            // 在GCPtrSet中重新注册
+            if constexpr (GCParameter::useGCPtrSet && !enable_move_constructor) {
+                std::vector<GCPtrBase*> inside_set =
+                    GCWorker::getWorker()->inside_gcptr_set((GCPtrBase*)object_addr, object_size);
+                for (GCPtrBase* c_addr : inside_set) {
+                    size_t offset = (char*)c_addr - (char*)object_addr;
+                    GCPtrBase* n_addr = reinterpret_cast<GCPtrBase*>(reinterpret_cast<char*>(new_object_addr) + offset);
+                    GCWorker::getWorker()->replaceGCPtr(c_addr, n_addr);
+                }
+            }
             return;
         }
     }
     // 在复制对象的过程中，已经被应用线程抢先完成了转移，撤回新分配的内存
-    // std::clog << "Undoing forwarding for " << object_addr << std::endl;
     new_region->free(new_object_addr, object_size);
 }
 
@@ -303,10 +335,10 @@ void GCRegion::free() {
     regionalHashMap = nullptr;
     destructor_map = nullptr;
     move_constructor_map = nullptr;
+    memoryAllocator->free(startAddress, total_size);
+    startAddress = nullptr;
     total_size = 0;
     allocated_offset = 0;
-    ::free(startAddress);
-    startAddress = nullptr;
 }
 
 void GCRegion::reclaim() {
@@ -322,11 +354,11 @@ void GCRegion::reclaim() {
     evacuated = false;
 }
 
-GCRegion::GCRegion(GCRegion&& other) noexcept:
+GCRegion::GCRegion(GCRegion&& other) noexcept :
         regionType(other.regionType), startAddress(other.startAddress), total_size(other.total_size),
         bitmap(std::move(other.bitmap)), regionalHashMap(std::move(other.regionalHashMap)),
-        destructor_map(std::move(other.destructor_map)), move_constructor_map(std::move(other.move_constructor_map)),
-        largeRegionMarkState(other.largeRegionMarkState) {
+        memoryAllocator(other.memoryAllocator), largeRegionMarkState(other.largeRegionMarkState),
+        destructor_map(std::move(other.destructor_map)), move_constructor_map(std::move(other.move_constructor_map)) {
     this->allocated_offset.store(other.allocated_offset.load());
     this->live_size.store(other.live_size.load());
     this->evacuated.store(other.evacuated.load());
@@ -360,6 +392,8 @@ void GCRegion::callDestructor(void* object_addr) {
     if (it != destructor_map->end()) {
         auto& destructor = it->second;
         destructor(object_addr);
+    } else {
+        std::clog << "Warning: Destructor not found of " << object_addr << " in region " << this << std::endl;
     }
 }
 
@@ -375,6 +409,16 @@ void GCRegion::callMoveConstructor(void* source_addr, void* target_addr) {
 bool GCRegion::inside_region(void* addr, size_t size) const {
     return (char*) addr >= (char*) startAddress
            && (char*) addr + size <= (char*) startAddress + allocated_offset;
+}
+
+void GCRegion::inc_use_count() {
+    ++use_count;
+}
+
+void GCRegion::dec_use_count() {
+    --use_count;
+    if (GCParameter::zeroCountCondition && use_count == 0)
+        zero_count_condition.notify_all();
 }
 
 size_t GCRegion::GCRegionHash::operator()(const GCRegion& p) const {
@@ -403,6 +447,6 @@ RegionEnum RegionEnumUtil::toRegionEnum(short e) {
         case 3:
             return RegionEnum::LARGE;
         default:
-            throw std::invalid_argument("Invalid region enum!");
+            throw std::invalid_argument("RegionEnumUtil::toRegionEnum(): Invalid region enum short integer");
     }
 }

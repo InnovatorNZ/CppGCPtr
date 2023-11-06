@@ -5,9 +5,12 @@
 #include <stdexcept>
 
 enum class MarkState {
+    //INVALID,
     REMAPPED,
     M0,
-    M1
+    M1,
+    DE_ALLOCATED,
+    COPIED
 };
 
 enum class MarkStateBit {
@@ -47,6 +50,8 @@ public:
                 return "M0";
             case MarkState::M1:
                 return "M1";
+            case MarkState::DE_ALLOCATED:
+                return "Deallocated";
             default:
                 return "Invalid";
         }

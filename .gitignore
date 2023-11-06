@@ -2,8 +2,9 @@
 cmake-build*/
 .vs/
 out/
-build/
+build*/
 .vscode/
 CppGCPtr.exe
+CppGCPtr.out
 .DS_Store
 */.DS_Store

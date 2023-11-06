@@ -2,8 +2,10 @@
 #define CPPGCPTR_GCPTRBASE_H
 
 #include <memory>
+#include <atomic>
 #include "ObjectInfo.h"
 #include "GCPhase.h"
+#include "GCParameter.h"
 
 constexpr int GCPTR_IDENTIFIER_HEAD = 0x1f1e33fc;
 constexpr int GCPTR_IDENTIFIER_TAIL = 0x03e0e1cc;
@@ -13,7 +15,7 @@ private:
     const int identifier_head = GCPTR_IDENTIFIER_HEAD;
 
 protected:
-    volatile MarkState inlineMarkState;      // 类似zgc的染色指针，加快“读取”染色标记
+    std::atomic<MarkState> inlineMarkState;
 
 public:
     GCPtrBase() {
@@ -23,7 +25,13 @@ public:
             inlineMarkState = MarkState::REMAPPED;
     }
 
-    virtual ~GCPtrBase() = default;
+    GCPtrBase(const GCPtrBase& other) {
+        setInlineMarkState(other);
+    }
+
+    virtual ~GCPtrBase() {
+        inlineMarkState = MarkState::DE_ALLOCATED;
+    }
 
     virtual void* getVoidPtr() = 0;
 
@@ -35,6 +43,21 @@ public:
 
     void setInlineMarkState(MarkState markstate) {
         this->inlineMarkState = markstate;
+    }
+
+    void setInlineMarkState(const GCPtrBase& other) {
+        if (GCPhase::duringMarking()) {
+            if constexpr (GCParameter::useCopiedMarkstate)
+                inlineMarkState = MarkState::COPIED;
+            else
+                inlineMarkState = GCPhase::getCurrentMarkState();
+        } else {
+            inlineMarkState.store(other.getInlineMarkState());
+        }
+    }
+
+    bool casInlineMarkState(MarkState expected, MarkState target) {
+        return inlineMarkState.compare_exchange_weak(expected, target);
     }
 };
 

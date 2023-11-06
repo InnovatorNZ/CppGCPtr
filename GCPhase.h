@@ -8,14 +8,17 @@
 #include "PhaseEnum.h"
 #include "SpinReadWriteLock.h"
 #include "MutexReadWriteLock.h"
+#include "WeakSpinReadWriteLock.h"
+#include "SpinLock.h"
 
-#define USE_SPINLOCK false
+#define USE_SPINLOCK 0
 
 class GCPhase {
 private:
     static std::atomic<eGCPhase> gcPhase;
     static std::atomic<MarkState> currentMarkState;
     static IReadWriteLock* stwLock;
+    static IReadWriteLock* gcPhaseLock;
 public:
     static eGCPhase getGCPhase();
 
@@ -47,6 +50,10 @@ public:
         return gcPhase == eGCPhase::CONCURRENT_MARK || gcPhase == eGCPhase::REMARK;
     }
 
+    static bool duringMarking(const eGCPhase& gcPhase) {
+        return gcPhase == eGCPhase::CONCURRENT_MARK || gcPhase == eGCPhase::REMARK;
+    }
+
     static void EnterCriticalSection() {
         stwLock->lockRead();
     }
@@ -58,6 +65,17 @@ public:
     static IReadWriteLock* getSTWLock() {
         return stwLock;
     }
+
+    class RAIISTWLock {
+    private:
+        bool owns;
+    public:
+        RAIISTWLock();
+
+        explicit RAIISTWLock(bool doNotLockAtRemarkPhase);
+
+        ~RAIISTWLock();
+    };
 };
 
 
