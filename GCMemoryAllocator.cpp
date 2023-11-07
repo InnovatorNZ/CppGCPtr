@@ -96,6 +96,8 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
         }
 
         void* new_region_memory = this->allocate_new_memory(regionSize);
+        if (GCParameter::fillZeroForNewRegion)
+            memset(new_region_memory, 0, regionSize);
         std::shared_ptr<GCRegion> new_region = std::make_shared<GCRegion>(regionType, new_region_memory, regionSize, this);
 
         std::unique_lock<std::shared_mutex> region_map_lock(regionMapMtx, std::defer_lock);
