@@ -25,8 +25,8 @@ public:
 	static constexpr bool zeroCountCondition = false;			// 当需要转移的region存在PtrGuard时，GC线程会休眠直到计数归零，在PtrGuard较多时可以减少GC线程的自旋消耗的CPU，但会增加应用线程每次取出指针的性能消耗
 	static constexpr bool recordNewMemMap = false;				// 是否在分配新内存时记录其起始位置和大小，用于二级内存池释放预留内存用，没什么用，不建议启用；前提条件：启用二级内存分配器，启用释放预留内存
 	static constexpr bool bitmapMemoryFromSecondary = true;		// 位图的内存是否从二级分配器分配；启用该选项可以加快位图的内存分配，但可能会导致二级分配器的内存碎片；前提条件：启用二级内存分配器
-	static constexpr bool useGCPtrSet = false;					// 是否启用记录所有GCPtr的集合，若你的程序由于未对新分配内存进行初始化而在GC时崩溃可启用该选项，请谨慎这会导致较大的性能下降；前提条件：启用析构函数
-    static constexpr bool fillZeroForNewRegion = true;          // fill zero for new region memory
+	static constexpr bool useGCPtrSet = false;					// 是否启用记录所有GCPtr的集合，启用此选项可缓解用户线程未对类的成员变量或内存进行初始化造成的崩溃，这会导致较大的性能下降；前提条件：启用析构函数
+	static constexpr bool fillZeroForNewRegion = true;			// 是否对新region的内存进行清零填充。启用此选项可缓解因用户线程未对类成员变量或内存进行初始化造成的崩溃；前提条件：启用内存分配器
 	static constexpr size_t secondaryMallocSize = 8 * 1024 * 1024;		// 二级内存分配器单次向操作系统请求分配预留内存的大小（默认：8MB）
 	static constexpr size_t TINY_OBJECT_THRESHOLD = 24;					// 迷你对象的对象大小上限（默认：24字节）
 	static constexpr size_t TINY_REGION_SIZE = 256 * 1024;				// 迷你对象的区域大小（默认：256KB）
