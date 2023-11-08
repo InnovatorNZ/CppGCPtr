@@ -324,8 +324,11 @@ bool GCRegion::canFree() const {
 }
 
 bool GCRegion::needEvacuate() const {
-    if (getFragmentRatio() >= 0.25 && getFreeRatio() < 0.25) return true;
-    else return false;
+    if (getFragmentRatio() >= GCParameter::evacuateFragmentRatio &&
+        getFreeRatio() < GCParameter::evacuateFreeRatio)
+        return true;
+    else
+        return false;
 }
 
 void GCRegion::free() {
