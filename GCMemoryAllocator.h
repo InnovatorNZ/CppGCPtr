@@ -105,15 +105,13 @@ public:
 
     void free(void*, size_t) override;
 
+    void triggerRelocation();
+
     void triggerClear();
 
     void SelectRelocationSet();
 
     void SelectClearSet();
-
-    void triggerRelocation();
-
-    void triggerClear_v2();
 
     void resetLiveSize();
 
