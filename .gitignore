@@ -8,3 +8,4 @@ CppGCPtr.exe
 CppGCPtr.out
 .DS_Store
 */.DS_Store
+*.obj
