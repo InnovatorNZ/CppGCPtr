@@ -46,8 +46,8 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
     if (enableParallel) {
         this->gcThreadCount = 12;
         this->threadPool = std::make_unique<ThreadPoolExecutor>(gcThreadCount, gcThreadCount, 0,
-                                                                std::make_unique<ArrayBlockingQueue<std::function<void()>>>(3),
-                                                                ThreadPoolExecutor::AbortPolicy);
+                                                                std::make_unique<ArrayBlockingQueue<std::function<void()>>>(gcThreadCount),
+                                                                std::make_unique<ThreadPoolExecutor::AbortPolicy>(), true);
     } else {
         this->gcThreadCount = 0;
         this->threadPool = nullptr;
