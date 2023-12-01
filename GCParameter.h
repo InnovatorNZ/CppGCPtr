@@ -34,6 +34,7 @@ public:
 	static constexpr size_t SMALL_REGION_SIZE = 2 * 1024 * 1024;		// 小对象的区域大小（默认：2MB）
 	static constexpr size_t MEDIUM_OBJECT_THRESHOLD = 1 * 1024 * 1024;	// 中对象的对象大小上限（默认：1MB）
 	static constexpr size_t MEDIUM_REGION_SIZE = 32 * 1024 * 1024;		// 中对象的区域大小（默认：32MB）
+	static constexpr int gcThreadCount = 4;								// GC线程数量；前提条件：启用多线程垃圾回收
 	static constexpr float evacuateFragmentRatio = 0.25;				// 当某region的碎片占比大于等于该阈值将被加入转移集合
 	static constexpr float evacuateFreeRatio = 0.25;					// 当某region的空闲空间占比小于该阈值将被加入转移集合
 };
