@@ -15,6 +15,7 @@
 
 #include "GCPtrBase.h"
 #include "GCMemoryAllocator.h"
+#include "GCRootSet.h"
 #include "GCUtil.h"
 #include "GCParameter.h"
 #include "ObjectInfo.h"
@@ -37,6 +38,8 @@ private:
     std::unique_ptr<std::shared_mutex[]> root_set_mutex;
     std::vector<void*> root_ptr_snapshot;
     std::vector<ObjectInfo> root_object_snapshot;
+    std::unique_ptr<GCRootSet> gcRootSet;
+    std::mutex gcRootsetMtx;
     std::vector<void*> satb_queue;
     int poolCount;
     std::vector<std::vector<ObjectInfo>> satb_queue_pool;

@@ -35,7 +35,13 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
         for (int i = 0; i < poolCount; i++)
             root_set[i].reserve(64);
     }
-    root_set_mutex = std::make_unique<std::shared_mutex[]>(poolCount);
+    if constexpr (GCParameter::useArrayAsRootSet) {
+        gcRootSet = std::make_unique<GCRootSet>();
+        root_set_mutex = nullptr;
+    } else {
+        root_set_mutex = std::make_unique<std::shared_mutex[]>(poolCount);
+        gcRootSet = nullptr;
+    }
     if constexpr (GCParameter::useGCPtrSet) {
         gcPtrSet = std::make_unique<std::set<GCPtrBase*>>();
         gcPtrSetMtx = std::make_unique<std::shared_mutex>();
@@ -121,12 +127,12 @@ void GCWorker::mark_v2(GCPtrBase* gcptr) {
     if (gcptr == nullptr) return;
     if constexpr (GCParameter::useGCPtrSet) {
         if (!inside_gcptr_set(gcptr)) {
-            std::clog << "Warning: Skipping marking a gcptr which not in gcptr set " << (void*)gcptr << std::endl;
+            std::clog << "Warning: Skipping marking a gcptr which not in gcptr set " << (void*) gcptr << std::endl;
             return;
         }
     }
     if (gcptr->getInlineMarkState() == MarkState::DE_ALLOCATED) {
-        std::clog << "Warning: Skipping marking a deallocated gcptr " << (void*)gcptr << std::endl;
+        std::clog << "Warning: Skipping marking a deallocated gcptr " << (void*) gcptr << std::endl;
         return;
     }
 
@@ -171,8 +177,8 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
     } else {
         if (region == nullptr || region->isEvacuated() || !region->inside_region(object_addr, object_size)) {
             std::cerr << "Error: Evacuated region or Out of range! " <<
-                "&region=" << (void*)region << ", isEvacuated=" << (region == nullptr ? -1 : region->isEvacuated()) <<
-                ", object_addr=" << object_addr << ", object_size=" << object_size << std::endl;
+                      "&region=" << (void*) region << ", isEvacuated=" << (region == nullptr ? -1 : region->isEvacuated()) <<
+                      ", object_addr=" << object_addr << ", object_size=" << object_size << std::endl;
             throw std::logic_error("GCWorker::mark_v2(): Evacuated region or out of range");
             return;
         }
@@ -188,15 +194,15 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
             constexpr auto _max = [](int x, int y) constexpr { return x > y ? x : y; };
             constexpr int tail_offset =
-                sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
-                sizeof(std::shared_ptr<GCRegion>) + sizeof(std::unique_ptr<IReadWriteLock>);
+                    sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
+                    sizeof(std::shared_ptr<GCRegion>) + sizeof(std::unique_ptr<IReadWriteLock>);
             char* tail_addr = n_addr + vfptr_size + tail_offset;
             int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {
                 GCPtrBase* next_ptr = reinterpret_cast<GCPtrBase*>(n_addr);
                 mark_v2(next_ptr);
             } else {
-                std::clog << "Warning: Identifier head found at " << (void*)n_addr << " but not found tail, skipped." << std::endl;
+                std::clog << "Warning: Identifier head found at " << (void*) n_addr << " but not found tail, skipped." << std::endl;
             }
         }
     }
@@ -305,47 +311,57 @@ void GCWorker::replaceGCPtr(GCPtrBase* original, GCPtrBase* replacement) {
 }
 
 void GCWorker::addRoot(GCPtrBase* from) {
-    int poolIdx = getPoolIdx();
-    std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);
-    if constexpr (GCParameter::deferRemoveRoot)
-        root_map[poolIdx].insert_or_assign(from, false);
-    else
-        root_set[poolIdx].insert(from);
+    if constexpr (!GCParameter::useArrayAsRootSet) {
+        int poolIdx = getPoolIdx();
+        std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);
+        if constexpr (GCParameter::deferRemoveRoot)
+            root_map[poolIdx].insert_or_assign(from, false);
+        else
+            root_set[poolIdx].insert(from);
+    } else {
+        std::unique_lock<std::mutex> lock(gcRootsetMtx);
+        gcRootSet->add(from);
+    }
 }
 
 void GCWorker::removeRoot(GCPtrBase* from) {
-    int poolIdx = getPoolIdx();
-    if constexpr (GCParameter::deferRemoveRoot) {
-        std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex[poolIdx]);
-        auto it = root_map[poolIdx].find(from);
-        if (it != root_map[poolIdx].end()) {
-            it->second = true;
-        } else {
-            read_lock.unlock();
-            for (int i = 0; i < poolCount; i++) {
-                if (i == poolIdx) continue;
-                std::shared_lock<std::shared_mutex> read_lock2(this->root_set_mutex[i]);
-                if (root_map[i].empty()) continue;
-                auto it = root_map[i].find(from);
-                if (it != root_map[i].end()) {
-                    it->second = true;
-                    return;
+    if constexpr (!GCParameter::useArrayAsRootSet) {
+        int poolIdx = getPoolIdx();
+        if constexpr (GCParameter::deferRemoveRoot) {
+            std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex[poolIdx]);
+            auto it = root_map[poolIdx].find(from);
+            if (it != root_map[poolIdx].end()) {
+                it->second = true;
+            } else {
+                read_lock.unlock();
+                for (int i = 0; i < poolCount; i++) {
+                    if (i == poolIdx) continue;
+                    std::shared_lock<std::shared_mutex> read_lock2(this->root_set_mutex[i]);
+                    if (root_map[i].empty()) continue;
+                    auto it = root_map[i].find(from);
+                    if (it != root_map[i].end()) {
+                        it->second = true;
+                        return;
+                    }
                 }
+                std::cerr << "Warning: Root not found when erasing" << std::endl;
             }
-            std::cerr << "Warning: Root not found when erasing" << std::endl;
+        } else {
+            std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);
+            if (!root_set[poolIdx].erase(from)) {
+                write_lock.unlock();
+                for (int i = 0; i < poolCount; i++) {
+                    if (i == poolIdx) continue;
+                    std::unique_lock<std::shared_mutex> write_lock2(this->root_set_mutex[i]);
+                    if (root_set[i].erase(from))
+                        return;
+                }
+                std::cerr << "Warning: Root not found when erasing" << std::endl;
+            }
         }
     } else {
-        std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[poolIdx]);
-        if (!root_set[poolIdx].erase(from)) {
-            write_lock.unlock();
-            for (int i = 0; i < poolCount; i++) {
-                if (i == poolIdx) continue;
-                std::unique_lock<std::shared_mutex> write_lock2(this->root_set_mutex[i]);
-                if (root_set[i].erase(from))
-                    return;
-            }
-            std::cerr << "Warning: Root not found when erasing" << std::endl;
-        }
+        std::unique_lock<std::mutex> lock(this->gcRootsetMtx);
+        gcRootSet->remove(from);
     }
 }
 
@@ -401,37 +417,46 @@ void GCWorker::beginMark() {
         auto start_time = std::chrono::high_resolution_clock::now();
         this->root_object_snapshot.clear();
         this->root_ptr_snapshot.clear();
-        for (int i = 0; i < poolCount; i++) {
-            if constexpr (!GCParameter::deferRemoveRoot) {
-                std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex[i]);
-                if (!enableMemoryAllocator) {
-                    for (auto it : root_set[i]) {
-                        void* ptr = it->getVoidPtr();
-                        if (ptr != nullptr)
-                            this->root_ptr_snapshot.push_back(ptr);
-                    }
-                } else {
-                    for (auto& it : root_set[i]) {
-                        this->mark_root(it);
-                    }
-                }
-            } else {
-                std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[i]);
-                for (auto it = root_map[i].begin(); it != root_map[i].end();) {
-                    if (it->second) {
-                        it = root_map[i].erase(it);
-                    } else {
-                        GCPtrBase* gcptr = it->first;
-                        if (enableMemoryAllocator) {
-                            this->mark_root(gcptr);
-                        } else {
-                            void* ptr = gcptr->getVoidPtr();
+        if constexpr (!GCParameter::useArrayAsRootSet) {
+            for (int i = 0; i < poolCount; i++) {
+                if constexpr (!GCParameter::deferRemoveRoot) {
+                    std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex[i]);
+                    if (!enableMemoryAllocator) {
+                        for (auto it : root_set[i]) {
+                            void* ptr = it->getVoidPtr();
                             if (ptr != nullptr)
                                 this->root_ptr_snapshot.push_back(ptr);
                         }
-                        ++it;
+                    } else {
+                        for (auto& it : root_set[i]) {
+                            this->mark_root(it);
+                        }
+                    }
+                } else {
+                    std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[i]);
+                    for (auto it = root_map[i].begin(); it != root_map[i].end();) {
+                        if (it->second) {
+                            it = root_map[i].erase(it);
+                        } else {
+                            GCPtrBase* gcptr = it->first;
+                            if (enableMemoryAllocator) {
+                                this->mark_root(gcptr);
+                            } else {
+                                void* ptr = gcptr->getVoidPtr();
+                                if (ptr != nullptr)
+                                    this->root_ptr_snapshot.push_back(ptr);
+                            }
+                            ++it;
+                        }
                     }
                 }
+            }
+        } else {
+            std::unique_lock<std::mutex> lock(gcRootsetMtx);
+            std::unique_ptr<Iterator<GCPtrBase*>> iterator = gcRootSet->getIterator();
+            while (iterator->MoveNext()) {
+                GCPtrBase* c_root = iterator->current();
+                this->mark_root(c_root);
             }
         }
         auto end_time = std::chrono::high_resolution_clock::now();
@@ -651,7 +676,7 @@ std::vector<GCPtrBase*> GCWorker::inside_gcptr_set(GCPtrBase* gcptr_addr, size_t
         auto it = gcPtrSet->lower_bound(gcptr_addr);
         while (it != gcPtrSet->end()) {
             GCPtrBase* c_addr = *it;
-            size_t offset = (char*)c_addr - (char*)gcptr_addr;
+            size_t offset = (char*) c_addr - (char*) gcptr_addr;
             if (offset >= object_size) break;
             ret.push_back(c_addr);
             ++it;
