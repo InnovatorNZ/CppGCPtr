@@ -17,6 +17,9 @@ private:
 protected:
     std::atomic<MarkState> inlineMarkState;
 
+private:
+    size_t rootset_offset = 0;
+
 public:
     GCPtrBase() {
         if (GCPhase::duringGC())
@@ -58,6 +61,10 @@ public:
 
     bool casInlineMarkState(MarkState expected, MarkState target) {
         return inlineMarkState.compare_exchange_weak(expected, target);
+    }
+
+    void setRootsetOffset(int p) {
+        this->rootset_offset = p;
     }
 };
 
