@@ -43,8 +43,9 @@ public:
         int c_offset = p % SINGLE_BLOCK_SIZE;
         if (address_arr[c_idx][c_offset] != from)
             throw std::logic_error("GCRootSet::remove(): p in GCPtr is not equal to p in root set");
-        int tail_idx = p / SINGLE_BLOCK_SIZE;
-        int tail_offset = p % SINGLE_BLOCK_SIZE;
+        int p_tail_ = p_tail - 1;
+        int tail_idx = p_tail_ / SINGLE_BLOCK_SIZE;
+        int tail_offset = p_tail_ % SINGLE_BLOCK_SIZE;
         GCPtrBase* c_tail = address_arr[tail_idx][tail_offset];
         address_arr[c_idx][c_offset] = c_tail;
         c_tail->setRootsetOffset(p);

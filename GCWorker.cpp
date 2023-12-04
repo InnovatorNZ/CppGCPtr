@@ -186,7 +186,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         region->mark(object_addr, object_size);
     }
 
-    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 64 : 40;
+    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 72 : 48;
     constexpr int vfptr_size = sizeof(void*);
     char* cptr = reinterpret_cast<char*>(object_addr);
     for (char* n_addr = cptr; n_addr <= cptr + object_size - SIZEOF_GCPTR; n_addr += sizeof(void*)) {
@@ -194,8 +194,8 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         if (identifier_head == GCPTR_IDENTIFIER_HEAD) {
             constexpr auto _max = [](int x, int y) constexpr { return x > y ? x : y; };
             constexpr int tail_offset =
-                    sizeof(int) + sizeof(MarkState) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
-                    sizeof(std::shared_ptr<GCRegion>) + sizeof(std::unique_ptr<IReadWriteLock>);
+                sizeof(int) + sizeof(MarkState) + sizeof(size_t) + sizeof(void*) + sizeof(unsigned int) + _max(sizeof(bool), 4) +
+                sizeof(std::shared_ptr<GCRegion>) + sizeof(std::unique_ptr<IReadWriteLock>);
             char* tail_addr = n_addr + vfptr_size + tail_offset;
             int identifier_tail = *(reinterpret_cast<int*>(tail_addr));
             if (identifier_tail == GCPTR_IDENTIFIER_TAIL) {
@@ -360,7 +360,7 @@ void GCWorker::removeRoot(GCPtrBase* from) {
             }
         }
     } else {
-        std::unique_lock<std::mutex> lock(this->gcRootsetMtx);
+        std::unique_lock<std::mutex> lock(gcRootsetMtx);
         gcRootSet->remove(from);
     }
 }
