@@ -52,8 +52,21 @@ public:
         p_tail--;
     }
 
+    size_t getSize() const {
+        return p_tail - 1;
+    }
+
     std::unique_ptr<Iterator<GCPtrBase*>> getIterator() {
         return std::make_unique<RootSetIterator>(*this);
+    }
+
+    std::vector<std::unique_ptr<Iterator<GCPtrBase*>>> getIterators(int rangeCount) {
+        std::vector<std::unique_ptr<Iterator<GCPtrBase*>>> ret;
+        int rangeLength = p_tail / rangeCount;
+        for (int i = 0; i < rangeCount; i++) {
+            ret.push_back(std::make_unique<RootSetRangeIterator>(*this, i * rangeLength, (i + 1) * rangeLength));
+        }
+        return ret;
     }
 
     class RootSetIterator : public Iterator<GCPtrBase*> {
@@ -75,6 +88,30 @@ public:
         bool MoveNext() override {
             p++;
             return p < rootSet.p_tail;
+        }
+    };
+
+    class RootSetRangeIterator : public Iterator<GCPtrBase*> {
+    private:
+        GCRootSet& rootSet;
+        size_t p;
+        const size_t p_tail;
+
+    public:
+        explicit RootSetRangeIterator(GCRootSet& rootSet, size_t p_start, size_t p_tail) :
+            rootSet(rootSet), p(p_start), p_tail(p_tail) {
+        }
+
+        GCPtrBase* current() const override {
+            if (p == 0) return nullptr;
+            int c_idx = p / GCRootSet::SINGLE_BLOCK_SIZE;
+            int c_offset = p % GCRootSet::SINGLE_BLOCK_SIZE;
+            return rootSet.address_arr[c_idx][c_offset];
+        }
+
+        bool MoveNext() override {
+            p++;
+            return p < p_tail && p < rootSet.p_tail;
         }
     };
 
