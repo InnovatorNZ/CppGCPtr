@@ -62,9 +62,12 @@ public:
 
     std::vector<std::unique_ptr<Iterator<GCPtrBase*>>> getIterators(int rangeCount) {
         std::vector<std::unique_ptr<Iterator<GCPtrBase*>>> ret;
-        int rangeLength = p_tail / rangeCount;
+        int rangeLength = std::ceil((double)getSize() / (double)rangeCount);
         for (int i = 0; i < rangeCount; i++) {
-            ret.push_back(std::make_unique<RootSetRangeIterator>(*this, i * rangeLength, (i + 1) * rangeLength));
+            ret.push_back(
+                std::make_unique<RootSetRangeIterator>(*this,
+                                                       i * rangeLength + 1,
+                                                       i == rangeCount - 1 ? p_tail : (i + 1) * rangeLength + 1));
         }
         return ret;
     }
@@ -95,11 +98,11 @@ public:
     private:
         GCRootSet& rootSet;
         size_t p;
-        const size_t p_tail;
+        const size_t p_start, p_tail;
 
     public:
         explicit RootSetRangeIterator(GCRootSet& rootSet, size_t p_start, size_t p_tail) :
-            rootSet(rootSet), p(p_start), p_tail(p_tail) {
+            rootSet(rootSet), p(0), p_start(p_start), p_tail(p_tail) {
         }
 
         GCPtrBase* current() const override {
@@ -110,7 +113,8 @@ public:
         }
 
         bool MoveNext() override {
-            p++;
+            if (p == 0) p = p_start;
+            else p++;
             return p < p_tail && p < rootSet.p_tail;
         }
     };

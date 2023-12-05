@@ -1,6 +1,7 @@
 #include "GCWorker.h"
 
 std::unique_ptr<GCWorker> GCWorker::instance;
+thread_local std::vector<ObjectInfo> GCWorker::root_snapshot_threadlocal;
 
 GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
@@ -413,56 +414,57 @@ void GCWorker::startGC() {
 }
 
 void GCWorker::beginMark() {
-    if (GCPhase::getGCPhase() == eGCPhase::CONCURRENT_MARK) {
-        auto start_time = std::chrono::high_resolution_clock::now();
+    if (GCPhase::getGCPhase() != eGCPhase::CONCURRENT_MARK) {
+        std::cerr << "Not in concurrent marking phase" << std::endl;
+        return;
+    }
+
+    if (enableMemoryAllocator)
         this->root_object_snapshot.clear();
+    else
         this->root_ptr_snapshot.clear();
-        if constexpr (!GCParameter::useArrayAsRootSet) {
-            for (int i = 0; i < poolCount; i++) {
-                if constexpr (!GCParameter::deferRemoveRoot) {
-                    std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex[i]);
-                    if (!enableMemoryAllocator) {
-                        for (auto it : root_set[i]) {
-                            void* ptr = it->getVoidPtr();
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+    if constexpr (!GCParameter::useArrayAsRootSet) {
+        // mark root
+        for (int i = 0; i < poolCount; i++) {
+            if constexpr (!GCParameter::deferRemoveRoot) {
+                std::shared_lock<std::shared_mutex> read_lock(this->root_set_mutex[i]);
+                if (!enableMemoryAllocator) {
+                    for (auto it : root_set[i]) {
+                        void* ptr = it->getVoidPtr();
+                        if (ptr != nullptr)
+                            this->root_ptr_snapshot.push_back(ptr);
+                    }
+                } else {
+                    for (auto& it : root_set[i]) {
+                        this->mark_root(it);
+                    }
+                }
+            } else {
+                std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[i]);
+                for (auto it = root_map[i].begin(); it != root_map[i].end();) {
+                    if (it->second) {
+                        it = root_map[i].erase(it);
+                    } else {
+                        GCPtrBase* gcptr = it->first;
+                        if (enableMemoryAllocator) {
+                            this->mark_root(gcptr);
+                        } else {
+                            void* ptr = gcptr->getVoidPtr();
                             if (ptr != nullptr)
                                 this->root_ptr_snapshot.push_back(ptr);
                         }
-                    } else {
-                        for (auto& it : root_set[i]) {
-                            this->mark_root(it);
-                        }
-                    }
-                } else {
-                    std::unique_lock<std::shared_mutex> write_lock(this->root_set_mutex[i]);
-                    for (auto it = root_map[i].begin(); it != root_map[i].end();) {
-                        if (it->second) {
-                            it = root_map[i].erase(it);
-                        } else {
-                            GCPtrBase* gcptr = it->first;
-                            if (enableMemoryAllocator) {
-                                this->mark_root(gcptr);
-                            } else {
-                                void* ptr = gcptr->getVoidPtr();
-                                if (ptr != nullptr)
-                                    this->root_ptr_snapshot.push_back(ptr);
-                            }
-                            ++it;
-                        }
+                        ++it;
                     }
                 }
-            }
-        } else {
-            std::unique_lock<std::mutex> lock(gcRootsetMtx);
-            std::unique_ptr<Iterator<GCPtrBase*>> iterator = gcRootSet->getIterator();
-            while (iterator->MoveNext()) {
-                GCPtrBase* c_root = iterator->current();
-                this->mark_root(c_root);
             }
         }
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
         std::clog << "Root set lock duration: " << std::dec << duration.count() << " us" << std::endl;
 
+        // mark others
         if (!enableMemoryAllocator) {
             for (void* ptr : this->root_ptr_snapshot) {
                 this->mark(ptr);
@@ -485,9 +487,83 @@ void GCWorker::beginMark() {
                 threadPool->waitForTaskComplete(gcThreadCount);
             }
         }
+
     } else {
-        std::cerr << "Not in concurrent marking phase" << std::endl;
+        // mark root
+        bool use_thread_local_snapshot = false;
+        {
+            std::unique_lock<std::mutex> lock(gcRootsetMtx);
+            const size_t ROOT_SET_PARALLEL_THRESHOLD = 1000;
+            if (enableParallelGC && gcRootSet->getSize() >= ROOT_SET_PARALLEL_THRESHOLD) {
+                use_thread_local_snapshot = true;
+                std::vector<std::unique_ptr<Iterator<GCPtrBase*>>> iterators = gcRootSet->getIterators(gcThreadCount);
+                for (int i = 0; i < gcThreadCount; i++) {
+                    Iterator<GCPtrBase*>* iterator = iterators[i].get();
+                    threadPool->execute([this, iterator] {
+                        while (iterator->MoveNext()) {
+                            GCPtrBase* c_root = iterator->current();
+                            this->mark_root(c_root, true);
+                        }
+                    });
+                }
+                threadPool->waitForTaskComplete(gcThreadCount);
+            } else {
+                std::unique_ptr<Iterator<GCPtrBase*>> iterator = gcRootSet->getIterator();
+                while (iterator->MoveNext()) {
+                    GCPtrBase* c_root = iterator->current();
+                    this->mark_root(c_root);
+                }
+            }
+        }
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        std::clog << "Root set lock duration: " << std::dec << duration.count() << " us" << std::endl;
+
+        // mark others
+        if (!enableParallelGC) {
+            for (const ObjectInfo& objectInfo : this->root_object_snapshot) {
+                this->mark_v2(objectInfo);
+            }
+        } else {
+            if (use_thread_local_snapshot) {
+                for (int i = 0; i < gcThreadCount; i++) {
+                    threadPool->execute([this] {
+                        for (ObjectInfo& objectInfo : root_snapshot_threadlocal) {
+                            this->mark_v2(objectInfo);
+                        }
+                        root_snapshot_threadlocal.clear();
+                    });
+                }
+            } else {
+                for (int i = 0; i < gcThreadCount; i++) {
+                    threadPool->execute([this, i] {
+                        size_t startIndex, endIndex;
+                        getParallelIndex(i, root_object_snapshot, startIndex, endIndex);
+                        for (size_t j = startIndex; j < endIndex; j++) {
+                            this->mark_v2(root_object_snapshot[j]);
+                        }
+                    });
+                }
+            }
+            threadPool->waitForTaskComplete(gcThreadCount);
+        }
     }
+}
+
+void GCWorker::mark_root(GCPtrBase* gcptr, bool thread_local_snapshot) {
+    if (gcptr == nullptr || gcptr->getVoidPtr() == nullptr) return;
+    ObjectInfo objectInfo = gcptr->getObjectInfo();
+    MarkState c_markstate = GCPhase::getCurrentMarkState();
+    if (useInlineMarkstate) {
+        if (gcptr->getInlineMarkState() == c_markstate) {
+            return;
+        }
+        gcptr->setInlineMarkState(c_markstate);
+    }
+    if (thread_local_snapshot)
+        root_snapshot_threadlocal.emplace_back(objectInfo);
+    else
+        root_object_snapshot.emplace_back(objectInfo);
 }
 
 void GCWorker::triggerSATBMark() {

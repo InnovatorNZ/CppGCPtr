@@ -38,6 +38,7 @@ private:
     std::unique_ptr<std::shared_mutex[]> root_set_mutex;
     std::vector<void*> root_ptr_snapshot;
     std::vector<ObjectInfo> root_object_snapshot;
+    static thread_local std::vector<ObjectInfo> root_snapshot_threadlocal;
     std::unique_ptr<GCRootSet> gcRootSet;
     std::mutex gcRootsetMtx;
     std::vector<void*> satb_queue;
@@ -68,18 +69,7 @@ private:
 
     void mark_v2(const ObjectInfo&);
 
-    inline void mark_root(GCPtrBase* gcptr) {
-        if (gcptr == nullptr || gcptr->getVoidPtr() == nullptr) return;
-        ObjectInfo objectInfo = gcptr->getObjectInfo();
-        MarkState c_markstate = GCPhase::getCurrentMarkState();
-        if (useInlineMarkstate) {
-            if (gcptr->getInlineMarkState() == c_markstate) {
-                return;
-            }
-            gcptr->setInlineMarkState(c_markstate);
-        }
-        root_object_snapshot.emplace_back(objectInfo);
-    }
+    void mark_root(GCPtrBase* gcptr, bool thread_local_snapshot = false);
 
     void GCThreadLoop();
 
