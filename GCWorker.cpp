@@ -1,7 +1,6 @@
 #include "GCWorker.h"
 
 std::unique_ptr<GCWorker> GCWorker::instance;
-thread_local std::vector<ObjectInfo> GCWorker::root_snapshot_threadlocal;
 
 GCWorker::GCWorker() : GCWorker(false, false, true, false, false, false) {
 }
@@ -55,6 +54,8 @@ GCWorker::GCWorker(bool concurrent, bool enableMemoryAllocator, bool enableDestr
         this->threadPool = std::make_unique<ThreadPoolExecutor>(gcThreadCount, gcThreadCount, 0,
                                                                 std::make_unique<ArrayBlockingQueue<std::function<void()>>>(gcThreadCount),
                                                                 std::make_unique<ThreadPoolExecutor::AbortPolicy>(), true);
+        if constexpr (GCParameter::useArrayAsRootSet)
+            this->root_object_snapshots.resize(gcThreadCount);
     } else {
         this->gcThreadCount = 0;
         this->threadPool = nullptr;
@@ -419,10 +420,16 @@ void GCWorker::beginMark() {
         return;
     }
 
-    if (enableMemoryAllocator)
+    if (enableMemoryAllocator) {
         this->root_object_snapshot.clear();
-    else
+        if (GCParameter::useArrayAsRootSet && enableParallelGC) {
+            for (int i = 0; i < gcThreadCount; i++) {
+                this->root_object_snapshots[i].clear();
+            }
+        }
+    } else {
         this->root_ptr_snapshot.clear();
+    }
 
     auto start_time = std::chrono::high_resolution_clock::now();
     if constexpr (!GCParameter::useArrayAsRootSet) {
@@ -490,19 +497,19 @@ void GCWorker::beginMark() {
 
     } else {
         // mark root
-        bool use_thread_local_snapshot = false;
+        bool parallel_markroot = false;
         {
             std::unique_lock<std::mutex> lock(gcRootsetMtx);
-            const size_t ROOT_SET_PARALLEL_THRESHOLD = 1000;
+            const size_t ROOT_SET_PARALLEL_THRESHOLD = 5000;
             if (enableParallelGC && gcRootSet->getSize() >= ROOT_SET_PARALLEL_THRESHOLD) {
-                use_thread_local_snapshot = true;
+                parallel_markroot = true;
                 std::vector<std::unique_ptr<Iterator<GCPtrBase*>>> iterators = gcRootSet->getIterators(gcThreadCount);
                 for (int i = 0; i < gcThreadCount; i++) {
                     Iterator<GCPtrBase*>* iterator = iterators[i].get();
-                    threadPool->execute([this, iterator] {
+                    threadPool->execute([this, i, iterator] {
                         while (iterator->MoveNext()) {
                             GCPtrBase* c_root = iterator->current();
-                            this->mark_root(c_root, true);
+                            this->mark_root(c_root, i);
                         }
                     });
                 }
@@ -525,13 +532,12 @@ void GCWorker::beginMark() {
                 this->mark_v2(objectInfo);
             }
         } else {
-            if (use_thread_local_snapshot) {
+            if (parallel_markroot) {
                 for (int i = 0; i < gcThreadCount; i++) {
-                    threadPool->execute([this] {
-                        for (ObjectInfo& objectInfo : root_snapshot_threadlocal) {
+                    threadPool->execute([this, i] {
+                        for (const ObjectInfo& objectInfo : root_object_snapshots[i]) {
                             this->mark_v2(objectInfo);
                         }
-                        root_snapshot_threadlocal.clear();
                     });
                 }
             } else {
@@ -550,7 +556,7 @@ void GCWorker::beginMark() {
     }
 }
 
-void GCWorker::mark_root(GCPtrBase* gcptr, bool thread_local_snapshot) {
+void GCWorker::mark_root(GCPtrBase* gcptr, int root_snapshots_index) {
     if (gcptr == nullptr || gcptr->getVoidPtr() == nullptr) return;
     ObjectInfo objectInfo = gcptr->getObjectInfo();
     MarkState c_markstate = GCPhase::getCurrentMarkState();
@@ -560,8 +566,8 @@ void GCWorker::mark_root(GCPtrBase* gcptr, bool thread_local_snapshot) {
         }
         gcptr->setInlineMarkState(c_markstate);
     }
-    if (thread_local_snapshot)
-        root_snapshot_threadlocal.emplace_back(objectInfo);
+    if (root_snapshots_index >= 0)
+        root_object_snapshots[root_snapshots_index].emplace_back(objectInfo);
     else
         root_object_snapshot.emplace_back(objectInfo);
 }
