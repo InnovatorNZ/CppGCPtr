@@ -31,6 +31,7 @@ public:
             ::free(mem);
         }
         address_arr.clear();
+        p_tail = 1;
     }
 
     void add(GCPtrBase* from) {
