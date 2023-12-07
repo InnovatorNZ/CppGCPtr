@@ -105,7 +105,7 @@ void GCWorker::mark(void* object_addr) {
     std::shared_lock<std::shared_mutex> read_lock(this->object_map_mutex);
     auto it = object_map.find(object_addr);
     if (it == object_map.end()) {
-        std::clog << "Object not found at " << object_addr << std::endl;
+        std::clog << "Warning: Object not found at " << object_addr << std::endl;
         return;
     }
     read_lock.unlock();
@@ -118,7 +118,7 @@ void GCWorker::mark(void* object_addr) {
     for (char* n_addr = cptr; n_addr < cptr + object_size - sizeof(void*) * 2; n_addr += sizeof(void*)) {
         int identifier = *(reinterpret_cast<int*>(n_addr));
         if (identifier == GCPTR_IDENTIFIER_HEAD) {
-            void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState)));
+            void* next_addr = *(reinterpret_cast<void**>(n_addr + sizeof(int) + sizeof(MarkState) + sizeof(size_t)));
             if (next_addr != nullptr)
                 mark(next_addr);
         }
