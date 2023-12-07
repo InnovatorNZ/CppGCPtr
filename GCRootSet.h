@@ -16,7 +16,8 @@ private:
     size_t p_tail;
 
     void addBlock() {
-        GCPtrBase** new_block = new GCPtrBase* [SINGLE_BLOCK_SIZE];
+        void* mem = ::malloc(SINGLE_BLOCK_SIZE * sizeof(GCPtrBase*));
+        GCPtrBase** new_block = reinterpret_cast<GCPtrBase**>(mem);
         address_arr.push_back(new_block);
     }
 
