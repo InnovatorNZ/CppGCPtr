@@ -24,6 +24,14 @@ public:
     GCRootSet() : p_tail(1) {
     }
 
+    ~GCRootSet() {
+        for (GCPtrBase** p : address_arr) {
+            void* mem = reinterpret_cast<void*>(p);
+            ::free(mem);
+        }
+        address_arr.clear();
+    }
+
     void add(GCPtrBase* from) {
         int block_idx = p_tail / SINGLE_BLOCK_SIZE;
         int block_offset = p_tail % SINGLE_BLOCK_SIZE;
