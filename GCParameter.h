@@ -13,7 +13,7 @@ public:
 	static constexpr bool enableMoveConstructor = false;		// 是否在重分配对象时调用移动构造函数（不推荐，且不支持循环引用）；前提条件：启用重分配，启用析构函数，并且所有被GCPtr管理的对象是可移动的
 	static constexpr bool enableRegionMapBuffer = false;		// 是否启用红黑树缓存（不推荐），若启用，将减小多线程竞争分配内存的锁粒度，但会增加root_set的内存占用；前提条件：启用移动构造函数
 	static constexpr bool useConcurrentLinkedList = false;		// 是否使用无锁链表管理内存区域（不推荐，若启用会使多线程回收失效）
-	static constexpr bool deferRemoveRoot = false;				// 是否延迟删除当作为gc root的GCPtr析构时，若启用会提升GCPtr析构时的性能，但会导致root set内存占用上升
+	static constexpr bool deferRemoveRoot = false;				// 是否延迟删除当作为gc root的GCPtr析构时，若启用会提升GCPtr析构时的性能，但会导致根集合内存占用上升
 	static constexpr bool suspendThreadsWhenSTW = false;		// 是否在STW期间暂停用户线程，若禁用则将仅使用读写锁阻塞；仅支持Windows
 	static constexpr bool enableHashPool = true;				// 是否启用线程id进行hash后取模的池化方案；可以降低锁的竞争，但可能会产生计算哈希的开销
 	static constexpr bool immediateClear = true;				// 尽量在一轮回收后就清除已是垃圾的对象，否则将在2~3轮后回收；启用此选项会增加垃圾回收的性能开销，但可以更快腾出内存
@@ -27,7 +27,7 @@ public:
 	static constexpr bool bitmapMemoryFromSecondary = true;		// 位图的内存是否从二级分配器分配；启用该选项可以加快位图的内存分配，但可能会导致二级分配器的内存碎片；前提条件：启用二级内存分配器
 	static constexpr bool fillZeroForNewRegion = false;			// 是否对新region的内存进行清零填充。启用此选项可缓解因用户线程未对类成员变量或内存进行初始化造成的崩溃；前提条件：启用内存分配器
 	static constexpr bool useGCPtrSet = false;					// 是否启用记录所有GCPtr的集合。启用此选项可缓解用户线程未对类的成员变量或内存进行初始化造成的崩溃，这会导致较大的性能下降；前提条件：启用析构函数
-	static constexpr bool useArrayAsRootSet = true;				// 是否使用数组而不是哈希集合作为root set（详见GCRootset.h的实现）
+	static constexpr bool useArrayAsRootSet = true;				// 是否使用数组而不是哈希表作为根集合，可减少约10%的性能损耗（实验特性，详见GCRootset.h的实现）；前提条件：启用内存分配器
 	static constexpr size_t secondaryMallocSize = 8 * 1024 * 1024;		// 二级内存分配器单次向操作系统请求分配预留内存的大小（默认：8MB）
 	static constexpr size_t TINY_OBJECT_THRESHOLD = 24;					// 迷你对象的对象大小上限（默认：24字节）
 	static constexpr size_t TINY_REGION_SIZE = 256 * 1024;				// 迷你对象的区域大小（默认：256KB）
