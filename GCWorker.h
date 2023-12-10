@@ -15,6 +15,7 @@
 
 #include "GCPtrBase.h"
 #include "GCMemoryAllocator.h"
+#include "GCRootSet.h"
 #include "GCUtil.h"
 #include "GCParameter.h"
 #include "ObjectInfo.h"
@@ -37,6 +38,9 @@ private:
     std::unique_ptr<std::shared_mutex[]> root_set_mutex;
     std::vector<void*> root_ptr_snapshot;
     std::vector<ObjectInfo> root_object_snapshot;
+    std::vector<std::vector<ObjectInfo>> root_object_snapshots;
+    std::unique_ptr<GCRootSet> gcRootSet;
+    std::mutex gcRootsetMtx;
     std::vector<void*> satb_queue;
     int poolCount;
     std::vector<std::vector<ObjectInfo>> satb_queue_pool;
@@ -65,18 +69,7 @@ private:
 
     void mark_v2(const ObjectInfo&);
 
-    inline void mark_root(GCPtrBase* gcptr) {
-        if (gcptr == nullptr || gcptr->getVoidPtr() == nullptr) return;
-        ObjectInfo objectInfo = gcptr->getObjectInfo();
-        MarkState c_markstate = GCPhase::getCurrentMarkState();
-        if (useInlineMarkstate) {
-            if (gcptr->getInlineMarkState() == c_markstate) {
-                return;
-            }
-            gcptr->setInlineMarkState(c_markstate);
-        }
-        root_object_snapshot.emplace_back(objectInfo);
-    }
+    void mark_root(GCPtrBase* gcptr, int root_snapshots_index = -1);
 
     void GCThreadLoop();
 
