@@ -188,7 +188,7 @@ void GCWorker::mark_v2(const ObjectInfo& objectInfo) {
         region->mark(object_addr, object_size);
     }
 
-    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 72 : 48;
+    constexpr int SIZEOF_GCPTR = sizeof(void*) == 8 ? 72 : 44;
     constexpr int vfptr_size = sizeof(void*);
     char* cptr = reinterpret_cast<char*>(object_addr);
     for (char* n_addr = cptr; n_addr <= cptr + object_size - SIZEOF_GCPTR; n_addr += sizeof(void*)) {
