@@ -312,7 +312,9 @@ void GCMemoryAllocator::triggerRelocation() {
         return;
     }
 
-    GCUtil::sleep(0.1);     // 为PtrGuard给予100ms析构
+    if (GCParameter::delayRelocationPhase)
+        GCUtil::sleep(0.05);        // 为PtrGuard给予50ms析构
+
     if (enableParallelClear) {
         size_t snum = evacuationQue.size() / gcThreadCount;
         for (int tid = 0; tid < gcThreadCount; tid++) {
