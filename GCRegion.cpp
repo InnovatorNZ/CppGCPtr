@@ -266,7 +266,7 @@ void GCRegion::relocateObject(void* object_addr, size_t object_size) {
         if (forwarding_table.contains(object_addr))      // 已经被应用线程转移了
             return;
     }
-    auto new_addr = memoryAllocator->allocate(object_size);
+    auto new_addr = memoryAllocator->relocate(object_size);
     void* new_object_addr = new_addr.first;
     std::shared_ptr<GCRegion>& new_region = new_addr.second;
     if (!this->isFreed()) {

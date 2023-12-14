@@ -51,6 +51,7 @@ private:
     std::shared_mutex tinyRegionQueMtx;
 // #endif
     static thread_local std::shared_ptr<GCRegion> smallAllocatingRegion;
+    static thread_local std::shared_ptr<GCRegion> smallRelocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> mediumAllocatingRegion;
     std::atomic<std::shared_ptr<GCRegion>> tinyAllocatingRegion;
 
@@ -63,7 +64,8 @@ private:
     std::vector<std::vector<GCRegion*>> regionMapBuffer0, regionMapBuffer1;
     std::unique_ptr<std::mutex[]> regionMapBufMtx0, regionMapBufMtx1;
 
-    std::pair<void*, std::shared_ptr<GCRegion>> allocate_from_region(size_t size, RegionEnum regionType);
+    std::pair<void*, std::shared_ptr<GCRegion>>
+        allocate_from_region(size_t size, RegionEnum regionType, bool relocate = false);
 
     void* allocate_new_memory(size_t size);
 
@@ -100,6 +102,8 @@ public:
     GCMemoryAllocator(GCMemoryAllocator&&) noexcept = delete;
 
     std::pair<void*, std::shared_ptr<GCRegion>> allocate(size_t size) override;
+
+    std::pair<void*, std::shared_ptr<GCRegion>> relocate(size_t size) override;
 
     void* allocate_raw(size_t) override;
 
