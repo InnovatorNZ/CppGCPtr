@@ -4,6 +4,7 @@
 #define min(a, b)            (((a) < (b)) ? (a) : (b))
 
 thread_local std::shared_ptr<GCRegion> GCMemoryAllocator::smallAllocatingRegion;
+thread_local std::shared_ptr<GCRegion> GCMemoryAllocator::smallRelocatingRegion;
 
 GCMemoryAllocator::GCMemoryAllocator(bool useInternalMemoryManager, bool enableParallelClear,
                                      int gcThreadCount, ThreadPoolExecutor* gcThreadPool) {
@@ -45,7 +46,16 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate(size_t s
     }
 }
 
-std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType) {
+std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::relocate(size_t size) {
+    if (size <= GCRegion::SMALL_OBJECT_THRESHOLD && size > GCRegion::TINY_OBJECT_THRESHOLD) {
+        return this->allocate_from_region(size, RegionEnum::SMALL, true);
+    } else {
+        return this->allocate(size);
+    }
+}
+
+std::pair<void*, std::shared_ptr<GCRegion>>
+GCMemoryAllocator::allocate_from_region(size_t size, RegionEnum regionType, bool relocate) {
     if (size == 0) return std::make_pair(nullptr, nullptr);
     while (true) {
         // 从已有region中寻找空闲区域
@@ -53,9 +63,16 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
 
         switch (regionType) {
             case RegionEnum::SMALL: {
-                if (smallAllocatingRegion != nullptr) {
-                    void* addr = smallAllocatingRegion->allocate(size);
-                    if (addr != nullptr) return std::make_pair(addr, smallAllocatingRegion);
+                if (!relocate) {
+                    if (smallAllocatingRegion != nullptr) {
+                        void* addr = smallAllocatingRegion->allocate(size);
+                        if (addr != nullptr) return std::make_pair(addr, smallAllocatingRegion);
+                    }
+                } else {
+                    if (smallRelocatingRegion != nullptr) {
+                        void* addr = smallRelocatingRegion->allocate(size);
+                        if (addr != nullptr) return std::make_pair(addr, smallRelocatingRegion);
+                    }
                 }
             }
                 break;
@@ -105,7 +122,10 @@ std::pair<void*, std::shared_ptr<GCRegion>> GCMemoryAllocator::allocate_from_reg
 
         switch (regionType) {
             case RegionEnum::SMALL: {
-                smallAllocatingRegion = new_region;
+                if (relocate)
+                    smallRelocatingRegion = new_region;
+                else
+                    smallAllocatingRegion = new_region;
 
                 int pool_idx = getPoolIdx();
                 if constexpr (enableRegionMapBuffer) {
@@ -312,7 +332,9 @@ void GCMemoryAllocator::triggerRelocation() {
         return;
     }
 
-    GCUtil::sleep(0.1);     // 为PtrGuard给予100ms析构
+    if (GCParameter::delayRelocationPhase)
+        GCUtil::sleep(0.05);        // 为PtrGuard给予50ms析构
+
     if (enableParallelClear) {
         size_t snum = evacuationQue.size() / gcThreadCount;
         for (int tid = 0; tid < gcThreadCount; tid++) {

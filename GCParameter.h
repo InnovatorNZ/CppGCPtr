@@ -19,7 +19,8 @@ public:
 	static constexpr bool immediateClear = true;				// 尽量在一轮回收后就清除已是垃圾的对象，否则将在2~3轮后回收；启用此选项会增加垃圾回收的性能开销，但可以更快腾出内存
 	static constexpr bool distinctSATB = false;					// 是否在对删除屏障引发的SATB去重；不推荐，因为没必要
 	static constexpr bool useCopiedMarkstate = false;			// 是否引入无状态的内联标记（参见Solution 2.1 rev），可以解决当启用移动构造函数时的循环引用问题；不推荐，目前实现有问题，不要启用
-	static constexpr bool doNotRelocatePtrGuard = false;		// 禁止对任何存在PtrGuard引用的region重分配，若禁用，则会自旋等待析构后再重分配；建议当存在相当长生命周期的PtrGuard时启用该选项；前提条件：启用重分配
+	static constexpr bool doNotRelocatePtrGuard = true;			// 跳过对任何存在PtrGuard引用的region重分配，若禁用，则会自旋等待析构后再重分配；建议当存在相当长生命周期的PtrGuard时启用该选项；前提条件：启用重分配
+	static constexpr bool delayRelocationPhase = false;			// 当从选择转移集合阶段切换到清扫阶段时，gc线程是否要等待一段时间以让已存在的PtrGuard析构；当doNotRelocatePtrGuard启用时建议禁用该选项
 	static constexpr bool enablePtrRWLock = false;				// 启用针对GCPtr的读写锁，启用该选项可以使GCPtr变得线程安全，无此需求请禁用
 	static constexpr bool waitingForGCFinished = false;			// 完全Stop-the-world的GC，若遇上线程安全问题，可启用此选项进行debug，否则请禁用
 	static constexpr bool zeroCountCondition = false;			// 当需要转移的region存在PtrGuard时，GC线程会休眠直到计数归零，在PtrGuard较多时可以减少GC线程的自旋消耗的CPU，但会增加应用线程每次取出指针的性能消耗
