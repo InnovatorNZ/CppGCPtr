@@ -1,3 +1,376 @@
+## Lanugage
+- [English](#english)
+- [中文](#中文)
+---
+
+### English
+
+# CppGCPtr: Smart Pointer based on Garbage Collection with Memory Defragmentation
+
+In C++, define a GCPtr\<T> to enable smart pointers (like shared_ptr) but based on garbage collection.
+
+#### A simple example:
+
+```cpp
+#include "GCPtr.h"		// include GCPtr header
+
+int main () {
+	// define a GCPtr, and use gc::make_gc<> to allocate new boject
+	// equivalent to shared_ptr<MyObject> myObj = make_shared<MyObject>();
+	// myObj is the object that you want to be managed by GC
+	GCPtr<MyObject> myObj = gc::make_gc<MyObject>();
+	
+	myObj->a = 1;
+	cout << myObj->a << endl;
+	
+	return 0;
+}
+```
+
+<br/>
+
+## How to install
+
+1. Clone this repository locally
+
+```bash
+git clone --recursive https://github.com/innovatornz/CppGCPtr
+```
+
+Remember to always add the `--recursive` option, as this project contains submodules.
+
+2. This project already contained a main.cpp example of how to use it. Run the following command in the project folder to run it<br/>
+
+Under Linux and macOS:
+
+```bash
+g++ *.cpp CppExecutor/ThreadPoolExecutor.cpp -o CppGCPtr -std=c++20
+./CppGCPtr
+```
+
+Make sure you are using gcc 13 and above to support C++20 (so you will need to replace g++ with g++-13 in the above command as appropriate, if you don't have it you can install it like this)
+
+```bash
+sudo apt install g++-13
+```
+
+For macOS install it like this
+
+```bash
+brew install g++-13
+```
+
+<br/>
+
+Under Windows: Make sure you have Visual Studio 2019 and above (2022 recommended) installed the C++ workload. Run the following command in the project folder
+
+```bash
+mkdir build
+cd build
+cmake ..
+```
+
+Then double click on the generated CppGCPtr.sln file, open it in Visual Studio, click on Generate Solution and run.<br/>*(BTW, it is not recommended to use MinGW)*
+
+3. If you want to reference this library directly in your existing project, please reference `CppGCPtr/GCPtr.h` in your project and delete the `CppGCPtr/main.cpp` file, then compile and run it as usual.
+
+*Please note that this project is still in beta and not recommended for use in a production environment!*
+
+---
+
+A more complete example:
+
+```cpp
+#include <iostream>
+#include "GCPtr.h"
+
+class MyObject {
+public:
+	int a;
+	double b;
+	GCPtr<MyObject> c;
+	GCPtr<MyObject> d;
+
+	MyObject(double b_) : a(0), b(b_) {
+	}
+};
+
+int main() {
+	// Define a GCPtr and use gc::make_gc<> to allocate a new object
+	// equivalent to shared_ptr<T> a = make_shared<>();
+	GCPtr<MyObject> myObj = gc::make_gc<MyObject>(1.0);
+	
+	// Use `->` or `*` operator to access managed object
+	myObj->c = gc::make_gc<MyObject>(0.5);
+	(*myObj).a = 1;
+
+	{
+		GCPtr<MyObject> myObj2 = gc::make_gc<MyObject>(2.0);
+		std::cout << myObj2->b << std::endl;	// output 2
+		
+		GCPtr<MyObject> myObj3 = gc::make_gc<MyObject>(3.0);
+		myObj->c->c = myObj3;		// Point the outside myObj to myObj3 making myObj3 reachable
+		
+		myObj->c->d = gc::make_gc<MyObject>(4.0);
+		GCPtr<MyObject> myObj4 = myObj->c->d;
+		myObj4->b = 5.0;
+	}
+	
+	gc::triggerGC();	// trigger GC manually
+	Sleep(1000);		// Wait a second for GC to complete since GC runs in a seperate GC thread
+	
+	// At this time, myObj2 is freed, while myObj, myObj3 and myObj4 survive
+	std::cout << myObj->a << std::endl;		// output 1
+	std::cout << myObj->c->b << std::endl;  // output 0.5
+	std::cout << myObj->c->c->b << std::endl;	// output 3
+	std::cout << myObj->c->d->b << std::endl;	// output 5
+	
+	myObj = nullptr;	// explicitly assign to null
+	gc::triggerGC();	// manually trigger gc, myObj, myObj3 and 4 are freed
+	return 0;
+}
+```
+
+An example of LRU using GCPtr:
+
+```cpp
+struct Node {
+    int key, value;
+    GCPtr<Node> prev, next;
+
+    Node() : prev(nullptr), next(nullptr) {}
+
+    Node(int key, int value) : key(key), value(value), prev(nullptr), next(nullptr) {
+    }
+};
+
+class LinkedList {
+private:
+    GCPtr<Node> head;
+    GCPtr<Node> tail;
+public:
+    LinkedList() {
+        head = gc::make_gc<Node>(-2, 0);
+        tail = gc::make_gc<Node>(-3, 0);
+        head->next = tail;
+        tail->prev = head;
+    }
+
+    void remove(GCPtr<Node> node) {
+        node->prev->next = node->next;
+        node->next->prev = node->prev;
+    }
+
+    void insert_head(GCPtr<Node> node) {
+        GCPtr<Node> next = head->next;
+        node->next = next;
+        node->prev = head;
+        next->prev = node;
+        head->next = node;
+    }
+
+    GCPtr<Node> get_tail() {
+        if (tail->prev == head) return nullptr;
+        return tail->prev;
+    }
+};
+
+class LRUCache {
+private:
+    const int capacity;
+    GCPtr<std::unordered_map<int, GCPtr<Node>>> map;
+    GCPtr<LinkedList> linkedList;
+
+public:
+    LRUCache(int capacity) : capacity(capacity) {
+        map = gc::make_gc<std::unordered_map<int, GCPtr<Node>>>();
+        linkedList = gc::make_gc<LinkedList>();
+    }
+
+    int get(int key) {
+        auto it = map->find(key);
+        if (it == map->end()) return -1;
+        GCPtr<Node> node = it->second;
+        linkedList->remove(node);
+        linkedList->insert_head(node);
+        return node->value;
+    }
+
+    void put(int key, int value) {
+        auto it = map->find(key);
+        if (it != map->end()) {
+            GCPtr<Node> node = it->second;
+            node->value = value;
+            linkedList->remove(node);
+            linkedList->insert_head(node);
+            return;
+        }
+        if (map->size() >= capacity) {
+            GCPtr<Node> del = linkedList->get_tail();
+            linkedList->remove(del);
+            map->erase(del->key);
+        }
+        GCPtr<Node> node = gc::make_gc<Node>(key, value);
+        linkedList->insert_head(node);
+        map->emplace(key, node);
+    }
+};
+```
+
+<br/>
+
+## How does this GC work?
+
+GCPtr works similarly to shared_ptr, but shared_ptr bases on reference counting, which has many limitations; whereas GCPtr runs the real deal, a garbage collection algorithm based on reachability analysis, and also a mobile garbage collection with memory defragmentation. Specifically, when you define a GCPtr, it means that this object will be managed by the GC (objects not surrounded by a GCPtr<> are not affected). A GC thread will start in the background. After you call gc::triggerGC() to trigger a GC, the GC thread will be notified and run garbage collected according to the following process:
+
+#### 1\. Preparation
+
+During the preparation phase, the GC thread does some prep work, resetting some gc data, flipping the current tag state, etc. This phase does not take much time and does not suspend the application thread.
+
+#### 2\. Initial marking phase
+
+In the initial marking phase, the GC thread will mark all the GCPtrs in the gc root, representing that all gc roots are alive. Subsequent reachability analysis will be recursively scanned on the root. This phase suspends all operations of the application thread against the gc root (e.g., creating GCPtr local variables), but other operations are not affected.<br/>Typically, a gc root contains local, global, and static variables. However, due to the nature of C++, in order for GCPtr to coexist with raw pointers, all objects that are not in the memory region that managed by GCPtr are treated as a gc root and is permanently live (unless it destructs itself).
+
+#### 3\. Concurrent marking phase
+
+In the concurrent marking phase, the GC thread will continue to mark all referenced objects on the marked gc root; this marking will be performed a depth-first search, specifically, the GC thread will scan all the values of the current object's memory, traversing them according to the memory alignment (64-bit is 8 bytes, 32-bit is 4 bytes). GCPtr will take up an additional 8 bytes to store its identifiers (magic values, object header 0x1f1e33fc, object tail 0x3e0e1cc). If these two magic values are found on this object, the object it points to will be identified and scanning will continue recursively until all the objects have been marked.
+
+In GCPtr, three states, Remapped, M0 and M1, will be used to represent the marking state of an object, where M0 and M1 represent being marked, two states are used interchangeably; Remapped represents a new or relocated object that is not generated during GC, and thus a surviving Remapped object deserves to be set to M0/M1 during GC.
+
+Since the concurrent marking phase runs in parallel with and does not suspend the application thread, reference changes may occur during the marking process. In order to ensure the correctness especially avoiding missing marking of living objects, the GC thread uses a three-color marking strategy based on a deletion barrier, i.e., Snapshot-at-the-beginning (SATB). When a deletion occurs (e.g., a GCPtr is explicitly set to nullptr, or a GCPtr destructs), the deleted object is added to the SATB queue and will be remarked in the subsequent remarking phase.
+
+#### 4\. Remarking phase
+
+In the re-marking phase, the objects that entered the SATB queue are re-scanned and re-marked. After this phase all surviving objects will be correctly marked. This phase will suspend the application threads. (Precisely, all operations on GCPtr are suspended).
+
+In addition, all new objects created during the whole GC phase will be considered alive. They will be processed in the next round of GC (This is also known as floating garbage).
+
+#### 5\. Relocation set selection phase
+
+In the select-relocation-set phase, the GC thread scans all managed memory regions, specifically, all the memory areas allocated by calling gc::make_gc<>(). There are four types of memory region: mini, small, medium, and large, depending on the size of the object. The small region defaults to 2MB, storing objects with a size of 24 bytes to 16KB; the medium region defaults to 32MB, storing objects with a size of 16KB to 1MB; the large region stores all objects larger than 1MB, each object occupies the whole region; and the mini region defaults to a 256KB piece, storing objects with size less than 24 bytes.
+
+When calling gc::make_gc, memory will be allocated from the corresponding type of region according to the size of the object. Inside each region, allocations based on pointer collision method, that is, starting from the currently allocated offset to the new object. Therefore, memory fragmentation will occur if an object is dead. If no region has free space that meets the requirements, a new region will be allocated.
+
+The gc thread will traverse all regions and determine the fragmentation ratio and free ratio of this region. A region has more than 1/4 of the memory fragmentation and less than 1/4 of the free space will be added to relocation set by default. All objects inside this region will be reallocated to other regions in next phase to achieve memory defragmentation (a.k.a. memory compression).
+
+#### 6\. Concurrent relocation phase
+
+In the concurrent relocation phase, all the regions that were selected will be relocated. This phase does not suspend the application threads. The GC threads will scan all regions with multi-thread, traversing their marking bitmaps (GCBitMap) or marking hash tables (GCRegionalHashMap) in each region to find out all the surviving objects and relocating these objects to the other region. The original region will be freed after relocation done.
+
+Since int the concurrent relocation phase, gc threads and application threads are  parallel, the following two issues are raised:
+
+- Contested access: If a live object is relocated and an application thread happens to write to this object, a thread contention problem arises; obviously, the address after relocation is the correct address to write to. When the application thread finds out the object it accesses is inside the relocation set, it will take the initiative to relocate it first before accessing it. If the GC threads are also competing to relocate the object, a strategy similar to Compare-And-Swap will be used to ensure that only one thread is able to relocate the object successfully.
+- Reference update: When an object is relocated, obviously its memory address has also changed; therefore, all pointers stored in GCPtr need to be updated. This address is lazy updated. Specifically, when a live object is relocated, it leaves a record in a forwarding table, key is the old address and the value is the new address. When an application thread accesses a GCPtr object, it first determines whether it needs to perform a pointer update. If yes, it will access the forwarding table of the region and look for the corresponding key-value pair; if no key-value pair is founded, it means that the object pointed to by this GCPtr isn't relocated, so there is no need to update the pointer; if it does find it, it will update the pointer. If there is no application thread that access a relocated object, the pointer update will be performed by the GC thread in the next GC round.<br/>
+Here's a noteworthy point: how do you determine whether a GCPtr needs to access the forwarding table to perform a pointer update? It would obviously be very performance intensive to access the forwarding table every time to determine if a pointer update is needed. Here the following rules will be followed:
+  - If the marking state of an object is Remapped, it means it must NOT need to perform a pointer update;
+  - If the marking state of an object is M0/M1: 
+    - If it's currently in the marking phase (including initial, concurrent, and re-marking subphases), the objects survived in the last gc round needs to perform a pointer update; that is, if the current mark state is M0, the GCPtr with state M1 needs to be updated, and if it is currently M1 the state M0 needs to be updated;
+    - If it's not currently in the marking phase (including relocation set selection, concurrent relocation, preparation, wrap-up phases, and non-GC periods), it is the current round of surviving objects that need to perform the pointer update; that is, if the currently surviving objects are marked as M0, the GCPtr with state M0 needs to perform a pointer update, and if it is currently M1 then the state M1 needs to be updated;
+    - When the pointer update is complete (including the forwarding table tells that no update is needed), set the object mark state to Remapped.
+
+    The pointer update using the above strategy is strictly correct. The GCPtr class adds a field to maintain this mark state to improve memory locality as this variable is frequently accessed (called 'inlineMarkState'). It is worth mentioning that the idea here is very similar to the "coloring pointer" and "self-heal" of ZGC. You can refer to the working principle of ZGC if you are interested.
+
+#### 7\. Wrap-up phase
+
+At this stage, the GC thread performs some finishing work after the GC is completed, including resetting the count of surviving objects in each region, recycling temporary variables, etc. This phase does not take much time and does not suspend application threads. When this phase is over, the current GC round is finished.<br/><br/>
+
+## Frequently Asked Q\&A
+
+1. Q: Can I manually newing an object and handing the raw pointer to GCPtr to manage?<br/>
+A: No. All objects managed by GCPtr<> must be created by gc::make_gc<>(). Constructing a GCPtr directly from a raw pointer is not supported. However, you can construct a new GCPtr from an existing GCPtr (i.e., a copy construction of GCPtr).
+
+2. Q: How stable is GCPtr? Can it be used in a production environment?<br/>
+A: GCPtr is not recommended for production use. This project is still in beta. Please feel free to ask by opening an issue or contact developer directly.
+
+3. Q: How is the performance of GCPtr? Does using GCPtr affect the performance of application threads?<br/>
+A: This is a case-by-case discussion. Usually, the performance complaint about garbage collection is that it causes Stop-the-World, which means that all application threads are stopped. However, in GCPtr, all the application threads that need to be suspended are only for GCPtr operations (constructing and destructing GCPtr) and only occur in the initial marking, re-marking, and relocation set selection phases. The rest of the cases do not require suspension at all. Experiment shows that even with very sick data (the test case of constantly constructing and destructing GCPtr), the longest suspension time will not be more than 5ms, and the majority of cases are within 1ms.<br/>Another major performance impact point is caused by the delete barrier and read barrier. The delete barrier only works during the concurrent marking phase, so it generally has little impact. The read barrier works through the process time, especially when updating pointers after completing a GC round, and despite the policy of determining whether an update is needed based on the mark state, there will always be some loss. In addition, all GCPtrs belonging to a gc root are added to a hash set (root set), which is also a major performance impact point. Experimental data indicates that using GCPtr generally causes a performance degradation of at least about 30% on application performance, so it is not recommended to apply GCPtr in performance-hardened scenarios.
+
+## Other points to note
+
+1. Please assign initial values to all member variables of the classes managed by GCPtr, especially those of array types, either zero or other initial values. Please also assign nullptr to pointer type member variables or perform new operation accordingly (but no need to assign initial value to the newly created memory space). This is because the GC thread determines whether it is a GCPtr or not based on the magic value. If you don't want to do this, please enable GCParameter::fillZeroForNewRegion to avoid the potential crash. (Problems are more likely to occur under Linux/macOS, less likely under Windows).
+
+2. GCPtr does not currently support direct management of array type. Please consider using std::vector or similar data structures.
+
+3. Do not take raw pointer out from GCPtr. If an object is relocated while its raw pointer is still in use, this will result in an unpredictable crash risk as old address is invalid. If you do need to use the raw pointer, please takes out its PtrGuard first, then takes the raw pointer from the PtrGuard, and make sure that the lifecycle of the PtrGuard covers the lifecycle of the raw pointer, as follows:
+
+```cpp
+GCPtr<MyObject> myObj = gc::make_gc<MyObject>();
+{
+	PtrGuard<MyObject> ptr_guard = myObj.get();
+	MyObject* raw_ptr = ptr_guard.get();
+	// code processing with raw_ptr
+	// make sure the lifecycle of ptr_guard covers raw_ptr's
+}
+```
+
+PtrGuard ensures that the region of the object not be relocated during its lifecycle.<br/>
+
+## Parameter Interpretation
+
+GCPtr supports tuning parameters. These parameters are in `GCParameter.h` and have corresponding explanations. Some of the important parameters are shown here.
+
+**enableConcurrentGC**: whether to enable GC thread. If this option is disabled, the GC process will be performed directly by the application thread. It is recommended to enable it.
+
+**enableMemoryAllocator**: whether to enable memory allocator. If this option is disabled, all memory allocation will be redirected to new and malloc provided by the operating system, which is a prerequisite for enabling mobile reclamation and correctly determining the gc root, so it is recommended to enable it.
+
+**enableRelocation**: Enables or disables memory defragmentation, i.e., mobile reclamation that includes object reallocation. If this option is disabled, objects will not be relocated. It is recommended to enable it. If you explicitly don't need memory defragmentation, you can disable it, but please note that this will result in a region not being emptied as long as there is a living object in that region, thus wasting memory. (This can be optimized, if you need it you can ask the group).
+
+**enableParallelGC**: if or not enable multi-threaded garbage collection, GC threads will open a thread pool to optimize time-consuming GC tasks. It is recommended to enable it.
+
+**enableDestructorSupport**: whether or not to call the destructor function of an object when it is recycled. If your GCPtr-managed class contains bare pointers or STL smart pointers that need to be manually destructed in the destructor function, you must enable this option to prevent memory leaks. Otherwise, it is recommended to disable this option as calling the destructor will cause some performance loss.
+
+**useRegionalHashMap**: for GC to adopt the object labeling state, whether to use a bitmap or a hash table, the default is to disable that is to use a bitmap, to enable that is to use a hash table. The two data structures have their own advantages and disadvantages, the bitmap is inherently thread-safe, for thread competition is more advantageous, but it is more memory, the size and the heap size proportional to the size of the hash table is less memory occupied, the size and the number of objects proportional to the size of the hash table, but does not have the thread security need to add locks, and the calculation of the hash also need to consume a certain amount of CPU. here it is recommended that the user for the enable and disable try to choose a higher performance of one. high performance one.
+
+**useInlineMarkState**: if or not record the object mark state in GCPtr. This inline mark state is usually used for determining whether pointer self-healing is needed, and for skipping marked objects. This option must be enabled if you want to enable object relocation.
+
+**useSecondaryMemoryManager**: Whether to enable the secondary memory pool. If this option is disabled, each new region will be allocated directly from the system malloc; if it is enabled, the new region will be allocated from this pool. Enabling this option avoids frequent mallocs to the system, reuses allocated memory, and improves memory allocation performance by a certain amount (about 10-15%). However, the current implementation does not yet support freeing reserved memory.
+
+**enableMoveConstructor**: whether to call the move constructor of an object when it is reallocated. If enabled, when an object is reallocated to another region, the object's move constructor will be called instead of memcpy (see std::vector's expansion procedure). Do not enable this option, the current implementation does not support circular references. Please add the group at the end of the article if you need it.
+
+**useConcurrentLinkedList**: if or not use unlocked linked list to manage region, otherwise std::deque will be used. enable unlocked linked list is more efficient for adding and deleting region, but it can't support multi-threaded recycling. It is not recommended to enable this option.
+
+**deferRemoveRoot**: if or not defer removing a GCPtr from the root set when it is destructed. enabling this option improves the performance when GCPtr is destructed, but increases the memory usage of the root set. It is disabled by default.
+
+**suspendThreadsWhenSTW**: Whether or not to suspend user threads during STW (both retagging and selecting a transfer set). If disabled, read and write locks are used and only operations against GCPtr are blocked. This option is only supported on Windows and is disabled by default, it is not recommended to enable it as it is not necessary, but you can enable it to try it out if you run into problems.
+
+**enableHashPool**: Enable or disable the pooling scheme that takes a hash of thread ids. This option will work in several places, such as allocating new regions, memory pools, etc. If enabled, the pooling scheme will be applied to every access to the thread id. If enabled, it will alleviate thread contention by spreading it out as much as possible based on the thread id for each access to a variable shared by a thread. It is recommended to enable it, but you can disable it if your application threads are single-threaded.
+
+**immediateClear**: try to clear objects that are already garbage after one round of recycling, otherwise they will be recycled after 2 to 3 rounds. Enabling this option increases the performance overhead of garbage collection, but frees up memory faster.
+
+**doNotRelocatePtrGuard**: Disable transfers to any region that already has a PtrGuard reference. If disabled, it will spin wait until the PtrGuard is destructed. It is recommended to enable this option if you have a PtrGuard with a fairly long lifecycle in your code.
+
+**zeroCountCondition**: If the currently transferred region contains a PtrGuard pointing to it, the GC thread will sleep until all PtrGuards are destructed, otherwise the GC thread will spin and wait. If there are more PtrGuards, it can reduce the CPU consumption of GC thread spin, but it will increase the performance consumption every time when constructing PtrGuard including removing pointers (because of the need of thread communication via condition variables). Disabled by default.
+
+**enablePtrRWLock**: Use read/write locks to ensure thread safety for several variables of GCPtr. Enable this option to make GCPtr thread-safe, disable it if you don't need it. It is recommended to disable it.
+
+**fillZeroForNewRegion**: zero-fill memory for all new regions. Enabling this option resolves crashes caused by user threads not initializing class member variables. Disabled by default.
+
+**waitingForGCFinished**: the application thread will wait for the GC thread to finish all its work before continuing, which is really a full Stop-the-World garbage collection. Enable this option for debugging only if your program is encountering problems, otherwise, please disable it.
+
+**bitmapMemoryFromSecondary**: the memory space used by bitmaps also comes from the secondary memory pool. Enabling this option can speed up memory allocation for bitmaps, but may cause fragmentation of the secondary memory pool.
+
+**TINY_OBJECT_THRESHOLD**: The object size (upper limit) of the mini object. Default 24 bytes.
+
+**TINY_REGION_SIZE**: The size of the mini-object's region. Default 256KB.
+
+**SMALL_OBJECT_THRESHOLD**: The object size (upper limit) of the mini-object. Default 16KB.
+
+**SMALL_REGION_SIZE**: The size of the region of the mini-object. Default 2MB.
+
+**MEDIUM_OBJECT_THRESHOLD**: Object size (upper limit) for medium objects. Default 1MB.
+
+**MEDIUM_REGION_SIZE**: Size of the region for medium objects. Default is 32MB.
+
+**secondaryMallocSize**: the size of memory reserved for a single request to the operating system by the secondary memory pool. Default is 8MB.
+
+**evacuateFragmentRatio and evacuateFreeRatio**: when the fragmentation ratio of a region is larger than evacuateFragmentRatio and the free space is smaller than evacuateFreeRatio, the region will be determined to need to be transferred. The default is one quarter (0.25).
+
+***Just leave the rest of the parameters not shown at default***
+
+
+---
+### 中文
+
 # CppGCPtr：基于移动式、低停顿垃圾回收的智能指针
 在C++中，定义一个GCPtr&lt;T&gt;来启用基于垃圾回收运行的智能指针，用法就像shared_ptr一样。
 #### 一个简单示例：
