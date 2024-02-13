@@ -5,14 +5,17 @@
 
 ### English
 
-# CppGCPtr: Smart Pointer based on Garbage Collection with Memory Defragmentation
+# CppGCPtr: A Smart Pointer with Low-STW Garbage Collection and Memory Defrag
 
-In C++, define a GCPtr\<T> to enable smart pointers (like shared_ptr) but based on garbage collection.
+In C++, define a GCPtr\<T> to enable a smart pointer, which likes shared_ptr but based on garbage collection.
+
+GCPtr uses an ultra low-STW GC with memory defragmentation algorithm. By using GCPtr, you can no longer worry about circular reference problem of shared_ptr or the frequently criticized STW problem. You can also avoid memory address fragmentation problem as GCPtr can do defrag.
 
 #### A simple example:
 
 ```cpp
 #include "GCPtr.h"		// include GCPtr header
+#include <iostream>
 
 int main () {
 	// define a GCPtr, and use gc::make_gc<> to allocate new boject
@@ -21,7 +24,7 @@ int main () {
 	GCPtr<MyObject> myObj = gc::make_gc<MyObject>();
 	
 	myObj->a = 1;
-	cout << myObj->a << endl;
+	std::cout << myObj->a << std::endl;
 	
 	return 0;
 }
@@ -48,7 +51,7 @@ g++ *.cpp CppExecutor/ThreadPoolExecutor.cpp -o CppGCPtr -std=c++20
 ./CppGCPtr
 ```
 
-Make sure you are using gcc 13 and above to support C++20 (so you will need to replace g++ with g++-13 in the above command as appropriate, if you don't have it you can install it like this)
+Make sure you are using gcc 13 or above to support C++20 (so you will need to replace g++ with g++-13 in the above command as appropriate, if you don't have it you can install it like this)
 
 ```bash
 sudo apt install g++-13
@@ -274,7 +277,7 @@ Here's a noteworthy point: how do you determine whether a GCPtr needs to access 
 
 At this stage, the GC thread performs some finishing work after the GC is completed, including resetting the count of surviving objects in each region, recycling temporary variables, etc. This phase does not take much time and does not suspend application threads. When this phase is over, the current GC round is finished.<br/><br/>
 
-## Frequently Asked Q\&A
+## Frequently asked Q\&A
 
 1. Q: Can I manually newing an object and handing the raw pointer to GCPtr to manage?<br/>
 A: No. All objects managed by GCPtr<> must be created by gc::make_gc<>(). Constructing a GCPtr directly from a raw pointer is not supported. However, you can construct a new GCPtr from an existing GCPtr (i.e., a copy construction of GCPtr).
@@ -285,7 +288,7 @@ A: GCPtr is not recommended for production use. This project is still in beta. P
 3. Q: How is the performance of GCPtr? Does using GCPtr affect the performance of application threads?<br/>
 A: This is a case-by-case discussion. Usually, the performance complaint about garbage collection is that it causes Stop-the-World, which means that all application threads are stopped. However, in GCPtr, all the application threads that need to be suspended are only for GCPtr operations (constructing and destructing GCPtr) and only occur in the initial marking, re-marking, and relocation set selection phases. The rest of the cases do not require suspension at all. Experiment shows that even with very sick data (the test case of constantly constructing and destructing GCPtr), the longest suspension time will not be more than 5ms, and the majority of cases are within 1ms.<br/>Another major performance impact point is caused by the delete barrier and read barrier. The delete barrier only works during the concurrent marking phase, so it generally has little impact. The read barrier works through the process time, especially when updating pointers after completing a GC round, and despite the policy of determining whether an update is needed based on the mark state, there will always be some loss. In addition, all GCPtrs belonging to a gc root are added to a hash set (root set), which is also a major performance impact point. Experimental data indicates that using GCPtr generally causes a performance degradation of at least about 30% on application performance, so it is not recommended to apply GCPtr in performance-hardened scenarios.
 
-## Other points to note
+## Other cautions
 
 1. Please assign initial values to all member variables of the classes managed by GCPtr, especially those of array types, either zero or other initial values. Please also assign nullptr to pointer type member variables or perform new operation accordingly (but no need to assign initial value to the newly created memory space). This is because the GC thread determines whether it is a GCPtr or not based on the magic value. If you don't want to do this, please enable GCParameter::fillZeroForNewRegion to avoid the potential crash. (Problems are more likely to occur under Linux/macOS, less likely under Windows).
 
@@ -305,77 +308,80 @@ GCPtr<MyObject> myObj = gc::make_gc<MyObject>();
 
 PtrGuard ensures that the region of the object not be relocated during its lifecycle.<br/>
 
-## Parameter Interpretation
+## Parameter explanation
 
-GCPtr supports tuning parameters. These parameters are in `GCParameter.h` and have corresponding explanations. Some of the important parameters are shown here.
+GCPtr supports adjusting parameters. These parameters are in `GCParameter.h` and have corresponding explanations. Some of the important parameters are shown here.
 
-**enableConcurrentGC**: whether to enable GC thread. If this option is disabled, the GC process will be performed directly by the application thread. It is recommended to enable it.
+**enableConcurrentGC**: Whether to enable GC thread. If this option is disabled, the GC process will be performed directly by the application thread. Recommend to enable.
 
-**enableMemoryAllocator**: whether to enable memory allocator. If this option is disabled, all memory allocation will be redirected to new and malloc provided by the operating system, which is a prerequisite for enabling mobile reclamation and correctly determining the gc root, so it is recommended to enable it.
+**enableMemoryAllocator**: Whether to enable customed GC memory allocator. If this option is disabled, all memory allocation will be redirected to `new` or `malloc` provided. This option is a prerequisite for enabling relocation and correctly recognizing the gc root. Recommend to enable.
 
-**enableRelocation**: Enables or disables memory defragmentation, i.e., mobile reclamation that includes object reallocation. If this option is disabled, objects will not be relocated. It is recommended to enable it. If you explicitly don't need memory defragmentation, you can disable it, but please note that this will result in a region not being emptied as long as there is a living object in that region, thus wasting memory. (This can be optimized, if you need it you can ask the group).
+**enableRelocation**: Whether to enable memory defragmentation, i.e., object reallocation. If this option is disabled, objects will not be relocated. Recommend to enable. If you explicitly don't need memory defragmentation, you can disable it, but please note that this will result that a region not being freed as long as there is a single living object in it. (This can be optimized, if you need it you can contact developer).
 
-**enableParallelGC**: if or not enable multi-threaded garbage collection, GC threads will open a thread pool to optimize time-consuming GC tasks. It is recommended to enable it.
+**enableParallelGC**: Whether to enable multi-threaded garbage collection. If enabled, GCPtr will open a thread pool to parallelly execute GC tasks. Recommend to enable.
 
-**enableDestructorSupport**: whether or not to call the destructor function of an object when it is recycled. If your GCPtr-managed class contains bare pointers or STL smart pointers that need to be manually destructed in the destructor function, you must enable this option to prevent memory leaks. Otherwise, it is recommended to disable this option as calling the destructor will cause some performance loss.
+**enableDestructorSupport**: Whether to call the destructor function of an object when it is freed. If your GCPtr-managed class contains raw pointers or STL smart pointers that need to be manually destructed in the destructor function, you must enable this option to prevent memory leaks. Otherwise, you can disable this option as calling the destructor will cause performance loss. If you are not sure, recommend to enable.
 
-**useRegionalHashMap**: for GC to adopt the object labeling state, whether to use a bitmap or a hash table, the default is to disable that is to use a bitmap, to enable that is to use a hash table. The two data structures have their own advantages and disadvantages, the bitmap is inherently thread-safe, for thread competition is more advantageous, but it is more memory, the size and the heap size proportional to the size of the hash table is less memory occupied, the size and the number of objects proportional to the size of the hash table, but does not have the thread security need to add locks, and the calculation of the hash also need to consume a certain amount of CPU. here it is recommended that the user for the enable and disable try to choose a higher performance of one. high performance one.
+**useRegionalHashMap**: For GC to adopt the object marking state, whether to use a bitmap or a hash table. The default option is disabled, which is to use a bitmap. Enabled means to use a hash table. The two data structures have their own advantages and disadvantages, the bitmap is inherently thread-safe, for thread competition is more advantageous, but it requires more memory, and its size is proportional to the heap size. The hash table is less memory occupied, its size is proportional to the number of objects. But it needs to add lock to ensure thread-safe, and the hash calculation also consumes CPU. It is recommended that user to try and compare both enabling and disabling, and finally choose the better one.
 
-**useInlineMarkState**: if or not record the object mark state in GCPtr. This inline mark state is usually used for determining whether pointer self-healing is needed, and for skipping marked objects. This option must be enabled if you want to enable object relocation.
+**useInlineMarkState**: Whether to record the object mark state in GCPtr. This inline mark state is usually used for determining whether pointer self-heal is needed. Must be enabled if object relocation is enabled.
 
-**useSecondaryMemoryManager**: Whether to enable the secondary memory pool. If this option is disabled, each new region will be allocated directly from the system malloc; if it is enabled, the new region will be allocated from this pool. Enabling this option avoids frequent mallocs to the system, reuses allocated memory, and improves memory allocation performance by a certain amount (about 10-15%). However, the current implementation does not yet support freeing reserved memory.
+**useSecondaryMemoryManager**: Whether to enable the secondary memory pool. If this option is disabled, each new region will be allocated directly from `malloc`; if enabled, the new region will be allocated from this pool. Enabling this option avoids frequent system malloc, reuses allocated memory, and improves memory allocation performance by around 10%~15%. However, the current implementation does not yet support freeing reserved memory.
 
-**enableMoveConstructor**: whether to call the move constructor of an object when it is reallocated. If enabled, when an object is reallocated to another region, the object's move constructor will be called instead of memcpy (see std::vector's expansion procedure). Do not enable this option, the current implementation does not support circular references. Please add the group at the end of the article if you need it.
+**enableMoveConstructor**: Whether to call the move constructor of an object when it is relocated. If enabled, when an object is relocated to another region, the object's move constructor will be called instead of directly memcpy (refer to std::vector's size expansion). Recommend to disable, the current implementation does not support circular references. Please contact developer if you need to enable.
 
-**useConcurrentLinkedList**: if or not use unlocked linked list to manage region, otherwise std::deque will be used. enable unlocked linked list is more efficient for adding and deleting region, but it can't support multi-threaded recycling. It is not recommended to enable this option.
+**useConcurrentLinkedList**: If enabled, a lock-free linked list is used to manage memory regions; if disabled a std::deque is used. Lock-free linked list is more efficient for adding and removing region, but it can't support parallel iteration. Recommend to disable.
 
-**deferRemoveRoot**: if or not defer removing a GCPtr from the root set when it is destructed. enabling this option improves the performance when GCPtr is destructed, but increases the memory usage of the root set. It is disabled by default.
+**deferRemoveRoot**: Whether to defer removing a GCPtr from the root set when it is destructed. Enabling this option can improve the performance of GCPtr destruction, but increases the memory usage of the root set. Disabled by default.
 
-**suspendThreadsWhenSTW**: Whether or not to suspend user threads during STW (both retagging and selecting a transfer set). If disabled, read and write locks are used and only operations against GCPtr are blocked. This option is only supported on Windows and is disabled by default, it is not recommended to enable it as it is not necessary, but you can enable it to try it out if you run into problems.
+**suspendThreadsWhenSTW**: Whether to suspend user threads during STW (the remarking and relocation set selection phase). If disabled, a read-write lock are used to block operations against GCPtr. Only supports on Windows and is disabled by default. Recommend to disable as it is not necessary, but you can enable it for debug use if you run into problems.
 
-**enableHashPool**: Enable or disable the pooling scheme that takes a hash of thread ids. This option will work in several places, such as allocating new regions, memory pools, etc. If enabled, the pooling scheme will be applied to every access to the thread id. If enabled, it will alleviate thread contention by spreading it out as much as possible based on the thread id for each access to a variable shared by a thread. It is recommended to enable it, but you can disable it if your application threads are single-threaded.
+**enableHashPool**: Whether to enable the pooling scheme for thread id. This option will work in several places, such as allocating new regions, memory pools, etc. If enabled, the pooling scheme will be applied to every access to the thread id and can alleviate thread contention. Recommend to enable in a multi-thread application, and disable in a single-thread application.
 
-**immediateClear**: try to clear objects that are already garbage after one round of recycling, otherwise they will be recycled after 2 to 3 rounds. Enabling this option increases the performance overhead of garbage collection, but frees up memory faster.
+**immediateClear**: Try to clear objects that are already garbage after a round of GC, otherwise they will be freed after 2 to 3 rounds. Enabling this option increases the performance overhead of garbage collection, but frees up memory faster.
 
-**doNotRelocatePtrGuard**: Disable transfers to any region that already has a PtrGuard reference. If disabled, it will spin wait until the PtrGuard is destructed. It is recommended to enable this option if you have a PtrGuard with a fairly long lifecycle in your code.
+**doNotRelocatePtrGuard**: Disable relocation attempts to any region that already has a PtrGuard reference. If disabled, it will spin wait until the PtrGuard is destructed. It is recommended to enable this option if you have a PtrGuard with a fairly long lifecycle in your code.
 
-**zeroCountCondition**: If the currently transferred region contains a PtrGuard pointing to it, the GC thread will sleep until all PtrGuards are destructed, otherwise the GC thread will spin and wait. If there are more PtrGuards, it can reduce the CPU consumption of GC thread spin, but it will increase the performance consumption every time when constructing PtrGuard including removing pointers (because of the need of thread communication via condition variables). Disabled by default.
+**zeroCountCondition**: If the currently relocating region contains a PtrGuard reference, the GC thread will sleep until all PtrGuards are destructed, otherwise the GC thread will spin-wait. If enabled, it can reduce the CPU consumption of GC thread spin, but may increase the performance consumption of constructing PtrGuard or its dereference (because of the condition variable). Disabled by default.
 
-**enablePtrRWLock**: Use read/write locks to ensure thread safety for several variables of GCPtr. Enable this option to make GCPtr thread-safe, disable it if you don't need it. It is recommended to disable it.
+**enablePtrRWLock**: Use read/write locks to ensure thread safety of GCPtr. Enable this option can make GCPtr thread-safe, but may cause performance overhead. Recommend to disable.
 
-**fillZeroForNewRegion**: zero-fill memory for all new regions. Enabling this option resolves crashes caused by user threads not initializing class member variables. Disabled by default.
+**fillZeroForNewRegion**: Fill memory with zero for all new regions. Enabling this option resolves crashes caused by user threads not initializing class member variables. Disabled by default, recommend to enable in Linux or macOS.
 
-**waitingForGCFinished**: the application thread will wait for the GC thread to finish all its work before continuing, which is really a full Stop-the-World garbage collection. Enable this option for debugging only if your program is encountering problems, otherwise, please disable it.
+**waitingForGCFinished**: The application thread will wait for the GC thread to finish all its work before continuing, which is a full Stop-the-World garbage collection. Enable this option for debugging purposes only if you application runs into a problem.
 
-**bitmapMemoryFromSecondary**: the memory space used by bitmaps also comes from the secondary memory pool. Enabling this option can speed up memory allocation for bitmaps, but may cause fragmentation of the secondary memory pool.
+**bitmapMemoryFromSecondary**: Whether the memory space of bitmaps also comes from the secondary memory pool. Enabling this option can speed up memory allocation for bitmaps, but may cause fragmentation of the secondary memory pool.
 
-**TINY_OBJECT_THRESHOLD**: The object size (upper limit) of the mini object. Default 24 bytes.
+**TINY_OBJECT_THRESHOLD**: The object size (upper limit) of tiny objects. Default 24 bytes.
 
-**TINY_REGION_SIZE**: The size of the mini-object's region. Default 256KB.
+**TINY_REGION_SIZE**: The size of each region for tiny objects. Default 256KB.
 
-**SMALL_OBJECT_THRESHOLD**: The object size (upper limit) of the mini-object. Default 16KB.
+**SMALL_OBJECT_THRESHOLD**: The object size (upper limit) of small objects. Default 16KB.
 
-**SMALL_REGION_SIZE**: The size of the region of the mini-object. Default 2MB.
+**SMALL_REGION_SIZE**: The size of each region for small objects. Default 2MB.
 
 **MEDIUM_OBJECT_THRESHOLD**: Object size (upper limit) for medium objects. Default 1MB.
 
-**MEDIUM_REGION_SIZE**: Size of the region for medium objects. Default is 32MB.
+**MEDIUM_REGION_SIZE**: The size of each region for medium objects. Default 32MB.
 
-**secondaryMallocSize**: the size of memory reserved for a single request to the operating system by the secondary memory pool. Default is 8MB.
+**secondaryMallocSize**: The size of each system malloc request of the secondary memory pool to reserve. Default 8MB.
 
-**evacuateFragmentRatio and evacuateFreeRatio**: when the fragmentation ratio of a region is larger than evacuateFragmentRatio and the free space is smaller than evacuateFreeRatio, the region will be determined to need to be transferred. The default is one quarter (0.25).
+**evacuateFragmentRatio and evacuateFreeRatio**: When the fragmentation ratio of a region is larger than evacuateFragmentRatio and the free space is smaller than evacuateFreeRatio, the region will be determined to relocate. Default is one quarter (0.25).
 
-***Just leave the rest of the parameters not shown at default***
-
+***Leave the rest as its default. Developer Contact: ni33271@live.com***
 
 ---
 ### 中文
 
 # CppGCPtr：基于移动式、低停顿垃圾回收的智能指针
 在C++中，定义一个GCPtr&lt;T&gt;来启用基于垃圾回收运行的智能指针，用法就像shared_ptr一样。
+
+GCPtr采用极低STW的垃圾回收且带有内存碎片整理。通过使用GCPtr，您不再需要担心诸如shared_ptr的循环引用问题、垃圾回收经常被诟病的STW问题，以及内存地址碎片的问题。
+
 #### 一个简单示例：
 ```cpp
 #include "GCPtr.h"		// 包含GCPtr的头文件
+#include <iostream>
 
 int main () {
 	// 定义一个GCPtr，并使用gc::make_gc<>分配新对象
@@ -384,7 +390,7 @@ int main () {
 	GCPtr<MyObject> myObj = gc::make_gc<MyObject>();
 	
 	myObj->a = 1;
-	cout << myObj->a << endl;
+	std::cout << myObj->a << std::endl;
 	
 	return 0;
 }
@@ -480,6 +486,7 @@ int main() {
 	return 0;
 }
 ```
+
 一个使用GCPtr的LRU缓存代码示例：
 ```cpp
 struct Node {
@@ -725,17 +732,4 @@ GCPtr支持调整参数。这些参数在`GCParameter.h`中，并具有相应的
 
 **evacuateFragmentRatio和evacuateFreeRatio**：当某region的碎片占比大于evacuateFragmentRatio且空余空间小于evacuateFreeRatio时，该region会被判定需要转移。默认为四分之一（0.25）。
 
-***其余没展示的参数保持默认即可***
-
----
-### 欢迎加QQ群820683439讨论
-
-<!--stackedit_data:
-eyJoaXN0b3J5IjpbNDA4NzY4NjAzLDM1MDY5NjQ5OCw1OTMyMz
-EyMiwtMTIxODA2MDUyMCwtOTQ1NzQ0MTEwLC0yNTg3ODA4NTQs
-MTU3NDg5MzU3NSwyNjA0MzA3NzUsMTA4MzMyNDcwOCwxNzExMT
-kzNjAxLC0yMzQxMTE5MzEsMTk2MzA1MzQzNiwtODA2MDc4MDM5
-LDQ3NTU5NTUxNiwxMzc3MDgyOTgzLC0xNDQzNjU4ODExLC0xMj
-czMjQzNDEzLC0xMzI0NjkwMTgzLC0zOTE1NDE5NzQsLTEyODUy
-OTE2MzldfQ==
--->
+***其余没展示的参数保持默认即可。作者联系方式：ni33271@live.com***
